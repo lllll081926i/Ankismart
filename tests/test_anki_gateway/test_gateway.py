@@ -223,3 +223,51 @@ class TestPush:
 
         assert result.results[0].index == 0
         assert result.results[1].index == 1
+
+
+class TestPushOrUpdate:
+    def test_find_existing_note_query_scopes_model_and_deck(self) -> None:
+        client = _fake_client()
+        client.find_notes.return_value = [123]
+        gw = AnkiGateway(client)
+
+        card = _card(note_type="Basic", deck_name="Default", fields={"Front": "Question"})
+        found = gw._find_existing_note(card)
+
+        assert found == 123
+        query = client.find_notes.call_args[0][0]
+        assert 'note:"Basic"' in query
+        assert 'deck:"Default"' in query
+        assert '"Front:Question"' in query
+
+    def test_push_or_update_updates_when_existing(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+
+        client = _fake_client()
+        client.find_notes.return_value = [777]
+        gw = AnkiGateway(client)
+
+        result = gw.push_or_update([_card(fields={"Front": "Q", "Back": "A"})])
+
+        client.update_note_fields.assert_called_once_with(777, {"Front": "Q", "Back": "A"})
+        client.add_note.assert_not_called()
+        assert result.succeeded == 1
+        assert result.results[0].note_id == 777
+
+    def test_push_or_update_adds_when_not_found(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+
+        client = _fake_client(add_note_return=888)
+        client.find_notes.return_value = []
+        gw = AnkiGateway(client)
+
+        result = gw.push_or_update([_card()])
+
+        client.update_note_fields.assert_not_called()
+        client.add_note.assert_called_once()
+        assert result.succeeded == 1
+        assert result.results[0].note_id == 888

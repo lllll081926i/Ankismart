@@ -40,3 +40,12 @@ def test_convert_doc_is_not_supported(tmp_path: Path) -> None:
         DocumentConverter().convert(file_path)
 
     assert exc_info.value.code == ErrorCode.E_FILE_TYPE_UNSUPPORTED
+
+
+def test_convert_missing_file_raises_file_not_found(tmp_path: Path) -> None:
+    file_path = tmp_path / "missing.md"
+
+    with pytest.raises(ConvertError) as exc_info:
+        DocumentConverter().convert(file_path)
+
+    assert exc_info.value.code == ErrorCode.E_FILE_NOT_FOUND

@@ -98,3 +98,74 @@ class AnkiGateway:
                     results=results,
                     trace_id=trace_id,
                 )
+
+    def push_or_update(self, cards: list[CardDraft]) -> PushResult:
+        """Push cards, updating existing notes when a duplicate is found."""
+        initial_trace_id = cards[0].trace_id if cards else None
+        with trace_context(initial_trace_id) as trace_id:
+            with timed("anki_push_or_update_total"):
+                results: list[CardPushStatus] = []
+                succeeded = 0
+                failed = 0
+
+                for i, card in enumerate(cards):
+                    try:
+                        validate_card_draft(card, self._client)
+                        # Try to find existing note by front field
+                        existing_id = self._find_existing_note(card)
+                        if existing_id is not None:
+                            self._client.update_note_fields(existing_id, card.fields)
+                            results.append(CardPushStatus(
+                                index=i, note_id=existing_id, success=True,
+                            ))
+                            logger.info(
+                                "Updated existing note",
+                                extra={"index": i, "note_id": existing_id, "trace_id": trace_id},
+                            )
+                        else:
+                            note_params = _card_to_note_params(card)
+                            note_id = self._client.add_note(note_params)
+                            results.append(CardPushStatus(index=i, note_id=note_id, success=True))
+                        succeeded += 1
+                    except AnkiGatewayError as exc:
+                        logger.warning(
+                            "Card push/update failed",
+                            extra={"index": i, "error": exc.message, "trace_id": trace_id},
+                        )
+                        results.append(CardPushStatus(index=i, success=False, error=exc.message))
+                        failed += 1
+
+                logger.info(
+                    "Push/update completed",
+                    extra={
+                        "trace_id": trace_id,
+                        "total": len(cards),
+                        "succeeded": succeeded,
+                        "failed": failed,
+                    },
+                )
+
+                return PushResult(
+                    total=len(cards),
+                    succeeded=succeeded,
+                    failed=failed,
+                    results=results,
+                    trace_id=trace_id,
+                )
+
+    def _find_existing_note(self, card: CardDraft) -> int | None:
+        """Search for an existing note matching the card's front field in the same deck."""
+        # Determine the primary field to search by
+        front = card.fields.get("Front") or card.fields.get("Text")
+        if not front:
+            return None
+        # Escape quotes in search query
+        escaped = front.replace('"', '\\"')
+        field_name = "Front" if "Front" in card.fields else "Text"
+        model_name = card.note_type.replace('"', '\\"')
+        query = f'note:"{model_name}" deck:"{card.deck_name}" "{field_name}:{escaped}"'
+        try:
+            note_ids = self._client.find_notes(query)
+            return note_ids[0] if note_ids else None
+        except AnkiGatewayError:
+            return None

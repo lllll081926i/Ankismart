@@ -11,6 +11,7 @@ from ankismart.core.tracing import (
     _trace_id_var,
     generate_trace_id,
     get_trace_id,
+    metrics,
     set_trace_id,
     timed,
     timed_async,
@@ -121,6 +122,23 @@ class TestTimedAsync:
                 assert extra["duration_ms"] >= 0
 
         asyncio.run(_run())
+
+    def test_records_metrics(self):
+        import asyncio
+
+        metrics.reset()
+
+        async def _run():
+            with patch("ankismart.core.tracing.logger"):
+                async with timed_async("async_metric_stage"):
+                    pass
+
+        asyncio.run(_run())
+
+        snapshot = metrics.snapshot()
+        assert "async_metric_stage" in snapshot
+        assert snapshot["async_metric_stage"].count == 1
+        assert snapshot["async_metric_stage"].total_ms >= 0
 
     def test_logs_even_on_exception(self):
         import asyncio

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from ankismart.converter import (
@@ -19,7 +20,7 @@ from ankismart.converter.detector import detect_file_type
 from ankismart.core.errors import ConvertError, ErrorCode
 from ankismart.core.logging import get_logger
 from ankismart.core.models import MarkdownResult
-from ankismart.core.tracing import timed, trace_context
+from ankismart.core.tracing import metrics, timed, trace_context
 
 logger = get_logger("converter")
 
@@ -37,13 +38,24 @@ _CONVERTERS: dict[str, ...] = {
 class DocumentConverter:
     """Main converter that dispatches to format-specific converters."""
 
+    def __init__(self, *, ocr_correction_fn: Callable[[str], str] | None = None) -> None:
+        self._ocr_correction_fn = ocr_correction_fn
+
     def convert(self, file_path: Path) -> MarkdownResult:
         with trace_context() as trace_id:
             with timed("convert_total"):
+                if not file_path.exists():
+                    raise ConvertError(
+                        f"File not found: {file_path}",
+                        code=ErrorCode.E_FILE_NOT_FOUND,
+                        trace_id=trace_id,
+                    )
+
                 # Check file-hash cache first
                 file_hash = get_file_hash(file_path)
                 cached = get_cached_by_hash(file_hash)
                 if cached is not None:
+                    metrics.record_cache_hit()
                     logger.info(
                         "Cache hit (file hash)",
                         extra={"path": str(file_path), "trace_id": trace_id},
@@ -66,7 +78,13 @@ class DocumentConverter:
                     )
 
                 try:
-                    result = converter_fn(file_path, trace_id)
+                    if file_type in ("pdf", "image") and self._ocr_correction_fn is not None:
+                        result = converter_fn(
+                            file_path, trace_id,
+                            ocr_correction_fn=self._ocr_correction_fn,
+                        )
+                    else:
+                        result = converter_fn(file_path, trace_id)
                 except ConvertError:
                     raise
                 except Exception as exc:
@@ -78,6 +96,7 @@ class DocumentConverter:
 
                 save_cache(result)
                 save_cache_by_hash(file_hash, result)
+                metrics.record_cache_miss()
                 logger.info(
                     "Conversion completed",
                     extra={"trace_id": trace_id, "content_length": len(result.content)},
