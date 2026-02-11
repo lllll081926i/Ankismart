@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+from typing import Any
+
+import httpx
+
+from ankismart.core.errors import AnkiGatewayError, ErrorCode
+from ankismart.core.logging import get_logger
+from ankismart.core.tracing import get_trace_id
+
+logger = get_logger("anki_gateway.client")
+
+
+class AnkiConnectClient:
+    def __init__(self, url: str = "http://127.0.0.1:8765", key: str = "") -> None:
+        self._url = url
+        self._key = key
+
+    def _request(self, action: str, params: dict[str, Any] | None = None) -> Any:
+        """Send a request to AnkiConnect and return the result."""
+        trace_id = get_trace_id()
+        body: dict[str, Any] = {"action": action, "version": 6}
+        if params:
+            body["params"] = params
+        if self._key:
+            body["key"] = self._key
+
+        try:
+            resp = httpx.post(self._url, json=body, timeout=30)
+            resp.raise_for_status()
+        except httpx.ConnectError as exc:
+            raise AnkiGatewayError(
+                "Cannot connect to AnkiConnect. Is Anki running with AnkiConnect installed?",
+                code=ErrorCode.E_ANKICONNECT_ERROR,
+                trace_id=trace_id,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise AnkiGatewayError(
+                f"AnkiConnect HTTP error: {exc}",
+                code=ErrorCode.E_ANKICONNECT_ERROR,
+                trace_id=trace_id,
+            ) from exc
+
+        data = resp.json()
+        error = data.get("error")
+        if error:
+            raise AnkiGatewayError(
+                f"AnkiConnect error: {error}",
+                code=ErrorCode.E_ANKICONNECT_ERROR,
+                trace_id=trace_id,
+            )
+        return data.get("result")
+
+    def check_connection(self) -> bool:
+        try:
+            self._request("version")
+            return True
+        except AnkiGatewayError:
+            return False
+
+    def get_deck_names(self) -> list[str]:
+        return self._request("deckNames")
+
+    def get_model_names(self) -> list[str]:
+        return self._request("modelNames")
+
+    def get_model_field_names(self, model_name: str) -> list[str]:
+        return self._request("modelFieldNames", {"modelName": model_name})
+
+    def add_note(self, note_params: dict[str, Any]) -> int:
+        """Add a single note. Returns the note ID."""
+        result = self._request("addNote", {"note": note_params})
+        if result is None:
+            raise AnkiGatewayError(
+                "addNote returned null - possible duplicate",
+                code=ErrorCode.E_ANKICONNECT_ERROR,
+            )
+        return result
+
+    def add_notes(self, notes_params: list[dict[str, Any]]) -> list[int | None]:
+        """Add multiple notes. Returns list of note IDs (None for failures)."""
+        return self._request("addNotes", {"notes": notes_params})
