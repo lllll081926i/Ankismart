@@ -1,7 +1,6 @@
 """Tests for ankismart.converter.ocr_converter."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -37,10 +36,8 @@ class TestGetOcr:
                 assert result is mock_inst
                 MockOCR.assert_called_once()
                 kwargs = MockOCR.call_args.kwargs
-                assert kwargs["text_detection_model_name"] == "PP-OCRv4_mobile_det"
-                assert kwargs["text_recognition_model_name"] == "PP-OCRv4_mobile_rec"
-                assert kwargs["ocr_version"] == "PP-OCRv4"
-                assert kwargs["lang"] == "ch"
+                assert kwargs["text_detection_model_name"] == "PP-OCRv5_mobile_det"
+                assert kwargs["text_recognition_model_name"] == "PP-OCRv5_mobile_rec"
                 assert kwargs["device"] in {"cpu", "gpu:0"}
         finally:
             mod._ocr_instance = old
@@ -124,15 +121,8 @@ class TestOcrConfigHelpers:
         with patch.dict("os.environ", {}, clear=True):
             kwargs = _build_ocr_kwargs("gpu:0")
 
-        assert kwargs["text_detection_model_name"] == "PP-OCRv4_mobile_det"
-        assert kwargs["text_detection_model_dir"].endswith(
-            os.path.join("model", "PP-OCRv4_mobile_det")
-        )
-        assert kwargs["text_recognition_model_name"] == "PP-OCRv4_mobile_rec"
-        assert kwargs["text_recognition_model_dir"].endswith(
-            os.path.join("model", "PP-OCRv4_mobile_rec")
-        )
-        assert kwargs["ocr_version"] == "PP-OCRv4"
+        assert kwargs["text_detection_model_name"] == "PP-OCRv5_mobile_det"
+        assert kwargs["text_recognition_model_name"] == "PP-OCRv5_mobile_rec"
         assert kwargs["text_det_limit_side_len"] == 640
         assert kwargs["text_recognition_batch_size"] == 1
         assert kwargs["device"] == "gpu:0"
@@ -166,6 +156,10 @@ class TestOcrConfigHelpers:
     def test_custom_model_dir_is_respected(self, tmp_path: Path) -> None:
         det_dir = tmp_path / "det_model_dir"
         rec_dir = tmp_path / "rec_model_dir"
+        det_dir.mkdir(parents=True, exist_ok=True)
+        rec_dir.mkdir(parents=True, exist_ok=True)
+        (det_dir / "inference.yml").write_text("det", encoding="utf-8")
+        (rec_dir / "inference.yml").write_text("rec", encoding="utf-8")
 
         with patch.dict(
             "os.environ",
@@ -180,6 +174,41 @@ class TestOcrConfigHelpers:
         assert kwargs["text_detection_model_dir"] == str(det_dir)
         assert kwargs["text_recognition_model_dir"] == str(rec_dir)
 
+    def test_build_kwargs_without_local_models_omits_model_dirs(self, tmp_path: Path) -> None:
+        model_root = tmp_path / "model"
+        with patch.dict(
+            "os.environ",
+            {
+                "ANKISMART_OCR_MODEL_DIR": str(model_root),
+            },
+            clear=True,
+        ):
+            kwargs = _build_ocr_kwargs("cpu")
+
+        assert "text_detection_model_dir" not in kwargs
+        assert "text_recognition_model_dir" not in kwargs
+
+    def test_build_kwargs_with_local_models_uses_model_dirs(self, tmp_path: Path) -> None:
+        model_root = tmp_path / "model"
+        det_model = model_root / "PP-OCRv5_mobile_det"
+        rec_model = model_root / "PP-OCRv5_mobile_rec"
+        det_model.mkdir(parents=True, exist_ok=True)
+        rec_model.mkdir(parents=True, exist_ok=True)
+        (det_model / "inference.yml").write_text("det", encoding="utf-8")
+        (rec_model / "inference.yml").write_text("rec", encoding="utf-8")
+
+        with patch.dict(
+            "os.environ",
+            {
+                "ANKISMART_OCR_MODEL_DIR": str(model_root),
+            },
+            clear=True,
+        ):
+            kwargs = _build_ocr_kwargs("cpu")
+
+        assert kwargs["text_detection_model_dir"] == str(det_model)
+        assert kwargs["text_recognition_model_dir"] == str(rec_model)
+
 
 # ---------------------------------------------------------------------------
 # _ocr_image
@@ -188,10 +217,7 @@ class TestOcrConfigHelpers:
 class TestOcrImage:
     def test_extracts_text_lines(self) -> None:
         ocr = MagicMock()
-        ocr.ocr.return_value = [[
-            [[[0, 0], [100, 0], [100, 20], [0, 20]], ("Hello", 0.99)],
-            [[[0, 30], [100, 30], [100, 50], [0, 50]], ("World", 0.95)],
-        ]]
+        ocr.predict.return_value = [{"rec_texts": ["Hello", "World"]}]
         image = MagicMock()
 
         with patch("ankismart.converter.ocr_converter.np.array", return_value="fake_array"):
@@ -202,7 +228,7 @@ class TestOcrImage:
 
     def test_empty_result(self) -> None:
         ocr = MagicMock()
-        ocr.ocr.return_value = None
+        ocr.predict.return_value = None
         image = MagicMock()
 
         with patch("ankismart.converter.ocr_converter.np.array", return_value="fake_array"):
@@ -212,7 +238,7 @@ class TestOcrImage:
 
     def test_empty_first_page(self) -> None:
         ocr = MagicMock()
-        ocr.ocr.return_value = [None]
+        ocr.predict.return_value = [None]
         image = MagicMock()
 
         with patch("ankismart.converter.ocr_converter.np.array", return_value="fake_array"):
@@ -222,7 +248,17 @@ class TestOcrImage:
 
     def test_empty_list_result(self) -> None:
         ocr = MagicMock()
-        ocr.ocr.return_value = []
+        ocr.predict.return_value = []
+        image = MagicMock()
+
+        with patch("ankismart.converter.ocr_converter.np.array", return_value="fake_array"):
+            result = _ocr_image(ocr, image)
+
+        assert result == ""
+
+    def test_missing_rec_texts_returns_empty(self) -> None:
+        ocr = MagicMock()
+        ocr.predict.return_value = [{"rec_scores": [0.98]}]
         image = MagicMock()
 
         with patch("ankismart.converter.ocr_converter.np.array", return_value="fake_array"):
