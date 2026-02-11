@@ -209,6 +209,45 @@ class TestOcrConfigHelpers:
         assert kwargs["text_detection_model_dir"] == str(det_model)
         assert kwargs["text_recognition_model_dir"] == str(rec_model)
 
+    def test_build_kwargs_with_official_cache_models_uses_cached_dirs(self, tmp_path: Path) -> None:
+        model_root = tmp_path / "model"
+        official_root = model_root / "official_models"
+        det_model = official_root / "PP-OCRv5_mobile_det"
+        rec_model = official_root / "PP-OCRv5_mobile_rec"
+        det_model.mkdir(parents=True, exist_ok=True)
+        rec_model.mkdir(parents=True, exist_ok=True)
+        (det_model / "inference.yml").write_text("det", encoding="utf-8")
+        (rec_model / "inference.yml").write_text("rec", encoding="utf-8")
+
+        with patch.dict(
+            "os.environ",
+            {
+                "ANKISMART_OCR_MODEL_DIR": str(model_root),
+                "PADDLE_PDX_CACHE_HOME": str(model_root),
+            },
+            clear=True,
+        ):
+            kwargs = _build_ocr_kwargs("cpu")
+
+        assert kwargs["text_detection_model_dir"] == str(det_model)
+        assert kwargs["text_recognition_model_dir"] == str(rec_model)
+
+    def test_invalid_explicit_model_dirs_fallback_to_auto_download(self, tmp_path: Path) -> None:
+        model_root = tmp_path / "model"
+        with patch.dict(
+            "os.environ",
+            {
+                "ANKISMART_OCR_MODEL_DIR": str(model_root),
+                "ANKISMART_OCR_DET_MODEL_DIR": str(tmp_path / "missing_det"),
+                "ANKISMART_OCR_REC_MODEL_DIR": str(tmp_path / "missing_rec"),
+            },
+            clear=True,
+        ):
+            kwargs = _build_ocr_kwargs("cpu")
+
+        assert "text_detection_model_dir" not in kwargs
+        assert "text_recognition_model_dir" not in kwargs
+
 
 # ---------------------------------------------------------------------------
 # _ocr_image
@@ -265,6 +304,54 @@ class TestOcrImage:
             result = _ocr_image(ocr, image)
 
         assert result == ""
+
+    def test_onednn_error_retries_without_mkldnn(self) -> None:
+        ocr = MagicMock()
+        ocr.predict.side_effect = RuntimeError(
+            "Conversion failed: (Unimplemented) oneDNN ConvertPirAttribute2RuntimeAttribute not support"
+        )
+        retry_ocr = MagicMock()
+        retry_ocr.predict.return_value = [{"rec_texts": ["Retry OK"]}]
+        image = MagicMock()
+
+        with patch("ankismart.converter.ocr_converter.np.array", return_value="fake_array"):
+            with patch("ankismart.converter.ocr_converter._resolve_ocr_device", return_value="cpu"):
+                with patch("ankismart.converter.ocr_converter._get_env_bool", return_value=True):
+                    with patch(
+                        "ankismart.converter.ocr_converter._reload_ocr_without_mkldnn",
+                        return_value=retry_ocr,
+                    ):
+                        import ankismart.converter.ocr_converter as mod
+
+                        old_flag = mod._mkldnn_fallback_applied
+                        try:
+                            mod._mkldnn_fallback_applied = False
+                            result = _ocr_image(ocr, image)
+                        finally:
+                            mod._mkldnn_fallback_applied = old_flag
+
+        assert result == "Retry OK"
+        assert retry_ocr.predict.called
+
+    def test_onednn_error_not_retried_when_flag_already_applied(self) -> None:
+        ocr = MagicMock()
+        ocr.predict.side_effect = RuntimeError(
+            "Conversion failed: (Unimplemented) oneDNN ConvertPirAttribute2RuntimeAttribute not support"
+        )
+        image = MagicMock()
+
+        with patch("ankismart.converter.ocr_converter.np.array", return_value="fake_array"):
+            with patch("ankismart.converter.ocr_converter._resolve_ocr_device", return_value="cpu"):
+                with patch("ankismart.converter.ocr_converter._get_env_bool", return_value=True):
+                    import ankismart.converter.ocr_converter as mod
+
+                    old_flag = mod._mkldnn_fallback_applied
+                    try:
+                        mod._mkldnn_fallback_applied = True
+                        with pytest.raises(RuntimeError):
+                            _ocr_image(ocr, image)
+                    finally:
+                        mod._mkldnn_fallback_applied = old_flag
 
 
 # ---------------------------------------------------------------------------

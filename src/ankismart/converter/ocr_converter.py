@@ -24,6 +24,7 @@ os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "1")
 # Lazy-initialized singleton to avoid repeated model loading
 _ocr_instance: PaddleOCR | None = None
 _ocr_lock = threading.Lock()
+_mkldnn_fallback_applied = False
 
 
 def _get_env_bool(name: str, default: bool) -> bool:
@@ -73,6 +74,106 @@ def _ensure_local_dependency_env() -> None:
 
 def _has_paddlex_model_files(model_dir: Path) -> bool:
     return (model_dir / "inference.yml").exists()
+
+
+def _model_candidates(model_name: str, env_var_name: str, model_root: Path) -> list[Path]:
+    explicit_value = os.getenv(env_var_name, "").strip()
+    explicit_dir = Path(explicit_value).expanduser() if explicit_value else None
+    cache_root = Path(os.getenv("PADDLE_PDX_CACHE_HOME", str(model_root))).expanduser()
+    default_dir = model_root / model_name
+    official_cache_dir = cache_root / "official_models" / model_name
+
+    candidates: list[Path] = []
+    if explicit_dir is not None:
+        candidates.append(explicit_dir)
+    candidates.extend([default_dir, official_cache_dir])
+    return candidates
+
+
+def _find_existing_model_dir(model_name: str, env_var_name: str, model_root: Path) -> str | None:
+    for candidate in _model_candidates(model_name, env_var_name, model_root):
+        if _has_paddlex_model_files(candidate):
+            return str(candidate)
+    return None
+
+
+def get_missing_ocr_models() -> list[str]:
+    model_root = _resolve_model_root()
+    det_model = os.getenv("ANKISMART_OCR_DET_MODEL", "PP-OCRv5_mobile_det")
+    rec_model = os.getenv("ANKISMART_OCR_REC_MODEL", "PP-OCRv5_mobile_rec")
+
+    missing: list[str] = []
+    if _find_existing_model_dir(det_model, "ANKISMART_OCR_DET_MODEL_DIR", model_root) is None:
+        missing.append(det_model)
+    if _find_existing_model_dir(rec_model, "ANKISMART_OCR_REC_MODEL_DIR", model_root) is None:
+        missing.append(rec_model)
+    return missing
+
+
+def download_missing_ocr_models(progress_callback=None) -> list[str]:
+    model_root = _resolve_model_root()
+    missing = get_missing_ocr_models()
+    if not missing:
+        return []
+
+    from paddlex.inference.utils.official_models import official_models
+
+    total = len(missing)
+    for idx, model_name in enumerate(missing, start=1):
+        if progress_callback is not None:
+            progress_callback(idx - 1, total, f"正在下载模型 {model_name}...")
+        official_models[model_name]
+        if progress_callback is not None:
+            progress_callback(idx, total, f"模型下载完成：{model_name}")
+
+    remain = get_missing_ocr_models()
+    if remain:
+        raise ConvertError(
+            f"OCR model download failed: {', '.join(remain)}",
+            code=ErrorCode.E_OCR_FAILED,
+        )
+
+    # Reset OCR singleton to ensure new local model paths are picked up.
+    global _ocr_instance
+    with _ocr_lock:
+        _ocr_instance = None
+
+    # Keep returned list deterministic and aligned with input order.
+    return list(missing)
+
+
+def _choose_model_dir(
+    model_name: str,
+    env_var_name: str,
+    model_root: Path,
+    role: str,
+) -> str | None:
+    explicit_value = os.getenv(env_var_name, "").strip()
+    explicit_dir = Path(explicit_value).expanduser() if explicit_value else None
+    candidates = _model_candidates(model_name, env_var_name, model_root)
+    existing_dir = _find_existing_model_dir(model_name, env_var_name, model_root)
+    if existing_dir is not None:
+        return existing_dir
+
+    if explicit_dir is not None:
+        logger.warning(
+            "Configured local OCR model dir is invalid, fallback to auto download",
+            extra={
+                "role": role,
+                "env_var": env_var_name,
+                "model_dir": str(explicit_dir),
+            },
+        )
+
+    logger.info(
+        "Local OCR model not found, fallback to auto download",
+        extra={
+            "role": role,
+            "model_name": model_name,
+            "searched_dirs": [str(path) for path in candidates],
+        },
+    )
+    return None
 
 
 def _resolve_model_root() -> Path:
@@ -129,12 +230,18 @@ def _build_ocr_kwargs(device: str) -> dict[str, object]:
     model_root = _resolve_model_root()
     model_root.mkdir(parents=True, exist_ok=True)
 
-    det_model_dir = Path(
-        os.getenv("ANKISMART_OCR_DET_MODEL_DIR", str(model_root / det_model))
-    ).expanduser()
-    rec_model_dir = Path(
-        os.getenv("ANKISMART_OCR_REC_MODEL_DIR", str(model_root / rec_model))
-    ).expanduser()
+    det_model_dir = _choose_model_dir(
+        model_name=det_model,
+        env_var_name="ANKISMART_OCR_DET_MODEL_DIR",
+        model_root=model_root,
+        role="det",
+    )
+    rec_model_dir = _choose_model_dir(
+        model_name=rec_model,
+        env_var_name="ANKISMART_OCR_REC_MODEL_DIR",
+        model_root=model_root,
+        role="rec",
+    )
 
     det_limit_side_len = int(os.getenv("ANKISMART_OCR_DET_LIMIT_SIDE_LEN", "640"))
     det_limit_type = os.getenv("ANKISMART_OCR_DET_LIMIT_TYPE", "max")
@@ -152,21 +259,11 @@ def _build_ocr_kwargs(device: str) -> dict[str, object]:
         "device": device,
     }
 
-    if _has_paddlex_model_files(det_model_dir):
-        kwargs["text_detection_model_dir"] = str(det_model_dir)
-    else:
-        logger.info(
-            "Local detection model not found, fallback to auto download",
-            extra={"det_model_dir": str(det_model_dir)},
-        )
+    if det_model_dir is not None:
+        kwargs["text_detection_model_dir"] = det_model_dir
 
-    if _has_paddlex_model_files(rec_model_dir):
-        kwargs["text_recognition_model_dir"] = str(rec_model_dir)
-    else:
-        logger.info(
-            "Local recognition model not found, fallback to auto download",
-            extra={"rec_model_dir": str(rec_model_dir)},
-        )
+    if rec_model_dir is not None:
+        kwargs["text_recognition_model_dir"] = rec_model_dir
 
     if device == "cpu":
         kwargs["enable_mkldnn"] = _get_env_bool("ANKISMART_OCR_CPU_MKLDNN", True)
@@ -175,6 +272,46 @@ def _build_ocr_kwargs(device: str) -> dict[str, object]:
         )
 
     return kwargs
+
+
+def _is_onednn_unimplemented_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "onednn" in message
+        and (
+            "unimplemented" in message
+            or "convertpirattribute2runtimeattribute" in message
+        )
+    )
+
+
+def _should_retry_without_mkldnn(exc: Exception) -> bool:
+    if _mkldnn_fallback_applied:
+        return False
+    if _resolve_ocr_device() != "cpu":
+        return False
+    if not _get_env_bool("ANKISMART_OCR_CPU_MKLDNN", True):
+        return False
+    return _is_onednn_unimplemented_error(exc)
+
+
+def _reload_ocr_without_mkldnn() -> PaddleOCR:
+    global _ocr_instance, _mkldnn_fallback_applied
+
+    with _ocr_lock:
+        os.environ["ANKISMART_OCR_CPU_MKLDNN"] = "0"
+        kwargs = _build_ocr_kwargs("cpu")
+        kwargs["enable_mkldnn"] = False
+        logger.warning(
+            "Retrying OCR with MKLDNN disabled due to oneDNN runtime error",
+            extra={
+                "det_model": kwargs.get("text_detection_model_name"),
+                "rec_model": kwargs.get("text_recognition_model_name"),
+            },
+        )
+        _ocr_instance = PaddleOCR(**kwargs)
+        _mkldnn_fallback_applied = True
+        return _ocr_instance
 
 
 def _get_ocr() -> PaddleOCR:
@@ -229,7 +366,17 @@ def _pdf_to_images(file_path: Path) -> Iterator[Image.Image]:
 def _ocr_image(ocr: PaddleOCR, image: Image.Image) -> str:
     """Run OCR on a single image and return extracted text."""
     img_array = np.array(image)
-    result = ocr.predict(img_array, use_textline_orientation=False)
+    try:
+        result = ocr.predict(img_array, use_textline_orientation=False)
+    except Exception as exc:
+        if not _should_retry_without_mkldnn(exc):
+            raise
+        logger.warning(
+            "oneDNN error detected, fallback to non-MKLDNN OCR runtime",
+            extra={"error": str(exc)},
+        )
+        retry_ocr = _reload_ocr_without_mkldnn()
+        result = retry_ocr.predict(img_array, use_textline_orientation=False)
     del img_array  # release numpy array memory
 
     if not result:
@@ -268,13 +415,12 @@ def convert(file_path: Path, trace_id: str = "", *, ocr_correction_fn=None) -> M
         )
 
     with timed("ocr_convert"):
-        ocr = _get_ocr()
-
         sections: list[str] = []
         page_count = 0
         for i, image in enumerate(_pdf_to_images(file_path), 1):
             page_count += 1
             with timed(f"ocr_page_{i}"):
+                ocr = _get_ocr()
                 page_text = _ocr_image(ocr, image)
             del image  # release PIL image memory
 

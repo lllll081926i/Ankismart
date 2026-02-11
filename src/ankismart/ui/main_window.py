@@ -84,7 +84,7 @@ class MainWindow(QMainWindow):
 
         # Navigation bar
         nav = QHBoxLayout()
-        nav.setSpacing(20)
+        nav.setSpacing(8)
         nav.setContentsMargins(0, 0, 0, 10)
 
         self._btn_import = QPushButton("导入与生成")

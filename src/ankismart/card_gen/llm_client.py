@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 
 from openai import APIError, APITimeoutError, OpenAI, RateLimitError
@@ -15,7 +16,23 @@ _MAX_RETRIES = 3
 _BASE_DELAY = 1.0  # seconds
 
 
-_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+class _RpmThrottle:
+    """Simple per-minute request throttle (thread-safe)."""
+
+    def __init__(self, rpm: int) -> None:
+        self._interval = 60.0 / rpm if rpm > 0 else 0.0
+        self._lock = threading.Lock()
+        self._last: float = 0.0
+
+    def wait(self) -> None:
+        if self._interval <= 0:
+            return
+        with self._lock:
+            now = time.monotonic()
+            wait = self._last + self._interval - now
+            if wait > 0:
+                time.sleep(wait)
+            self._last = time.monotonic()
 
 
 class LLMClient:
@@ -25,27 +42,35 @@ class LLMClient:
         model: str = "gpt-4o",
         *,
         base_url: str | None = None,
+        rpm_limit: int = 0,
     ) -> None:
         kwargs: dict[str, object] = {"api_key": api_key}
         if base_url:
             kwargs["base_url"] = base_url
         self._client = OpenAI(**kwargs)
         self._model = model
+        self._throttle = _RpmThrottle(rpm_limit)
 
     @classmethod
     def from_config(cls, config) -> LLMClient:
-        """Create an LLMClient from AppConfig, dispatching by provider."""
-        if config.llm_provider == "deepseek":
-            return cls(
-                api_key=config.deepseek_api_key,
-                model=config.deepseek_model,
-                base_url=_DEEPSEEK_BASE_URL,
+        """Create an LLMClient from AppConfig using the active provider."""
+        provider = config.active_provider
+        if provider is None:
+            raise CardGenError(
+                "No LLM provider configured",
+                code=ErrorCode.E_LLM_ERROR,
             )
-        return cls(api_key=config.openai_api_key, model=config.openai_model)
+        return cls(
+            api_key=provider.api_key,
+            model=provider.model,
+            base_url=provider.base_url or None,
+            rpm_limit=provider.rpm_limit,
+        )
 
     def chat(self, system_prompt: str, user_prompt: str) -> str:
         """Send a chat completion request with retry logic."""
         trace_id = get_trace_id()
+        self._throttle.wait()
 
         for attempt in range(_MAX_RETRIES):
             try:

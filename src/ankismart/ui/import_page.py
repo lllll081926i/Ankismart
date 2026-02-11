@@ -4,13 +4,17 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
     QComboBox,
     QFileDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QProgressBar,
+    QProgressDialog,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -27,6 +31,7 @@ _FILE_FILTER = (
 )
 
 _SUPPORTED_TYPES = {"markdown", "text", "docx", "pptx", "pdf", "image"}
+_OCR_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"}
 
 
 class ImportPage(QWidget):
@@ -36,6 +41,7 @@ class ImportPage(QWidget):
         self._main = main_window
         self._file_paths: list[Path] = []
         self._worker = None  # Keep reference to prevent GC
+        self._strategy_items: list[tuple[str, QCheckBox, QLineEdit]] = []
 
         # Main layout with padding
         layout = QVBoxLayout(self)
@@ -90,8 +96,52 @@ class ImportPage(QWidget):
         self._type_combo.addItem("完形填空", "cloze")
         self._type_combo.addItem("概念解释", "concept")
         self._type_combo.addItem("关键术语", "key_terms")
+        self._type_combo.addItem("单选题", "single_choice")
+        self._type_combo.addItem("多选题", "multiple_choice")
         self._type_combo.addItem("图片问答（附图）", "image_qa")
         type_layout.addWidget(self._type_combo)
+
+        self._type_mode_combo = QComboBox()
+        self._type_mode_combo.setMinimumHeight(36)
+        self._type_mode_combo.addItem("单一题型", "single")
+        self._type_mode_combo.addItem("自定义组合", "mixed")
+        self._type_mode_combo.currentIndexChanged.connect(self._on_type_mode_changed)
+        type_layout.addWidget(self._type_mode_combo)
+
+        self._total_count_input = QLineEdit("20")
+        self._total_count_input.setMinimumHeight(36)
+        self._total_count_input.setPlaceholderText("总题数，例如 20")
+        self._total_count_input.hide()
+        type_layout.addWidget(self._total_count_input)
+
+        self._mixed_widget = QWidget()
+        mixed_layout = QGridLayout(self._mixed_widget)
+        mixed_layout.setContentsMargins(0, 0, 0, 0)
+        mixed_layout.setHorizontalSpacing(8)
+        mixed_layout.setVerticalSpacing(6)
+        mixed_layout.addWidget(QLabel("题型"), 0, 0)
+        mixed_layout.addWidget(QLabel("占比(%)"), 0, 1)
+
+        strategy_options = [
+            ("basic", "基础问答", "40"),
+            ("cloze", "完形填空", "20"),
+            ("concept", "概念解释", "15"),
+            ("key_terms", "关键术语", "10"),
+            ("single_choice", "单选题", "10"),
+            ("multiple_choice", "多选题", "5"),
+        ]
+        for row, (key, label_text, default_ratio) in enumerate(strategy_options, start=1):
+            checkbox = QCheckBox(label_text)
+            ratio_input = QLineEdit(default_ratio)
+            ratio_input.setMinimumHeight(32)
+            ratio_input.setMaximumWidth(100)
+            ratio_input.setPlaceholderText("0-100")
+            mixed_layout.addWidget(checkbox, row, 0)
+            mixed_layout.addWidget(ratio_input, row, 1)
+            self._strategy_items.append((key, checkbox, ratio_input))
+
+        self._mixed_widget.hide()
+        type_layout.addWidget(self._mixed_widget)
         form_layout.addLayout(type_layout)
 
         # Tags
@@ -128,6 +178,47 @@ class ImportPage(QWidget):
 
         # Load deck list from Anki
         self._load_decks()
+
+    def _on_type_mode_changed(self) -> None:
+        is_mixed = (self._type_mode_combo.currentData() == "mixed")
+        self._type_combo.setVisible(not is_mixed)
+        self._mixed_widget.setVisible(is_mixed)
+        self._total_count_input.setVisible(is_mixed)
+
+    def build_generation_config(self) -> dict:
+        mode = self._type_mode_combo.currentData() or "single"
+
+        if mode != "mixed":
+            return {
+                "mode": "single",
+                "strategy": self._type_combo.currentData() or "basic",
+            }
+
+        target_total = 20
+        try:
+            target_total = max(1, int(self._total_count_input.text().strip() or "20"))
+        except ValueError:
+            target_total = 20
+
+        ratio_items: list[dict[str, int | str]] = []
+        for strategy, checkbox, ratio_input in self._strategy_items:
+            if not checkbox.isChecked():
+                continue
+            try:
+                ratio = int(ratio_input.text().strip() or "0")
+            except ValueError:
+                ratio = 0
+            if ratio > 0:
+                ratio_items.append({"strategy": strategy, "ratio": ratio})
+
+        if not ratio_items:
+            ratio_items = [{"strategy": "basic", "ratio": 100}]
+
+        return {
+            "mode": "mixed",
+            "target_total": target_total,
+            "strategy_mix": ratio_items,
+        }
 
     # ------------------------------------------------------------------
     # File browsing
@@ -194,8 +285,68 @@ class ImportPage(QWidget):
     # Batch conversion
     # ------------------------------------------------------------------
 
+    def _needs_ocr_models(self) -> bool:
+        return any(path.suffix.lower() in _OCR_EXTENSIONS for path in self._file_paths)
+
+    def _ensure_ocr_models_ready(self) -> bool:
+        if not self._needs_ocr_models():
+            return True
+
+        from ankismart.converter.ocr_converter import (
+            download_missing_ocr_models,
+            get_missing_ocr_models,
+        )
+
+        missing = get_missing_ocr_models()
+        if not missing:
+            return True
+
+        model_list = "\n".join(f"- {name}" for name in missing)
+        answer = QMessageBox.question(
+            self,
+            "OCR 模型缺失",
+            f"检测到以下 OCR 模型缺失：\n{model_list}\n\n是否现在下载？\n（仅在处理 PDF/图片 时需要）",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            self._status_label.setText("已取消 OCR 模型下载")
+            return False
+
+        dialog = QProgressDialog("准备下载 OCR 模型...", "取消", 0, len(missing), self)
+        dialog.setWindowTitle("下载 OCR 模型")
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(True)
+
+        def _on_progress(done: int, total: int, message: str) -> None:
+            if dialog.wasCanceled():
+                raise RuntimeError("用户取消下载")
+            dialog.setMaximum(max(1, total))
+            dialog.setValue(min(done, total))
+            dialog.setLabelText(message)
+            QApplication.processEvents()
+
+        try:
+            download_missing_ocr_models(progress_callback=_on_progress)
+            dialog.setValue(len(missing))
+            self._status_label.setText("OCR 模型已就绪")
+            return True
+        except Exception as exc:
+            dialog.cancel()
+            self._status_label.setText("OCR 模型下载失败")
+            QMessageBox.warning(
+                self,
+                "OCR 模型下载失败",
+                f"下载 OCR 模型失败：{exc}",
+            )
+            return False
+
     def _start_convert(self) -> None:
         if not self._file_paths:
+            return
+
+        if not self._ensure_ocr_models_ready():
             return
 
         file_count = len(self._file_paths)

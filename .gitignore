@@ -27,6 +27,7 @@ Thumbs.db
 *.apkg
 config.yaml
 .ankismart/
+.local/
 
 # Testing
 .coverage

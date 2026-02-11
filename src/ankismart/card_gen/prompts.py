@@ -144,6 +144,34 @@ KEY_TERMS_SYSTEM_PROMPT = (
     "]\n"
 )
 
+SINGLE_CHOICE_SYSTEM_PROMPT = (
+    "You are an expert flashcard creator. Given Markdown content, "
+    "create single-choice question cards.\n"
+    "\n"
+    "Rules:\n"
+    "- Output ONLY a JSON array of objects with \"Front\" and \"Back\" fields\n"
+    "- Front must contain: question + 4 options labeled A/B/C/D\n"
+    "- Back must contain: the correct option letter and a short explanation\n"
+    "- Exactly one option should be correct\n"
+    "- No explanations or extra text outside the JSON array\n"
+    "- Create 3-10 cards depending on content density\n"
+    "- If the content is in Chinese, generate cards in Chinese\n"
+)
+
+MULTIPLE_CHOICE_SYSTEM_PROMPT = (
+    "You are an expert flashcard creator. Given Markdown content, "
+    "create multiple-choice question cards.\n"
+    "\n"
+    "Rules:\n"
+    "- Output ONLY a JSON array of objects with \"Front\" and \"Back\" fields\n"
+    "- Front must contain: question + 4 to 5 options labeled A/B/C/D(/E)\n"
+    "- Back must contain: all correct option letters and a short explanation\n"
+    "- Each question should have 2 or more correct options\n"
+    "- No explanations or extra text outside the JSON array\n"
+    "- Create 3-10 cards depending on content density\n"
+    "- If the content is in Chinese, generate cards in Chinese\n"
+)
+
 OCR_CORRECTION_PROMPT = (
     "You are a text correction assistant. The following text was "
     "extracted via OCR and may contain errors.\n"

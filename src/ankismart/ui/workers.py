@@ -53,27 +53,14 @@ class GenerateWorker(QThread):
     finished = Signal(list)  # list[CardDraft]
     error = Signal(str)
 
-    def __init__(
-        self,
-        request: GenerateRequest,
-        api_key: str,
-        model: str,
-        *,
-        base_url: str | None = None,
-    ) -> None:
+    def __init__(self, request: GenerateRequest, config) -> None:
         super().__init__()
         self._request = request
-        self._api_key = api_key
-        self._model = model
-        self._base_url = base_url
+        self._config = config
 
     def run(self) -> None:
         try:
-            llm_client = LLMClient(
-                api_key=self._api_key,
-                model=self._model,
-                base_url=self._base_url,
-            )
+            llm_client = LLMClient.from_config(self._config)
             generator = CardGenerator(llm_client)
             cards = generator.generate(self._request)
             self.finished.emit(cards)
@@ -249,41 +236,126 @@ class BatchGenerateWorker(QThread):
         self,
         documents: list[ConvertedDocument],
         requests_config: dict,
-        api_key: str,
-        model: str,
-        *,
-        base_url: str | None = None,
+        config,
     ) -> None:
         super().__init__()
         self._documents = documents
-        self._config = requests_config  # strategy, deck_name, tags
-        self._api_key = api_key
-        self._model = model
-        self._base_url = base_url
+        self._requests_config = requests_config
+        self._config = config
+
+    @staticmethod
+    def _allocate_mix_counts(target_total: int, ratio_items: list[dict]) -> dict[str, int]:
+        if target_total <= 0 or not ratio_items:
+            return {}
+
+        valid_items: list[tuple[str, int]] = []
+        for item in ratio_items:
+            strategy = str(item.get("strategy", "")).strip()
+            try:
+                ratio = int(item.get("ratio", 0) or 0)
+            except (TypeError, ValueError):
+                ratio = 0
+            if strategy and ratio > 0:
+                valid_items.append((strategy, ratio))
+
+        if not valid_items:
+            return {}
+
+        total_ratio = sum(r for _, r in valid_items)
+        if total_ratio <= 0:
+            return {}
+
+        base: dict[str, int] = {}
+        remainders: list[tuple[str, float]] = []
+        assigned = 0
+
+        for strategy, ratio in valid_items:
+            exact = target_total * ratio / total_ratio
+            count = int(exact)
+            base[strategy] = count
+            assigned += count
+            remainders.append((strategy, exact - count))
+
+        remaining = target_total - assigned
+        remainders.sort(key=lambda item: item[1], reverse=True)
+        for i in range(remaining):
+            strategy = remainders[i % len(remainders)][0]
+            base[strategy] = base.get(strategy, 0) + 1
+
+        return base
+
+    @staticmethod
+    def _distribute_counts_per_document(
+        total_docs: int, strategy_counts: dict[str, int]
+    ) -> list[dict[str, int]]:
+        if total_docs <= 0:
+            return []
+
+        per_doc: list[dict[str, int]] = [dict() for _ in range(total_docs)]
+        for strategy, total_count in strategy_counts.items():
+            if total_count <= 0:
+                continue
+            base = total_count // total_docs
+            remainder = total_count % total_docs
+            for doc_idx in range(total_docs):
+                count = base + (1 if doc_idx < remainder else 0)
+                if count > 0:
+                    per_doc[doc_idx][strategy] = count
+
+        return per_doc
 
     def run(self) -> None:
         try:
-            llm_client = LLMClient(
-                api_key=self._api_key, model=self._model, base_url=self._base_url
-            )
+            llm_client = LLMClient.from_config(self._config)
             generator = CardGenerator(llm_client)
             all_cards: list[CardDraft] = []
             total = len(self._documents)
+            mode = self._requests_config.get("mode", "single")
+            target_total = int(self._requests_config.get("target_total", 0) or 0)
+            ratio_items = self._requests_config.get("strategy_mix", [])
+
+            mix_counts: dict[str, int] = {}
+            per_doc_mix: list[dict[str, int]] = []
+            if mode == "mixed":
+                mix_counts = self._allocate_mix_counts(target_total, ratio_items)
+                if not mix_counts:
+                    mix_counts = {"basic": max(1, target_total or total)}
+                per_doc_mix = self._distribute_counts_per_document(total, mix_counts)
 
             for i, doc in enumerate(self._documents):
                 self.file_progress.emit(
                     i + 1, total, doc.file_name
                 )
-                request = GenerateRequest(
-                    markdown=doc.result.content,
-                    strategy=self._config.get("strategy", "basic"),
-                    deck_name=self._config.get("deck_name", "Default"),
-                    tags=self._config.get("tags", ["ankismart"]),
-                    trace_id=doc.result.trace_id,
-                    source_path=doc.result.source_path,
-                )
-                cards = generator.generate(request)
-                all_cards.extend(cards)
+
+                if mode != "mixed":
+                    request = GenerateRequest(
+                        markdown=doc.result.content,
+                        strategy=self._requests_config.get("strategy", "basic"),
+                        deck_name=self._requests_config.get("deck_name", "Default"),
+                        tags=self._requests_config.get("tags", ["ankismart"]),
+                        trace_id=doc.result.trace_id,
+                        source_path=doc.result.source_path,
+                    )
+                    cards = generator.generate(request)
+                    all_cards.extend(cards)
+                    continue
+
+                active_counts = per_doc_mix[i] if i < len(per_doc_mix) else {}
+                if not active_counts:
+                    continue
+
+                for strategy, count in active_counts.items():
+                    request = GenerateRequest(
+                        markdown=doc.result.content,
+                        strategy=strategy,
+                        deck_name=self._requests_config.get("deck_name", "Default"),
+                        tags=self._requests_config.get("tags", ["ankismart"]),
+                        trace_id=doc.result.trace_id,
+                        source_path=doc.result.source_path,
+                        target_count=count,
+                    )
+                    cards = generator.generate(request)
+                    all_cards.extend(cards)
 
             self.finished.emit(all_cards)
         except Exception as exc:

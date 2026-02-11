@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import sys
 from pathlib import Path
 
 from ankismart.core.logging import get_logger
@@ -9,7 +11,21 @@ from ankismart.core.models import MarkdownResult
 
 logger = get_logger("converter.cache")
 
-CACHE_DIR: Path = Path.home() / ".ankismart" / "cache"
+
+def _resolve_project_root() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[3]
+
+
+def _resolve_app_dir() -> Path:
+    env_app_dir = os.getenv("ANKISMART_APP_DIR", "").strip()
+    if env_app_dir:
+        return Path(env_app_dir).expanduser().resolve()
+    return _resolve_project_root() / ".local" / "ankismart"
+
+
+CACHE_DIR: Path = _resolve_app_dir() / "cache"
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from random import shuffle
 
 from ankismart.card_gen.llm_client import LLMClient
 from ankismart.card_gen.postprocess import build_card_drafts, parse_llm_output
@@ -10,7 +11,9 @@ from ankismart.card_gen.prompts import (
     CONCEPT_SYSTEM_PROMPT,
     IMAGE_QA_SYSTEM_PROMPT,
     KEY_TERMS_SYSTEM_PROMPT,
+    MULTIPLE_CHOICE_SYSTEM_PROMPT,
     OCR_CORRECTION_PROMPT,
+    SINGLE_CHOICE_SYSTEM_PROMPT,
 )
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft, GenerateRequest, MediaItem
@@ -23,6 +26,8 @@ _STRATEGY_MAP: dict[str, tuple[str, str]] = {
     "cloze": (CLOZE_SYSTEM_PROMPT, "Cloze"),
     "concept": (CONCEPT_SYSTEM_PROMPT, "Basic"),
     "key_terms": (KEY_TERMS_SYSTEM_PROMPT, "Basic"),
+    "single_choice": (SINGLE_CHOICE_SYSTEM_PROMPT, "Basic"),
+    "multiple_choice": (MULTIPLE_CHOICE_SYSTEM_PROMPT, "Basic"),
     "image_qa": (IMAGE_QA_SYSTEM_PROMPT, "Basic"),
     "image_occlusion": (IMAGE_QA_SYSTEM_PROMPT, "Basic"),
 }
@@ -74,6 +79,10 @@ class CardGenerator:
                     and request.source_path
                 ):
                     self._attach_image(drafts, request.source_path)
+
+                if request.target_count > 0 and len(drafts) > request.target_count:
+                    shuffle(drafts)
+                    drafts = drafts[: request.target_count]
 
                 logger.info(
                     "Card generation completed",

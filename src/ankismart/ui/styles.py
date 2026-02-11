@@ -44,7 +44,7 @@ def get_stylesheet() -> str:
     /* Panel/Card style for pages */
     QWidget#page_content {{
         background-color: {Colors.SURFACE};
-        border-radius: 8px;
+        border-radius: 12px;
         border: 1px solid {Colors.BORDER};
     }}
 
@@ -52,8 +52,8 @@ def get_stylesheet() -> str:
     QPushButton {{
         background-color: {Colors.SURFACE};
         border: 1px solid {Colors.BORDER};
-        border-radius: 6px;
-        padding: 6px 12px;
+        border-radius: 8px;
+        padding: 8px 16px;
         color: {Colors.TEXT_PRIMARY};
         font-weight: 500;
     }}
@@ -78,6 +78,7 @@ def get_stylesheet() -> str:
         background-color: {Colors.PRIMARY};
         color: {Colors.WHITE};
         border: none;
+        font-weight: 600;
     }}
 
     QPushButton[role="primary"]:hover {{
@@ -93,45 +94,54 @@ def get_stylesheet() -> str:
         color: {Colors.TEXT_DISABLED};
     }}
 
-    /* Navigation Buttons (Sidebar/Top) */
+    /* Navigation Buttons (Sidebar/Top) - Modern Pill Style */
     QPushButton[role="nav"] {{
         border: none;
-        border-radius: 0;
+        border-radius: 8px;
         background-color: transparent;
-        text-align: left;
-        padding: 10px 16px;
+        text-align: center;
+        padding: 8px 16px;
         font-size: 15px;
+        margin: 0 4px;
+        color: {Colors.TEXT_SECONDARY};
     }}
 
     QPushButton[role="nav"]:checked {{
         background-color: {Colors.SURFACE};
         color: {Colors.PRIMARY};
-        border-bottom: 2px solid {Colors.PRIMARY};
         font-weight: bold;
+        border: 1px solid {Colors.BORDER};
     }}
 
     QPushButton[role="nav"]:hover:!checked {{
         background-color: rgba(0, 0, 0, 0.05);
+        color: {Colors.TEXT_PRIMARY};
     }}
 
     /* Input Fields */
     QLineEdit, QComboBox, QPlainTextEdit {{
         background-color: {Colors.SURFACE};
         border: 1px solid {Colors.BORDER};
-        border-radius: 6px;
-        padding: 6px;
+        border-radius: 8px;
+        padding: 8px;
         selection-background-color: {Colors.PRIMARY};
     }}
 
-    QLineEdit:focus, QComboBox:focus {{
+    QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus {{
         border: 1px solid {Colors.PRIMARY};
+    }}
+
+    /* ComboBox Dropdown */
+    QComboBox::drop-down {{
+        border: none;
+        width: 20px;
     }}
 
     /* Table View */
     QTableWidget {{
         background-color: {Colors.SURFACE};
         border: 1px solid {Colors.BORDER};
-        border-radius: 6px;
+        border-radius: 8px;
         gridline-color: {Colors.BORDER};
         selection-background-color: {Colors.PRIMARY}33; /* 20% opacity approx */
         selection-color: {Colors.TEXT_PRIMARY};
@@ -139,12 +149,16 @@ def get_stylesheet() -> str:
 
     QHeaderView::section {{
         background-color: {Colors.BACKGROUND};
-        padding: 6px;
+        padding: 8px;
         border: none;
         border-bottom: 1px solid {Colors.BORDER};
         border-right: 1px solid {Colors.BORDER};
         font-weight: 600;
         color: {Colors.TEXT_SECONDARY};
+    }}
+
+    QHeaderView::section:last {{
+        border-right: none;
     }}
 
     /* Scrollbars */
@@ -153,6 +167,7 @@ def get_stylesheet() -> str:
         background: {Colors.BACKGROUND};
         width: 10px;
         margin: 0px;
+        border-radius: 5px;
     }}
     QScrollBar::handle:vertical {{
         background: {Colors.DIVIDER};
@@ -172,10 +187,10 @@ def get_stylesheet() -> str:
 
     /* Labels */
     QLabel[role="heading"] {{
-        font-size: 18px;
-        font-weight: bold;
+        font-size: 20px;
+        font-weight: 700;
         color: {Colors.TEXT_PRIMARY};
-        margin-bottom: 8px;
+        margin-bottom: 12px;
     }}
 
     QLabel[role="subtitle"] {{
@@ -187,18 +202,19 @@ def get_stylesheet() -> str:
     QListWidget {{
         background-color: {Colors.SURFACE};
         border: 1px solid {Colors.BORDER};
-        border-radius: 6px;
+        border-radius: 8px;
         outline: none;
     }}
 
     QListWidget::item {{
-        padding: 8px 12px;
+        padding: 10px 14px;
         border-bottom: 1px solid {Colors.BORDER};
     }}
 
     QListWidget::item:selected {{
         background-color: {Colors.PRIMARY}33;
         color: {Colors.TEXT_PRIMARY};
+        border-radius: 4px;
     }}
 
     QListWidget::item:hover:!selected {{
@@ -209,13 +225,9 @@ def get_stylesheet() -> str:
     QPlainTextEdit {{
         background-color: {Colors.SURFACE};
         border: 1px solid {Colors.BORDER};
-        border-radius: 6px;
-        padding: 8px;
+        border-radius: 8px;
+        padding: 10px;
         font-family: "Consolas", "Courier New", monospace;
         font-size: 13px;
-    }}
-
-    QPlainTextEdit:focus {{
-        border: 1px solid {Colors.PRIMARY};
     }}
     """

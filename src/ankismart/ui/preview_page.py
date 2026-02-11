@@ -152,20 +152,20 @@ class PreviewPage(QWidget):
 
         # Read config from import_page
         import_page = self._main.import_page
-        strategy = import_page._type_combo.currentData() or "basic"
         deck_name = import_page._deck_combo.currentText()
         tags = [
             t.strip()
             for t in import_page._tags_input.text().split(",")
             if t.strip()
         ]
+        generation_config = import_page.build_generation_config()
 
         documents = self._build_documents()
         config = self._main.config
         requests_config = {
-            "strategy": strategy,
             "deck_name": deck_name,
             "tags": tags,
+            **generation_config,
         }
 
         self._btn_generate.setEnabled(False)
@@ -175,9 +175,7 @@ class PreviewPage(QWidget):
         worker = BatchGenerateWorker(
             documents,
             requests_config,
-            config.deepseek_api_key if config.llm_provider == "deepseek" else config.openai_api_key,
-            config.deepseek_model if config.llm_provider == "deepseek" else config.openai_model,
-            base_url="https://api.deepseek.com" if config.llm_provider == "deepseek" else None,
+            config,
         )
         worker.file_progress.connect(self._on_file_progress)
         worker.finished.connect(self._on_generate_done)

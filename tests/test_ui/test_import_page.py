@@ -27,10 +27,21 @@ class _DummyLineEdit:
 
 class _DummyMain:
     class _Config:
-        openai_api_key = "test-key"
-        openai_model = "gpt-4o"
+        from ankismart.core.config import LLMProviderConfig
+
+        _provider = LLMProviderConfig(
+            id="test", name="OpenAI", api_key="test-key",
+            base_url="https://api.openai.com/v1", model="gpt-4o",
+        )
+        llm_providers = [_provider]
+        active_provider_id = "test"
         anki_connect_url = "http://127.0.0.1:8765"
         anki_connect_key = ""
+        ocr_correction = False
+
+        @property
+        def active_provider(self):
+            return self._provider
 
     config = _Config()
     batch_result = None
@@ -44,12 +55,31 @@ class _DummyMain:
         self._loaded_batch_result = result
 
 
+class _DummyModeCombo:
+    def __init__(self, value: str) -> None:
+        self._value = value
+
+    def currentData(self) -> str:
+        return self._value
+
+
+class _DummyCheck:
+    def __init__(self, checked: bool) -> None:
+        self._checked = checked
+
+    def isChecked(self) -> bool:
+        return self._checked
+
+
 def _make_page():
     page = ImportPage.__new__(ImportPage)
     page._main = _DummyMain()
     page._file_paths = []
     page._worker = None
     page._type_combo = _DummyCombo("basic")
+    page._type_mode_combo = _DummyModeCombo("single")
+    page._strategy_items = []
+    page._total_count_input = _DummyLineEdit("20")
     page._deck_combo = _DummyCombo("Default")
     page._tags_input = _DummyLineEdit("tag1, tag2")
     page._status_label = type(
@@ -69,6 +99,35 @@ def _make_page():
         "_Btn", (), {"setEnabled": lambda self, v: None}
     )()
     return page
+
+
+def test_build_generation_config_single_mode() -> None:
+    page = _make_page()
+
+    config = ImportPage.build_generation_config(page)
+
+    assert config["mode"] == "single"
+    assert config["strategy"] == "basic"
+
+
+def test_build_generation_config_mixed_mode() -> None:
+    page = _make_page()
+    page._type_mode_combo = _DummyModeCombo("mixed")
+    page._total_count_input = _DummyLineEdit("30")
+    page._strategy_items = [
+        ("basic", _DummyCheck(True), _DummyLineEdit("50")),
+        ("cloze", _DummyCheck(True), _DummyLineEdit("30")),
+        ("single_choice", _DummyCheck(False), _DummyLineEdit("20")),
+    ]
+
+    config = ImportPage.build_generation_config(page)
+
+    assert config["mode"] == "mixed"
+    assert config["target_total"] == 30
+    assert config["strategy_mix"] == [
+        {"strategy": "basic", "ratio": 50},
+        {"strategy": "cloze", "ratio": 30},
+    ]
 
 
 def test_batch_convert_done_sets_result_and_switches(monkeypatch):

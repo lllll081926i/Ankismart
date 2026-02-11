@@ -106,6 +106,7 @@ class GenerateRequest(BaseModel):
     tags: list[str] = Field(default_factory=list)
     trace_id: str = ""
     source_path: str = ""  # Original file path, used for image attachment
+    target_count: int = 0  # 0 means keep strategy default card count
 
 
 # ---------------------------------------------------------------------------

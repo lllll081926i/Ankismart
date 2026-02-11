@@ -10,7 +10,9 @@ from ankismart.card_gen.prompts import (
     BASIC_SYSTEM_PROMPT,
     CLOZE_SYSTEM_PROMPT,
     IMAGE_QA_SYSTEM_PROMPT,
+    MULTIPLE_CHOICE_SYSTEM_PROMPT,
     OCR_CORRECTION_PROMPT,
+    SINGLE_CHOICE_SYSTEM_PROMPT,
 )
 from ankismart.core.models import GenerateRequest
 
@@ -105,8 +107,17 @@ class TestCardGeneratorGenerate:
     def test_strategy_map_uses_correct_prompts(self):
         assert _STRATEGY_MAP["basic"][0] == BASIC_SYSTEM_PROMPT
         assert _STRATEGY_MAP["cloze"][0] == CLOZE_SYSTEM_PROMPT
+        assert _STRATEGY_MAP["single_choice"][0] == SINGLE_CHOICE_SYSTEM_PROMPT
+        assert _STRATEGY_MAP["multiple_choice"][0] == MULTIPLE_CHOICE_SYSTEM_PROMPT
         assert _STRATEGY_MAP["image_qa"][0] == IMAGE_QA_SYSTEM_PROMPT
         assert _STRATEGY_MAP["image_occlusion"][0] == IMAGE_QA_SYSTEM_PROMPT
+
+    def test_target_count_trims_generated_cards(self):
+        gen = _make_generator(chat_side_effect=_fake_llm_basic)
+        request = GenerateRequest(markdown="content", strategy="basic", target_count=1)
+        drafts = gen.generate(request)
+
+        assert len(drafts) == 1
 
     def test_image_qa_attaches_image(self, tmp_path):
         img_path = tmp_path / "diagram.png"
