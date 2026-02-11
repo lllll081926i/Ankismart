@@ -88,6 +88,8 @@ class ImportPage(QWidget):
         self._type_combo.setMinimumHeight(36)
         self._type_combo.addItem("基础问答", "basic")
         self._type_combo.addItem("完形填空", "cloze")
+        self._type_combo.addItem("概念解释", "concept")
+        self._type_combo.addItem("关键术语", "key_terms")
         self._type_combo.addItem("图片问答（附图）", "image_qa")
         type_layout.addWidget(self._type_combo)
         form_layout.addLayout(type_layout)

@@ -10,6 +10,9 @@ BASIC_SYSTEM_PROMPT = (
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
     "- Questions should be self-contained (understandable without the source text)\n"
+    "- Avoid overly simple or overly broad questions; each card should test "
+    "a specific, meaningful piece of knowledge\n"
+    "- If the content is in Chinese, generate cards in Chinese\n"
     "\n"
     "Example output:\n"
     "[\n"
@@ -37,6 +40,9 @@ CLOZE_SYSTEM_PROMPT = (
     "- Create 3-10 cards depending on content density\n"
     "- Cloze deletions should target key terms, definitions, numbers, "
     "or important facts\n"
+    "- Avoid overly simple or overly broad deletions; each cloze should "
+    "test a specific, meaningful piece of knowledge\n"
+    "- If the content is in Chinese, generate cards in Chinese\n"
     "\n"
     "Example output:\n"
     "[\n"
@@ -71,6 +77,70 @@ IMAGE_QA_SYSTEM_PROMPT = (
     '  {"Front": "What structure surrounds the cell nucleus?",\n'
     '   "Back": "Nuclear envelope (nuclear membrane) - '
     'a double membrane with nuclear pores."}\n'
+    "]\n"
+)
+
+CONCEPT_SYSTEM_PROMPT = (
+    "You are an expert flashcard creator. Given Markdown content, "
+    "identify the core concepts and create flashcards where the front "
+    "is a concept name and the back is a detailed explanation.\n"
+    "\n"
+    "Rules:\n"
+    "- Front: the concept name or phrase (concise)\n"
+    "- Back: a detailed explanation covering the principle, significance, "
+    "and at least one concrete example\n"
+    '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
+    "- No explanations or extra text outside the JSON array\n"
+    "- Create 3-10 cards depending on content density\n"
+    "- Focus on concepts that require understanding, not simple facts\n"
+    "- If the content is in Chinese, generate cards in Chinese\n"
+    "\n"
+    "Example output:\n"
+    "[\n"
+    '  {"Front": "Photosynthesis",\n'
+    '   "Back": "The biological process by which green plants convert '
+    "light energy into chemical energy. It occurs in chloroplasts via "
+    "two stages: light-dependent reactions (in thylakoids) and the "
+    "Calvin cycle (in stroma). Significance: it is the primary source "
+    "of oxygen and organic matter on Earth. Example: leaves appear green "
+    'because chlorophyll reflects green light while absorbing red and blue."},\n'
+    '  {"Front": "Cellular respiration",\n'
+    '   "Back": "The metabolic process that breaks down glucose to produce '
+    "ATP. It involves glycolysis, the Krebs cycle, and oxidative "
+    "phosphorylation. Unlike photosynthesis, it consumes oxygen and "
+    'releases CO2. Example: muscle cells increase respiration during exercise."}\n'
+    "]\n"
+)
+
+KEY_TERMS_SYSTEM_PROMPT = (
+    "You are an expert flashcard creator. Given Markdown content, "
+    "extract key terms and create flashcards where the front is a term "
+    "and the back contains its definition plus a contextual example sentence.\n"
+    "\n"
+    "Rules:\n"
+    "- Front: the key term or phrase\n"
+    "- Back: a clear definition followed by an example sentence showing "
+    "the term used in context\n"
+    '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
+    "- No explanations or extra text outside the JSON array\n"
+    "- Create 3-10 cards depending on content density\n"
+    "- Prioritize domain-specific or technical terms over common vocabulary\n"
+    "- If the content is in Chinese, generate cards in Chinese\n"
+    "\n"
+    "Example output:\n"
+    "[\n"
+    '  {"Front": "Chloroplast",\n'
+    '   "Back": "Definition: A membrane-bound organelle found in plant cells '
+    "that is the site of photosynthesis. It contains chlorophyll, which "
+    "captures light energy.\\n\\n"
+    'Example: \\"The chloroplasts in leaf cells give plants their green color '
+    'and enable them to produce glucose from sunlight.\\""},\n'
+    '  {"Front": "ATP (Adenosine Triphosphate)",\n'
+    '   "Back": "Definition: The primary energy currency of cells, consisting '
+    "of adenine, ribose, and three phosphate groups. Energy is released when "
+    "the terminal phosphate bond is hydrolyzed.\\n\\n"
+    'Example: \\"During muscle contraction, ATP is hydrolyzed to ADP to '
+    'provide the energy needed for myosin to pull on actin filaments.\\""}' "\n"
     "]\n"
 )
 

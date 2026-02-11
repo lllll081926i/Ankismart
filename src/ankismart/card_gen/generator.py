@@ -7,7 +7,9 @@ from ankismart.card_gen.postprocess import build_card_drafts, parse_llm_output
 from ankismart.card_gen.prompts import (
     BASIC_SYSTEM_PROMPT,
     CLOZE_SYSTEM_PROMPT,
+    CONCEPT_SYSTEM_PROMPT,
     IMAGE_QA_SYSTEM_PROMPT,
+    KEY_TERMS_SYSTEM_PROMPT,
     OCR_CORRECTION_PROMPT,
 )
 from ankismart.core.logging import get_logger
@@ -19,6 +21,8 @@ logger = get_logger("card_gen")
 _STRATEGY_MAP: dict[str, tuple[str, str]] = {
     "basic": (BASIC_SYSTEM_PROMPT, "Basic"),
     "cloze": (CLOZE_SYSTEM_PROMPT, "Cloze"),
+    "concept": (CONCEPT_SYSTEM_PROMPT, "Basic"),
+    "key_terms": (KEY_TERMS_SYSTEM_PROMPT, "Basic"),
     "image_qa": (IMAGE_QA_SYSTEM_PROMPT, "Basic"),
     "image_occlusion": (IMAGE_QA_SYSTEM_PROMPT, "Basic"),
 }
