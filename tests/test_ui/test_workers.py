@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from ankismart.core.models import MarkdownResult
 from ankismart.ui.workers import BatchGenerateWorker
+from ankismart.ui.workers import BatchConvertWorker
 
 
 def test_allocate_mix_counts_distributes_total() -> None:
@@ -39,3 +43,34 @@ def test_allocate_mix_counts_handles_invalid_ratio_items() -> None:
 
     assert counts == {}
 
+
+def test_batch_convert_worker_has_ocr_progress_signal() -> None:
+    worker = BatchConvertWorker([Path("demo.pdf")])
+    assert hasattr(worker, "ocr_progress")
+
+
+def test_batch_convert_worker_emits_ocr_progress(monkeypatch) -> None:
+    captured_messages: list[str] = []
+
+    class _FakeConverter:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def convert(self, path, *, progress_callback=None):
+            if progress_callback is not None:
+                progress_callback("OCR 正在识别第 1 页...")
+            return MarkdownResult(
+                content="# ok",
+                source_path=str(path),
+                source_format="pdf",
+                trace_id="t-ocr",
+            )
+
+    monkeypatch.setattr("ankismart.ui.workers.DocumentConverter", _FakeConverter)
+
+    worker = BatchConvertWorker([Path("demo.pdf")])
+    worker.ocr_progress.connect(captured_messages.append)
+
+    worker.run()
+
+    assert any("OCR" in msg for msg in captured_messages)

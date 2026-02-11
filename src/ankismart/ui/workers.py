@@ -154,6 +154,7 @@ _IO_EXTENSIONS = {".md", ".txt", ".docx", ".pptx"}
 class BatchConvertWorker(QThread):
     finished = Signal(BatchConvertResult)
     file_progress = Signal(int, int, str)  # current, total, filename
+    ocr_progress = Signal(str)
     error = Signal(str)
 
     def __init__(self, file_paths: list[Path], config=None) -> None:
@@ -205,7 +206,7 @@ class BatchConvertWorker(QThread):
                 completed += 1
                 self.file_progress.emit(completed, total, path.name)
                 try:
-                    result = converter.convert(path)
+                    result = converter.convert(path, progress_callback=self.ocr_progress.emit)
                     results_by_idx[idx] = ConvertedDocument(
                         result=result, file_name=path.name
                     )

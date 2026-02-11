@@ -120,11 +120,23 @@ def download_missing_ocr_models(progress_callback=None) -> list[str]:
 
     total = len(missing)
     for idx, model_name in enumerate(missing, start=1):
+        logger.info(
+            "Starting OCR model download",
+            extra={"model_name": model_name, "index": idx, "total": total},
+        )
         if progress_callback is not None:
-            progress_callback(idx - 1, total, f"正在下载模型 {model_name}...")
+            progress_callback(
+                idx - 1,
+                total,
+                f"正在下载模型 {model_name}（{idx}/{total}）...",
+            )
         official_models[model_name]
+        logger.info(
+            "OCR model download completed",
+            extra={"model_name": model_name, "index": idx, "total": total},
+        )
         if progress_callback is not None:
-            progress_callback(idx, total, f"模型下载完成：{model_name}")
+            progress_callback(idx, total, f"模型下载完成：{model_name}（{idx}/{total}）")
 
     remain = get_missing_ocr_models()
     if remain:
@@ -403,7 +415,13 @@ def _ocr_image(ocr: PaddleOCR, image: Image.Image) -> str:
     return "\n".join(lines)
 
 
-def convert(file_path: Path, trace_id: str = "", *, ocr_correction_fn=None) -> MarkdownResult:
+def convert(
+    file_path: Path,
+    trace_id: str = "",
+    *,
+    ocr_correction_fn=None,
+    progress_callback=None,
+) -> MarkdownResult:
     """Convert a PDF file to Markdown via OCR."""
     trace_id = trace_id or get_trace_id()
 
@@ -419,6 +437,8 @@ def convert(file_path: Path, trace_id: str = "", *, ocr_correction_fn=None) -> M
         page_count = 0
         for i, image in enumerate(_pdf_to_images(file_path), 1):
             page_count += 1
+            if progress_callback is not None:
+                progress_callback(f"OCR 正在识别第 {i} 页...")
             with timed(f"ocr_page_{i}"):
                 ocr = _get_ocr()
                 page_text = _ocr_image(ocr, image)
@@ -438,6 +458,9 @@ def convert(file_path: Path, trace_id: str = "", *, ocr_correction_fn=None) -> M
                 code=ErrorCode.E_OCR_FAILED,
                 trace_id=trace_id,
             )
+
+        if progress_callback is not None:
+            progress_callback(f"OCR 识别完成，共 {page_count} 页")
 
         content = "\n\n---\n\n".join(sections) if sections else ""
 
@@ -466,7 +489,13 @@ def convert(file_path: Path, trace_id: str = "", *, ocr_correction_fn=None) -> M
     )
 
 
-def convert_image(file_path: Path, trace_id: str = "", *, ocr_correction_fn=None) -> MarkdownResult:
+def convert_image(
+    file_path: Path,
+    trace_id: str = "",
+    *,
+    ocr_correction_fn=None,
+    progress_callback=None,
+) -> MarkdownResult:
     """Convert a single image file to Markdown via OCR."""
     trace_id = trace_id or get_trace_id()
 
@@ -480,7 +509,11 @@ def convert_image(file_path: Path, trace_id: str = "", *, ocr_correction_fn=None
     with timed("ocr_image_convert"):
         image = Image.open(file_path)
         ocr = _get_ocr()
+        if progress_callback is not None:
+            progress_callback("OCR 正在识别图片...")
         text = _ocr_image(ocr, image)
+        if progress_callback is not None:
+            progress_callback("OCR 图片识别完成")
 
         # Optional LLM-based OCR correction
         if text.strip() and ocr_correction_fn is not None:

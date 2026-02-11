@@ -155,6 +155,7 @@ class ImportPage(QWidget):
 
         layout.addLayout(form_layout)
         layout.addSpacing(10)
+        layout.addStretch()
 
         # --- Convert button ---
         self._btn_convert = QPushButton("转换文档")
@@ -173,8 +174,6 @@ class ImportPage(QWidget):
 
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
-
-        layout.addStretch()
 
         # Load deck list from Anki
         self._load_decks()
@@ -318,6 +317,9 @@ class ImportPage(QWidget):
         dialog.setWindowModality(Qt.WindowModality.WindowModal)
         dialog.setMinimumDuration(0)
         dialog.setAutoClose(True)
+        dialog.setValue(0)
+        dialog.show()
+        QApplication.processEvents()
 
         def _on_progress(done: int, total: int, message: str) -> None:
             if dialog.wasCanceled():
@@ -328,6 +330,7 @@ class ImportPage(QWidget):
             QApplication.processEvents()
 
         try:
+            self._status_label.setText("正在下载 OCR 模型...")
             download_missing_ocr_models(progress_callback=_on_progress)
             dialog.setValue(len(missing))
             self._status_label.setText("OCR 模型已就绪")
@@ -358,6 +361,8 @@ class ImportPage(QWidget):
 
         worker = BatchConvertWorker(self._file_paths, self._main.config)
         worker.file_progress.connect(self._on_file_progress)
+        if hasattr(worker, "ocr_progress"):
+            worker.ocr_progress.connect(self._on_ocr_progress)
         worker.finished.connect(self._on_batch_convert_done)
         worker.error.connect(self._on_error)
         worker.start()
@@ -366,6 +371,9 @@ class ImportPage(QWidget):
     def _on_file_progress(self, current: int, total: int, filename: str) -> None:
         self._progress.setValue(current)
         self._status_label.setText(f"正在转换 ({current}/{total}): {filename}")
+
+    def _on_ocr_progress(self, message: str) -> None:
+        self._status_label.setText(message)
 
     def _on_batch_convert_done(self, result: BatchConvertResult) -> None:
         self._progress.hide()

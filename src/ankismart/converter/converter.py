@@ -41,7 +41,7 @@ class DocumentConverter:
     def __init__(self, *, ocr_correction_fn: Callable[[str], str] | None = None) -> None:
         self._ocr_correction_fn = ocr_correction_fn
 
-    def convert(self, file_path: Path) -> MarkdownResult:
+    def convert(self, file_path: Path, *, progress_callback: Callable[[str], None] | None = None) -> MarkdownResult:
         with trace_context() as trace_id:
             with timed("convert_total"):
                 if not file_path.exists():
@@ -82,6 +82,13 @@ class DocumentConverter:
                         result = converter_fn(
                             file_path, trace_id,
                             ocr_correction_fn=self._ocr_correction_fn,
+                            progress_callback=progress_callback,
+                        )
+                    elif file_type in ("pdf", "image"):
+                        result = converter_fn(
+                            file_path,
+                            trace_id,
+                            progress_callback=progress_callback,
                         )
                     else:
                         result = converter_fn(file_path, trace_id)
