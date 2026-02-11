@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.core.models import BatchConvertResult, ConvertedDocument, MarkdownResult
 from ankismart.ui.import_page import ImportPage
 
@@ -9,12 +10,22 @@ from ankismart.ui.import_page import ImportPage
 class _DummyCombo:
     def __init__(self, value: str) -> None:
         self._value = value
+        self._items: list[str] = [value] if value else []
 
     def currentData(self) -> str:
         return self._value
 
     def currentText(self) -> str:
         return self._value
+
+    def setCurrentText(self, value: str) -> None:
+        self._value = value
+
+    def clear(self) -> None:
+        self._items = []
+
+    def addItem(self, value: str) -> None:
+        self._items.append(value)
 
 
 class _DummyLineEdit:
@@ -24,29 +35,27 @@ class _DummyLineEdit:
     def text(self) -> str:
         return self._text
 
+    def setText(self, text: str) -> None:
+        self._text = text
+
 
 class _DummyMain:
-    class _Config:
-        from ankismart.core.config import LLMProviderConfig
-
-        _provider = LLMProviderConfig(
-            id="test", name="OpenAI", api_key="test-key",
-            base_url="https://api.openai.com/v1", model="gpt-4o",
+    def __init__(self) -> None:
+        self.config = AppConfig(
+            llm_providers=[
+                LLMProviderConfig(
+                    id="test",
+                    name="OpenAI",
+                    api_key="test-key",
+                    base_url="https://api.openai.com/v1",
+                    model="gpt-4o",
+                )
+            ],
+            active_provider_id="test",
         )
-        llm_providers = [_provider]
-        active_provider_id = "test"
-        anki_connect_url = "http://127.0.0.1:8765"
-        anki_connect_key = ""
-        ocr_correction = False
-
-        @property
-        def active_provider(self):
-            return self._provider
-
-    config = _Config()
-    batch_result = None
-    _switched_to_preview = False
-    _loaded_batch_result = None
+        self.batch_result = None
+        self._switched_to_preview = False
+        self._loaded_batch_result = None
 
     def switch_to_preview(self):
         self._switched_to_preview = True
@@ -99,6 +108,18 @@ def _make_page():
         "_Btn", (), {"setEnabled": lambda self, v: None}
     )()
     return page
+
+
+def _make_warning_box_collector(collected: list[tuple[str, str]]):
+    return type(
+        "_MB",
+        (),
+        {
+            "warning": staticmethod(
+                lambda _parent, title, msg: collected.append((title, msg))
+            )
+        },
+    )
 
 
 def test_build_generation_config_single_mode() -> None:
@@ -281,6 +302,9 @@ def test_start_convert_uses_batch_worker(monkeypatch):
     monkeypatch.setattr(
         "ankismart.ui.import_page.BatchConvertWorker", _FakeBatchWorker
     )
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.save_config", lambda cfg: None
+    )
 
     page = _make_page()
     page._file_paths = [Path("a.md"), Path("b.docx")]
@@ -289,3 +313,97 @@ def test_start_convert_uses_batch_worker(monkeypatch):
 
     assert len(captured["file_paths"]) == 2
     assert captured["file_paths"][0] == Path("a.md")
+
+
+def test_start_convert_rejects_empty_api_key_for_non_ollama(monkeypatch):
+    page = _make_page()
+    page._file_paths = [Path("a.md")]
+    page._main.config = AppConfig(
+        llm_providers=[
+            LLMProviderConfig(id="p1", name="OpenAI", api_key="", model="gpt-4o")
+        ],
+        active_provider_id="p1",
+    )
+
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr("ankismart.ui.import_page.QMessageBox", _make_warning_box_collector(warnings))
+    monkeypatch.setattr(ImportPage, "_ensure_ocr_models_ready", lambda self: True)
+
+    ImportPage._start_convert(page)
+
+    assert len(warnings) == 1
+    assert "API" in warnings[0][1]
+
+
+def test_start_convert_allows_empty_api_key_for_ollama(monkeypatch):
+    page = _make_page()
+    page._file_paths = [Path("a.md")]
+    page._main.config = AppConfig(
+        llm_providers=[
+            LLMProviderConfig(id="p1", name="Ollama (本地)", api_key="", model="llama3")
+        ],
+        active_provider_id="p1",
+    )
+
+    started = {"value": False}
+
+    class _FakeBatchWorker:
+        def __init__(self, file_paths, config=None):
+            self.file_progress = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.finished = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.error = type("_Sig", (), {"connect": lambda self, fn: None})()
+
+        def start(self):
+            started["value"] = True
+
+    monkeypatch.setattr("ankismart.ui.import_page.BatchConvertWorker", _FakeBatchWorker)
+    monkeypatch.setattr("ankismart.ui.import_page.save_config", lambda cfg: None)
+    monkeypatch.setattr(ImportPage, "_ensure_ocr_models_ready", lambda self: True)
+
+    ImportPage._start_convert(page)
+
+    assert started["value"] is True
+
+
+def test_start_convert_rejects_empty_deck(monkeypatch):
+    page = _make_page()
+    page._file_paths = [Path("a.md")]
+    page._deck_combo = _DummyCombo("   ")
+
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr("ankismart.ui.import_page.QMessageBox", _make_warning_box_collector(warnings))
+    monkeypatch.setattr(ImportPage, "_ensure_ocr_models_ready", lambda self: True)
+
+    ImportPage._start_convert(page)
+
+    assert len(warnings) == 1
+    assert "牌组" in warnings[0][1]
+
+
+def test_start_convert_rejects_mixed_mode_without_positive_ratio(monkeypatch):
+    page = _make_page()
+    page._file_paths = [Path("a.md")]
+    page._type_mode_combo = _DummyModeCombo("mixed")
+    page._strategy_items = [
+        ("basic", _DummyCheck(True), _DummyLineEdit("0")),
+        ("cloze", _DummyCheck(True), _DummyLineEdit("0")),
+    ]
+
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr("ankismart.ui.import_page.QMessageBox", _make_warning_box_collector(warnings))
+    monkeypatch.setattr(ImportPage, "_ensure_ocr_models_ready", lambda self: True)
+
+    ImportPage._start_convert(page)
+
+    assert len(warnings) == 1
+    assert "占比" in warnings[0][1]
+
+
+def test_on_decks_loaded_restores_last_deck_choice():
+    page = _make_page()
+    page._main.config.last_deck = "MyDeck"
+    page._deck_combo = _DummyCombo("TempDeck")
+
+    ImportPage._on_decks_loaded(page, ["Default", "MyDeck", "Other"])
+
+    assert page._deck_combo.currentText() == "MyDeck"

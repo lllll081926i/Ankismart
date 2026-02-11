@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ipaddress
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -11,10 +13,24 @@ from ankismart.core.tracing import get_trace_id
 logger = get_logger("anki_gateway.client")
 
 
+def _is_loopback_endpoint(url: str) -> bool:
+    """Return True when *url* points to localhost/loopback."""
+    host = (urlparse(url).hostname or "").strip().lower()
+    if not host:
+        return False
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 class AnkiConnectClient:
-    def __init__(self, url: str = "http://127.0.0.1:8765", key: str = "") -> None:
+    def __init__(self, url: str = "http://127.0.0.1:8765", key: str = "", proxy_url: str = "") -> None:
         self._url = url
         self._key = key
+        self._proxy_url = proxy_url
 
     def _request(self, action: str, params: dict[str, Any] | None = None) -> Any:
         """Send a request to AnkiConnect and return the result."""
@@ -26,7 +42,10 @@ class AnkiConnectClient:
             body["key"] = self._key
 
         try:
-            resp = httpx.post(self._url, json=body, timeout=30)
+            client_kwargs: dict[str, object] = {"timeout": 30}
+            if self._proxy_url and not _is_loopback_endpoint(self._url):
+                client_kwargs["proxy"] = self._proxy_url
+            resp = httpx.post(self._url, json=body, **client_kwargs)
             resp.raise_for_status()
         except httpx.ConnectError as exc:
             raise AnkiGatewayError(

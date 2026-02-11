@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -21,17 +22,17 @@ from PySide6.QtWidgets import (
 )
 
 from ankismart.converter.detector import detect_file_type
+from ankismart.core.config import save_config
 from ankismart.core.models import BatchConvertResult
+from ankismart.ui.i18n import t
 from ankismart.ui.workers import BatchConvertWorker, DeckListWorker
-
-# File filter for supported formats
-_FILE_FILTER = (
-    "文档文件 (*.md *.txt *.docx *.pptx *.pdf "
-    "*.png *.jpg *.jpeg *.bmp *.tiff *.webp)"
-)
 
 _SUPPORTED_TYPES = {"markdown", "text", "docx", "pptx", "pdf", "image"}
 _OCR_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"}
+
+
+def _file_filter() -> str:
+    return t("import.file_filter")
 
 
 class ImportPage(QWidget):
@@ -49,20 +50,20 @@ class ImportPage(QWidget):
         layout.setContentsMargins(30, 30, 30, 30)
 
         # Title
-        title = QLabel("导入与生成")
+        title = QLabel(t("import.title"))
         title.setProperty("role", "heading")
         layout.addWidget(title)
 
         # --- File selection ---
         group_file = QVBoxLayout()
         group_file.setSpacing(8)
-        group_file.addWidget(QLabel("选择文档："))
+        group_file.addWidget(QLabel(t("import.select_files")))
 
         file_row = QHBoxLayout()
-        self._file_label = QLabel("未选择文件 (支持 .md, .docx, .pptx, .pdf, 图片)")
+        self._file_label = QLabel(t("import.file_placeholder"))
         self._file_label.setStyleSheet("color: #666666;")
 
-        btn_browse = QPushButton("浏览...")
+        btn_browse = QPushButton(t("import.browse"))
         btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_browse.clicked.connect(self._browse_files)
 
@@ -78,7 +79,7 @@ class ImportPage(QWidget):
         # Deck
         deck_layout = QVBoxLayout()
         deck_layout.setSpacing(5)
-        deck_layout.addWidget(QLabel("目标牌组："))
+        deck_layout.addWidget(QLabel(t("import.deck")))
         self._deck_combo = QComboBox()
         self._deck_combo.setEditable(True)
         self._deck_combo.addItem("Default")
@@ -89,28 +90,28 @@ class ImportPage(QWidget):
         # Type
         type_layout = QVBoxLayout()
         type_layout.setSpacing(5)
-        type_layout.addWidget(QLabel("卡片类型："))
+        type_layout.addWidget(QLabel(t("import.card_type")))
         self._type_combo = QComboBox()
         self._type_combo.setMinimumHeight(36)
-        self._type_combo.addItem("基础问答", "basic")
-        self._type_combo.addItem("完形填空", "cloze")
-        self._type_combo.addItem("概念解释", "concept")
-        self._type_combo.addItem("关键术语", "key_terms")
-        self._type_combo.addItem("单选题", "single_choice")
-        self._type_combo.addItem("多选题", "multiple_choice")
-        self._type_combo.addItem("图片问答（附图）", "image_qa")
+        self._type_combo.addItem(t("card.basic"), "basic")
+        self._type_combo.addItem(t("card.cloze"), "cloze")
+        self._type_combo.addItem(t("card.concept"), "concept")
+        self._type_combo.addItem(t("card.key_terms"), "key_terms")
+        self._type_combo.addItem(t("card.single_choice"), "single_choice")
+        self._type_combo.addItem(t("card.multiple_choice"), "multiple_choice")
+        self._type_combo.addItem(t("card.image_qa"), "image_qa")
         type_layout.addWidget(self._type_combo)
 
         self._type_mode_combo = QComboBox()
         self._type_mode_combo.setMinimumHeight(36)
-        self._type_mode_combo.addItem("单一题型", "single")
-        self._type_mode_combo.addItem("自定义组合", "mixed")
+        self._type_mode_combo.addItem(t("import.single_type"), "single")
+        self._type_mode_combo.addItem(t("import.mixed_type"), "mixed")
         self._type_mode_combo.currentIndexChanged.connect(self._on_type_mode_changed)
         type_layout.addWidget(self._type_mode_combo)
 
         self._total_count_input = QLineEdit("20")
         self._total_count_input.setMinimumHeight(36)
-        self._total_count_input.setPlaceholderText("总题数，例如 20")
+        self._total_count_input.setPlaceholderText(t("import.total_count_placeholder"))
         self._total_count_input.hide()
         type_layout.addWidget(self._total_count_input)
 
@@ -119,16 +120,16 @@ class ImportPage(QWidget):
         mixed_layout.setContentsMargins(0, 0, 0, 0)
         mixed_layout.setHorizontalSpacing(8)
         mixed_layout.setVerticalSpacing(6)
-        mixed_layout.addWidget(QLabel("题型"), 0, 0)
-        mixed_layout.addWidget(QLabel("占比(%)"), 0, 1)
+        mixed_layout.addWidget(QLabel(t("import.type_col")), 0, 0)
+        mixed_layout.addWidget(QLabel(t("import.ratio_col")), 0, 1)
 
         strategy_options = [
-            ("basic", "基础问答", "40"),
-            ("cloze", "完形填空", "20"),
-            ("concept", "概念解释", "15"),
-            ("key_terms", "关键术语", "10"),
-            ("single_choice", "单选题", "10"),
-            ("multiple_choice", "多选题", "5"),
+            ("basic", t("card.basic"), "40"),
+            ("cloze", t("card.cloze"), "20"),
+            ("concept", t("card.concept"), "15"),
+            ("key_terms", t("card.key_terms"), "10"),
+            ("single_choice", t("card.single_choice"), "10"),
+            ("multiple_choice", t("card.multiple_choice"), "5"),
         ]
         for row, (key, label_text, default_ratio) in enumerate(strategy_options, start=1):
             checkbox = QCheckBox(label_text)
@@ -147,7 +148,7 @@ class ImportPage(QWidget):
         # Tags
         tags_layout = QVBoxLayout()
         tags_layout.setSpacing(5)
-        tags_layout.addWidget(QLabel("标签（逗号分隔）："))
+        tags_layout.addWidget(QLabel(t("import.tags")))
         self._tags_input = QLineEdit("ankismart")
         self._tags_input.setMinimumHeight(36)
         tags_layout.addWidget(self._tags_input)
@@ -158,13 +159,21 @@ class ImportPage(QWidget):
         layout.addStretch()
 
         # --- Convert button ---
-        self._btn_convert = QPushButton("转换文档")
+        self._btn_convert = QPushButton(t("import.convert"))
         self._btn_convert.setMinimumHeight(44)
         self._btn_convert.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_convert.setProperty("role", "primary")
         self._btn_convert.setEnabled(False)
         self._btn_convert.clicked.connect(self._start_convert)
         layout.addWidget(self._btn_convert)
+
+        # --- Cancel button ---
+        self._btn_cancel = QPushButton(t("import.cancel"))
+        self._btn_cancel.setMinimumHeight(44)
+        self._btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_cancel.clicked.connect(self._cancel_convert)
+        self._btn_cancel.hide()
+        layout.addWidget(self._btn_cancel)
 
         # --- Progress ---
         self._progress = QProgressBar()
@@ -178,11 +187,58 @@ class ImportPage(QWidget):
         # Load deck list from Anki
         self._load_decks()
 
+        # Restore last-used values
+        self._restore_last_values()
+
+        # Keyboard shortcuts
+        QShortcut(QKeySequence("Ctrl+O"), self, self._browse_files)
+
+    def _restore_last_values(self) -> None:
+        config = self._main.config
+        if config.last_deck:
+            self._deck_combo.setCurrentText(config.last_deck)
+        if config.last_tags:
+            self._tags_input.setText(config.last_tags)
+        if config.last_strategy:
+            for i in range(self._type_combo.count()):
+                if self._type_combo.itemData(i) == config.last_strategy:
+                    self._type_combo.setCurrentIndex(i)
+                    break
+
+    @staticmethod
+    def _provider_requires_api_key(provider) -> bool:
+        if provider is None:
+            return True
+        provider_name = (provider.name or "").strip().lower()
+        return "ollama" not in provider_name
+
+    def _save_last_values(self) -> None:
+        config = self._main.config
+        config.last_deck = self._deck_combo.currentText()
+        config.last_tags = self._tags_input.text()
+        config.last_strategy = self._type_combo.currentData() or "basic"
+        try:
+            save_config(config)
+        except Exception:
+            pass
+        self._main.config = config
+
     def _on_type_mode_changed(self) -> None:
         is_mixed = (self._type_mode_combo.currentData() == "mixed")
         self._type_combo.setVisible(not is_mixed)
         self._mixed_widget.setVisible(is_mixed)
         self._total_count_input.setVisible(is_mixed)
+
+    def cancel_operation(self) -> None:
+        """Cancel the current conversion if running."""
+        if self._worker and self._worker.isRunning():
+            if hasattr(self._worker, 'cancel'):
+                self._worker.cancel()
+            self._status_label.setText(t("import.cancelled"))
+            self._progress.hide()
+            self._btn_convert.setEnabled(True)
+            if hasattr(self, '_btn_cancel'):
+                self._btn_cancel.hide()
 
     def build_generation_config(self) -> dict:
         mode = self._type_mode_combo.currentData() or "single"
@@ -224,7 +280,7 @@ class ImportPage(QWidget):
     # ------------------------------------------------------------------
 
     def _browse_files(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, "选择文档", "", _FILE_FILTER)
+        paths, _ = QFileDialog.getOpenFileNames(self, t("import.select_dialog"), "", _file_filter())
         if not paths:
             return
 
@@ -240,14 +296,14 @@ class ImportPage(QWidget):
                 continue
 
             if file_type not in _SUPPORTED_TYPES:
-                unsupported.append(f"{path.name}: 当前版本不支持该文件类型")
+                unsupported.append(f"{path.name}: {t('import.unsupported_type')}")
                 continue
 
             valid_paths.append(path)
 
         if unsupported:
             QMessageBox.warning(
-                self, "错误", "\n".join(unsupported)
+                self, t("error.title"), "\n".join(unsupported)
             )
 
         if not valid_paths:
@@ -259,7 +315,7 @@ class ImportPage(QWidget):
         if len(valid_paths) == 1:
             self._file_label.setText(valid_paths[0].name)
         else:
-            self._file_label.setText(f"已选择 {len(valid_paths)} 个文件")
+            self._file_label.setText(t("import.selected_files", count=len(valid_paths)))
         self._file_label.setStyleSheet("")
         self._btn_convert.setEnabled(True)
 
@@ -269,16 +325,20 @@ class ImportPage(QWidget):
 
     def _load_decks(self) -> None:
         config = self._main.config
-        worker = DeckListWorker(config.anki_connect_url, config.anki_connect_key)
+        worker = DeckListWorker(config.anki_connect_url, config.anki_connect_key, proxy_url=config.proxy_url)
         worker.finished.connect(self._on_decks_loaded)
         worker.error.connect(lambda _: None)  # Silently ignore if Anki not running
         worker.start()
         self._deck_worker = worker
 
     def _on_decks_loaded(self, decks: list[str]) -> None:
+        current_text = self._deck_combo.currentText().strip()
         self._deck_combo.clear()
         for deck in decks:
             self._deck_combo.addItem(deck)
+        preferred_deck = self._main.config.last_deck.strip() or current_text
+        if preferred_deck:
+            self._deck_combo.setCurrentText(preferred_deck)
 
     # ------------------------------------------------------------------
     # Batch conversion
@@ -303,17 +363,17 @@ class ImportPage(QWidget):
         model_list = "\n".join(f"- {name}" for name in missing)
         answer = QMessageBox.question(
             self,
-            "OCR 模型缺失",
-            f"检测到以下 OCR 模型缺失：\n{model_list}\n\n是否现在下载？\n（仅在处理 PDF/图片 时需要）",
+            t("import.ocr_missing"),
+            t("import.ocr_download_prompt", models=model_list),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
         if answer != QMessageBox.StandardButton.Yes:
-            self._status_label.setText("已取消 OCR 模型下载")
+            self._status_label.setText(t("import.ocr_cancelled"))
             return False
 
-        dialog = QProgressDialog("准备下载 OCR 模型...", "取消", 0, len(missing), self)
-        dialog.setWindowTitle("下载 OCR 模型")
+        dialog = QProgressDialog(t("import.ocr_preparing"), t("import.cancel"), 0, len(missing), self)
+        dialog.setWindowTitle(t("import.ocr_download_title"))
         dialog.setWindowModality(Qt.WindowModality.WindowModal)
         dialog.setMinimumDuration(0)
         dialog.setAutoClose(True)
@@ -323,25 +383,25 @@ class ImportPage(QWidget):
 
         def _on_progress(done: int, total: int, message: str) -> None:
             if dialog.wasCanceled():
-                raise RuntimeError("用户取消下载")
+                raise RuntimeError(t("import.ocr_user_cancel"))
             dialog.setMaximum(max(1, total))
             dialog.setValue(min(done, total))
             dialog.setLabelText(message)
             QApplication.processEvents()
 
         try:
-            self._status_label.setText("正在下载 OCR 模型...")
+            self._status_label.setText(t("import.ocr_downloading"))
             download_missing_ocr_models(progress_callback=_on_progress)
             dialog.setValue(len(missing))
-            self._status_label.setText("OCR 模型已就绪")
+            self._status_label.setText(t("import.ocr_ready"))
             return True
         except Exception as exc:
             dialog.cancel()
-            self._status_label.setText("OCR 模型下载失败")
+            self._status_label.setText(t("import.ocr_download_failed"))
             QMessageBox.warning(
                 self,
-                "OCR 模型下载失败",
-                f"下载 OCR 模型失败：{exc}",
+                t("import.ocr_download_failed"),
+                t("import.ocr_download_failed_detail", error=exc),
             )
             return False
 
@@ -352,12 +412,48 @@ class ImportPage(QWidget):
         if not self._ensure_ocr_models_ready():
             return
 
+        # Validate configuration
+        config = self._main.config
+        provider = config.active_provider
+        if (
+            provider is None
+            or (
+                self._provider_requires_api_key(provider)
+                and not provider.api_key.strip()
+            )
+        ):
+            QMessageBox.warning(self, t("import.config_error"), t("import.no_api_key"))
+            return
+
+        deck_name = self._deck_combo.currentText().strip()
+        if not deck_name:
+            QMessageBox.warning(self, t("import.config_error"), t("import.no_deck"))
+            return
+
+        # Validate mixed mode ratios
+        if self._type_mode_combo.currentData() == "mixed":
+            has_valid = False
+            for strategy, checkbox, ratio_input in self._strategy_items:
+                if checkbox.isChecked():
+                    try:
+                        ratio = int(ratio_input.text().strip() or "0")
+                        if ratio > 0:
+                            has_valid = True
+                            break
+                    except ValueError:
+                        continue
+            if not has_valid:
+                QMessageBox.warning(self, t("import.config_error"), t("import.mixed_ratio_error"))
+                return
+
         file_count = len(self._file_paths)
         self._btn_convert.setEnabled(False)
         self._progress.setRange(0, file_count)
         self._progress.setValue(0)
         self._progress.show()
-        self._status_label.setText("正在转换文档...")
+        self._status_label.setText(t("import.converting_docs"))
+
+        self._save_last_values()
 
         worker = BatchConvertWorker(self._file_paths, self._main.config)
         worker.file_progress.connect(self._on_file_progress)
@@ -367,10 +463,19 @@ class ImportPage(QWidget):
         worker.error.connect(self._on_error)
         worker.start()
         self._worker = worker
+        if hasattr(self, '_btn_cancel'):
+            self._btn_cancel.show()
+
+    def _cancel_convert(self) -> None:
+        if self._worker and hasattr(self._worker, 'cancel'):
+            self._worker.cancel()
+        if hasattr(self, '_btn_cancel'):
+            self._btn_cancel.hide()
+        self._status_label.setText(t("import.cancelling"))
 
     def _on_file_progress(self, current: int, total: int, filename: str) -> None:
         self._progress.setValue(current)
-        self._status_label.setText(f"正在转换 ({current}/{total}): {filename}")
+        self._status_label.setText(t("import.converting", current=current, total=total, filename=filename))
 
     def _on_ocr_progress(self, message: str) -> None:
         self._status_label.setText(message)
@@ -378,20 +483,22 @@ class ImportPage(QWidget):
     def _on_batch_convert_done(self, result: BatchConvertResult) -> None:
         self._progress.hide()
         self._btn_convert.setEnabled(True)
+        if hasattr(self, '_btn_cancel'):
+            self._btn_cancel.hide()
 
         if result.errors:
             QMessageBox.warning(
                 self,
-                "部分文件转换失败",
+                t("import.partial_fail"),
                 "\n".join(result.errors),
             )
 
         if not result.documents:
-            self._status_label.setText("没有成功转换的文档")
+            self._status_label.setText(t("import.no_docs"))
             return
 
         self._status_label.setText(
-            f"已转换 {len(result.documents)} 个文档"
+            t("import.converted", count=len(result.documents))
         )
         self._main.batch_result = result
         self._main.switch_to_preview()
@@ -399,5 +506,7 @@ class ImportPage(QWidget):
     def _on_error(self, msg: str) -> None:
         self._progress.hide()
         self._btn_convert.setEnabled(True)
+        if hasattr(self, '_btn_cancel'):
+            self._btn_cancel.hide()
         self._status_label.setText("")
-        QMessageBox.warning(self, "错误", msg)
+        QMessageBox.warning(self, t("error.title"), msg)

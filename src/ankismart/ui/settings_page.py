@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -21,10 +22,10 @@ from PySide6.QtWidgets import (
 
 from ankismart.core.config import (
     KNOWN_PROVIDERS,
-    AppConfig,
     LLMProviderConfig,
     save_config,
 )
+from ankismart.ui.i18n import set_language, t
 from ankismart.ui.workers import ConnectionCheckWorker
 
 
@@ -55,12 +56,12 @@ class SettingsPage(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
 
         # Title
-        title = QLabel("设置")
+        title = QLabel(t("settings.title"))
         title.setProperty("role", "heading")
         layout.addWidget(title)
 
         # ── LLM Provider Section ──
-        llm_group = QGroupBox("LLM 服务商设置")
+        llm_group = QGroupBox(t("settings.provider_group"))
         llm_layout = QVBoxLayout(llm_group)
         llm_layout.setSpacing(16)
         llm_layout.setContentsMargins(16, 20, 16, 16)
@@ -69,7 +70,7 @@ class SettingsPage(QWidget):
         sel_row = QHBoxLayout()
         sel_row.setSpacing(15)
         
-        sel_label = QLabel("选择服务商：")
+        sel_label = QLabel(t("settings.provider"))
         sel_label.setFixedWidth(100)
         sel_row.addWidget(sel_label)
 
@@ -78,14 +79,14 @@ class SettingsPage(QWidget):
         self._provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         sel_row.addWidget(self._provider_combo, 1)
 
-        btn_add = QPushButton("新建")
+        btn_add = QPushButton(t("settings.add_provider"))
         btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_add.setFixedWidth(80)
         btn_add.setMinimumHeight(40) # Taller button
         btn_add.clicked.connect(self._add_provider)
         sel_row.addWidget(btn_add)
 
-        self._btn_delete = QPushButton("删除")
+        self._btn_delete = QPushButton(t("settings.remove_provider"))
         self._btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_delete.setFixedWidth(80)
         self._btn_delete.setMinimumHeight(40) # Taller button
@@ -114,27 +115,38 @@ class SettingsPage(QWidget):
         for name in KNOWN_PROVIDERS:
             self._name_combo.addItem(name)
         self._name_combo.currentTextChanged.connect(self._on_name_edited)
-        form.addRow("服务商名称：", self._name_combo)
+        form.addRow(t("settings.name"), self._name_combo)
 
         self._base_url_input = QLineEdit()
         self._base_url_input.setPlaceholderText("https://api.openai.com/v1")
         self._base_url_input.setMinimumHeight(40) # Taller input
-        form.addRow("API 地址：", self._base_url_input)
+        form.addRow(t("settings.base_url"), self._base_url_input)
 
         self._provider_key_input = QLineEdit()
         self._provider_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self._provider_key_input.setPlaceholderText("sk-...")
         self._provider_key_input.setMinimumHeight(40) # Taller input
-        form.addRow("API Key：", self._provider_key_input)
+        form.addRow(t("settings.api_key"), self._provider_key_input)
 
         self._provider_model_input = QLineEdit()
         self._provider_model_input.setPlaceholderText("gpt-4o")
         self._provider_model_input.setMinimumHeight(40) # Taller input
-        form.addRow("模型名称：", self._provider_model_input)
+        form.addRow(t("settings.model"), self._provider_model_input)
+
+        # Ollama model refresh
+        ollama_row = QHBoxLayout()
+        self._btn_refresh_models = QPushButton(t("settings.refresh_models"))
+        self._btn_refresh_models.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_refresh_models.setMinimumHeight(40)
+        self._btn_refresh_models.clicked.connect(self._refresh_ollama_models)
+        self._btn_refresh_models.hide()  # Only shown for Ollama providers
+        ollama_row.addWidget(self._btn_refresh_models)
+        ollama_row.addStretch()
+        form.addRow("", ollama_row)
 
         # Rate limit
         rpm_row = QHBoxLayout()
-        self._rpm_toggle = QPushButton("关")
+        self._rpm_toggle = QPushButton(t("settings.rpm_off"))
         self._rpm_toggle.setCheckable(True)
         self._rpm_toggle.setFixedWidth(70)
         self._rpm_toggle.setMinimumHeight(40) # Taller input
@@ -149,13 +161,13 @@ class SettingsPage(QWidget):
         self._rpm_spin.hide()
         rpm_row.addWidget(self._rpm_spin)
         rpm_row.addStretch()
-        form.addRow("速率限制：", rpm_row)
+        form.addRow(t("settings.rpm"), rpm_row)
 
         llm_layout.addLayout(form)
         layout.addWidget(llm_group)
 
         # ── AnkiConnect + Defaults ──
-        other_group = QGroupBox("通用设置")
+        other_group = QGroupBox(t("settings.other_group"))
         other_layout = QVBoxLayout(other_group)
         other_layout.setContentsMargins(16, 20, 16, 16)
 
@@ -168,30 +180,117 @@ class SettingsPage(QWidget):
         self._anki_url_input = QLineEdit()
         self._anki_url_input.setPlaceholderText("http://127.0.0.1:8765")
         self._anki_url_input.setMinimumHeight(40) # Taller input
-        other_form.addRow("AnkiConnect 地址：", self._anki_url_input)
+        other_form.addRow(t("settings.anki_url"), self._anki_url_input)
 
         self._anki_key_input = QLineEdit()
         self._anki_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._anki_key_input.setPlaceholderText("可选")
+        self._anki_key_input.setPlaceholderText(t("settings.anki_key_placeholder"))
         self._anki_key_input.setMinimumHeight(40) # Taller input
-        other_form.addRow("AnkiConnect Key：", self._anki_key_input)
+        other_form.addRow(t("settings.anki_key"), self._anki_key_input)
 
         self._default_deck_input = QLineEdit()
         self._default_deck_input.setMinimumHeight(40) # Taller input
-        other_form.addRow("默认牌组：", self._default_deck_input)
+        other_form.addRow(t("settings.default_deck"), self._default_deck_input)
 
         self._default_tags_input = QLineEdit()
         self._default_tags_input.setMinimumHeight(40) # Taller input
-        other_form.addRow("默认标签：", self._default_tags_input)
+        other_form.addRow(t("settings.default_tags"), self._default_tags_input)
 
         self._ocr_correction_check = QCheckBox(
-            "启用 OCR 文本纠错（使用 LLM 自动修正 OCR 错误）"
+            t("settings.ocr_correction")
         )
         self._ocr_correction_check.setMinimumHeight(30)
         other_form.addRow("", self._ocr_correction_check)
         
         other_layout.addLayout(other_form)
         layout.addWidget(other_group)
+
+        # ── Language Settings ──
+        lang_group = QGroupBox(t("settings.language_group"))
+        lang_layout = QVBoxLayout(lang_group)
+        lang_layout.setContentsMargins(16, 20, 16, 16)
+
+        lang_form = QFormLayout()
+        self._lang_combo = QComboBox()
+        self._lang_combo.addItem("中文", "zh")
+        self._lang_combo.addItem("English", "en")
+        self._lang_combo.setMinimumHeight(40)
+        lang_form.addRow(t("settings.language"), self._lang_combo)
+        lang_layout.addLayout(lang_form)
+        layout.addWidget(lang_group)
+
+        # ── Generation Parameters ──
+        gen_group = QGroupBox(t("settings.gen_group"))
+        gen_layout = QVBoxLayout(gen_group)
+        gen_layout.setContentsMargins(16, 20, 16, 16)
+
+        gen_form = QFormLayout()
+        gen_form.setSpacing(12)
+        gen_form.setVerticalSpacing(14)
+        gen_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        gen_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
+
+        self._temperature_spin = QDoubleSpinBox()
+        self._temperature_spin.setRange(0.0, 2.0)
+        self._temperature_spin.setSingleStep(0.1)
+        self._temperature_spin.setDecimals(1)
+        self._temperature_spin.setMinimumHeight(40)
+        gen_form.addRow(t("settings.temperature"), self._temperature_spin)
+
+        self._max_tokens_spin = QSpinBox()
+        self._max_tokens_spin.setRange(0, 128000)
+        self._max_tokens_spin.setSpecialValueText(t("settings.max_tokens_default"))
+        self._max_tokens_spin.setSingleStep(256)
+        self._max_tokens_spin.setMinimumHeight(40)
+        gen_form.addRow(t("settings.max_tokens"), self._max_tokens_spin)
+
+        gen_layout.addLayout(gen_form)
+        layout.addWidget(gen_group)
+
+        # ── Network Settings ──
+        net_group = QGroupBox(t("settings.net_group"))
+        net_layout = QVBoxLayout(net_group)
+        net_layout.setContentsMargins(16, 20, 16, 16)
+
+        net_form = QFormLayout()
+        net_form.setSpacing(12)
+        net_form.setVerticalSpacing(14)
+        net_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        net_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
+
+        self._proxy_input = QLineEdit()
+        self._proxy_input.setPlaceholderText(t("settings.proxy_placeholder"))
+        self._proxy_input.setMinimumHeight(40)
+        net_form.addRow(t("settings.proxy"), self._proxy_input)
+
+        net_layout.addLayout(net_form)
+        layout.addWidget(net_group)
+
+        # ── OCR Model Management ──
+        ocr_group = QGroupBox(t("settings.ocr_group"))
+        ocr_layout = QVBoxLayout(ocr_group)
+        ocr_layout.setContentsMargins(16, 20, 16, 16)
+
+        self._ocr_status_label = QLabel(t("settings.ocr_checking"))
+        ocr_layout.addWidget(self._ocr_status_label)
+
+        ocr_btn_row = QHBoxLayout()
+        self._btn_download_ocr = QPushButton(t("settings.ocr_download"))
+        self._btn_download_ocr.setMinimumHeight(40)
+        self._btn_download_ocr.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_download_ocr.clicked.connect(self._download_ocr_models)
+        self._btn_download_ocr.hide()
+        ocr_btn_row.addWidget(self._btn_download_ocr)
+
+        self._btn_check_ocr = QPushButton(t("settings.ocr_check"))
+        self._btn_check_ocr.setMinimumHeight(40)
+        self._btn_check_ocr.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_check_ocr.clicked.connect(self._check_ocr_status)
+        ocr_btn_row.addWidget(self._btn_check_ocr)
+        ocr_btn_row.addStretch()
+
+        ocr_layout.addLayout(ocr_btn_row)
+        layout.addWidget(ocr_group)
 
         layout.addSpacing(15)
 
@@ -200,13 +299,13 @@ class SettingsPage(QWidget):
         btn_bar.setSpacing(25) # Increased spacing
         btn_bar.addStretch()
 
-        btn_test = QPushButton("测试连接")
+        btn_test = QPushButton(t("settings.test_connection"))
         btn_test.setMinimumHeight(48) # Taller button
         btn_test.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_test.clicked.connect(self._test_connection)
         btn_bar.addWidget(btn_test)
 
-        btn_save = QPushButton("保存设置")
+        btn_save = QPushButton(t("settings.save"))
         btn_save.setMinimumHeight(48) # Taller button
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.setProperty("role", "primary")
@@ -239,6 +338,64 @@ class SettingsPage(QWidget):
         self._default_deck_input.setText(config.default_deck)
         self._default_tags_input.setText(", ".join(config.default_tags))
         self._ocr_correction_check.setChecked(config.ocr_correction)
+        self._temperature_spin.setValue(config.llm_temperature)
+        self._max_tokens_spin.setValue(config.llm_max_tokens)
+        self._proxy_input.setText(config.proxy_url)
+        lang_idx = self._lang_combo.findData(config.language)
+        if lang_idx >= 0:
+            self._lang_combo.setCurrentIndex(lang_idx)
+        self._check_ocr_status()
+
+    # ── OCR model management ──
+
+    def _check_ocr_status(self) -> None:
+        """Check which OCR models are installed."""
+        try:
+            from ankismart.converter.ocr_converter import get_missing_ocr_models
+            missing = get_missing_ocr_models()
+            if missing:
+                self._ocr_status_label.setText(t("settings.ocr_missing", models=", ".join(missing)))
+                self._btn_download_ocr.show()
+            else:
+                self._ocr_status_label.setText(t("settings.ocr_ready"))
+                self._btn_download_ocr.hide()
+        except Exception as exc:
+            self._ocr_status_label.setText(t("settings.ocr_check_failed", error=exc))
+
+    def _download_ocr_models(self) -> None:
+        """Download missing OCR models."""
+        self._btn_download_ocr.setEnabled(False)
+        self._ocr_status_label.setText(t("settings.ocr_downloading"))
+
+        from PySide6.QtCore import QThread, Signal
+
+        class _DownloadWorker(QThread):
+            progress = Signal(str)
+            finished = Signal()
+            error = Signal(str)
+
+            def run(self):
+                try:
+                    from ankismart.converter.ocr_converter import download_missing_ocr_models
+                    download_missing_ocr_models(progress_callback=lambda msg: self.progress.emit(msg))
+                    self.finished.emit()
+                except Exception as exc:
+                    self.error.emit(str(exc))
+
+        self._ocr_worker = _DownloadWorker()
+        self._ocr_worker.progress.connect(lambda msg: self._ocr_status_label.setText(msg))
+        self._ocr_worker.finished.connect(self._on_ocr_download_done)
+        self._ocr_worker.error.connect(self._on_ocr_download_error)
+        self._ocr_worker.start()
+
+    def _on_ocr_download_done(self) -> None:
+        self._ocr_status_label.setText(t("settings.ocr_download_done"))
+        self._btn_download_ocr.hide()
+        self._btn_download_ocr.setEnabled(True)
+
+    def _on_ocr_download_error(self, msg: str) -> None:
+        self._ocr_status_label.setText(t("settings.ocr_download_failed", error=msg))
+        self._btn_download_ocr.setEnabled(True)
 
     def _refresh_provider_combo(self) -> None:
         self._updating_ui = True
@@ -248,10 +405,10 @@ class SettingsPage(QWidget):
         
         self._provider_combo.clear()
         for i, p in enumerate(self._providers):
-            label = p.name or "(未命名)"
+            label = p.name or t("settings.unnamed")
             if p.model:
                 label += f" - {p.model}"
-            suffix = " [当前使用]" if p.id == self._active_provider_id else ""
+            suffix = t("settings.active_suffix") if p.id == self._active_provider_id else ""
             self._provider_combo.addItem(label + suffix, userData=p.id)
             
             if p.id == self._active_provider_id:
@@ -311,11 +468,13 @@ class SettingsPage(QWidget):
         self._provider_model_input.setText(p.model)
         has_rpm = p.rpm_limit > 0
         self._rpm_toggle.setChecked(has_rpm)
-        self._rpm_toggle.setText("开" if has_rpm else "关")
+        self._rpm_toggle.setText(t("settings.rpm_on") if has_rpm else t("settings.rpm_off"))
         self._rpm_spin.setVisible(has_rpm)
         if has_rpm:
             self._rpm_spin.setValue(p.rpm_limit)
-        
+        is_ollama = "ollama" in p.name.lower()
+        self._btn_refresh_models.setVisible(is_ollama)
+
         self._updating_ui = False
 
     def _on_name_edited(self, text: str) -> None:
@@ -325,9 +484,12 @@ class SettingsPage(QWidget):
         if url:
             self._base_url_input.setText(url)
         self._save_form_to_provider()
+        # Show/hide Ollama model refresh button
+        is_ollama = "ollama" in text.lower()
+        self._btn_refresh_models.setVisible(is_ollama)
 
     def _on_rpm_toggled(self, checked: bool) -> None:
-        self._rpm_toggle.setText("开" if checked else "关")
+        self._rpm_toggle.setText(t("settings.rpm_on") if checked else t("settings.rpm_off"))
         self._rpm_spin.setVisible(checked)
         self._save_form_to_provider()
 
@@ -341,10 +503,10 @@ class SettingsPage(QWidget):
 
     def _delete_provider(self) -> None:
         if len(self._providers) <= 1:
-            QMessageBox.warning(self, "警告", "至少需要保留一个服务商配置。")
+            QMessageBox.warning(self, t("settings.delete_warning"), t("settings.delete_min"))
             return
             
-        if QMessageBox.question(self, "确认", "确定要删除当前选中的服务商配置吗？") != QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(self, t("settings.delete_confirm"), t("settings.delete_confirm_msg")) != QMessageBox.StandardButton.Yes:
             return
 
         idx = self._provider_combo.currentIndex()
@@ -359,52 +521,103 @@ class SettingsPage(QWidget):
 
     # ── Save / test ──
 
+    def _refresh_ollama_models(self) -> None:
+        """Fetch model list from Ollama /api/tags endpoint."""
+        base_url = self._base_url_input.text().strip()
+        if not base_url:
+            QMessageBox.warning(self, t("error.title"), t("settings.no_base_url"))
+            return
+
+        # Derive Ollama API URL from base_url (remove /v1 suffix if present)
+        api_base = base_url.rstrip("/")
+        if api_base.endswith("/v1"):
+            api_base = api_base[:-3]
+
+        self._btn_refresh_models.setEnabled(False)
+        self._btn_refresh_models.setText(t("settings.refreshing"))
+
+        import httpx
+        try:
+            resp = httpx.get(f"{api_base}/api/tags", timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            models = [m["name"] for m in data.get("models", [])]
+            if not models:
+                QMessageBox.information(self, t("settings.hint"), t("settings.no_models"))
+            else:
+                from PySide6.QtWidgets import QInputDialog
+                model, ok = QInputDialog.getItem(
+                    self, t("settings.select_model"), t("settings.available_models"), models, 0, False
+                )
+                if ok and model:
+                    self._provider_model_input.setText(model)
+        except Exception as exc:
+            QMessageBox.warning(self, t("settings.fetch_failed"), t("settings.ollama_error", error=exc))
+        finally:
+            self._btn_refresh_models.setEnabled(True)
+            self._btn_refresh_models.setText(t("settings.refresh_models"))
+
     def _save(self) -> None:
         self._save_form_to_provider()
         current_p = self._selected_provider()
+
+        # Validate active provider has API key (skip for Ollama)
+        if current_p and current_p.name and "ollama" not in current_p.name.lower():
+            if not current_p.api_key.strip():
+                QMessageBox.warning(self, t("settings.config_error"), t("settings.no_api_key_error"))
+                return
+
         if current_p:
             self._active_provider_id = current_p.id
-            
+
         tags = [
-            t.strip()
-            for t in self._default_tags_input.text().split(",")
-            if t.strip()
+            tag.strip()
+            for tag in self._default_tags_input.text().split(",")
+            if tag.strip()
         ]
-        config = AppConfig(
-            llm_providers=self._providers,
-            active_provider_id=self._active_provider_id,
-            anki_connect_url=self._anki_url_input.text()
-            or "http://127.0.0.1:8765",
-            anki_connect_key=self._anki_key_input.text(),
-            default_deck=self._default_deck_input.text() or "Default",
-            default_tags=tags or ["ankismart"],
-            ocr_correction=self._ocr_correction_check.isChecked(),
+        base_config = self._main.config
+        config = base_config.model_copy(
+            update={
+                "llm_providers": self._providers,
+                "active_provider_id": self._active_provider_id,
+                "anki_connect_url": self._anki_url_input.text()
+                or "http://127.0.0.1:8765",
+                "anki_connect_key": self._anki_key_input.text(),
+                "default_deck": self._default_deck_input.text() or "Default",
+                "default_tags": tags or ["ankismart"],
+                "ocr_correction": self._ocr_correction_check.isChecked(),
+                "llm_temperature": self._temperature_spin.value(),
+                "llm_max_tokens": self._max_tokens_spin.value(),
+                "proxy_url": self._proxy_input.text().strip(),
+                "language": self._lang_combo.currentData() or "zh",
+            }
         )
         try:
             save_config(config)
             self._main.config = config
-            self._status_label.setText("设置已保存")
+            set_language(self._lang_combo.currentData() or "zh")
+            self._status_label.setText(t("settings.saved"))
             self._status_label.setStyleSheet("color: green;")
             self._refresh_provider_combo()
         except Exception as exc:
-            QMessageBox.warning(self, "错误", f"保存失败：{exc}")
+            QMessageBox.warning(self, t("error.title"), t("settings.save_failed", error=exc))
 
     def _test_connection(self) -> None:
         url = self._anki_url_input.text() or "http://127.0.0.1:8765"
         key = self._anki_key_input.text()
-        self._status_label.setText("正在测试连接...")
+        self._status_label.setText(t("settings.testing"))
         self._status_label.setStyleSheet("")
 
-        worker = ConnectionCheckWorker(url, key)
+        worker = ConnectionCheckWorker(url, key, proxy_url=self._proxy_input.text().strip())
         worker.finished.connect(self._on_test_result)
         worker.start()
         self._worker = worker
 
     def _on_test_result(self, connected: bool) -> None:
         if connected:
-            self._status_label.setText("AnkiConnect：连接成功！")
+            self._status_label.setText(t("settings.test_ok"))
             self._status_label.setStyleSheet("color: green;")
         else:
-            self._status_label.setText("AnkiConnect：连接失败")
+            self._status_label.setText(t("settings.test_fail"))
             self._status_label.setStyleSheet("color: red;")
         self._main.set_connection_status(connected)

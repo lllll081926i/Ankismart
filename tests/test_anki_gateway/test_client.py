@@ -51,6 +51,20 @@ class TestRequest:
         assert call_body["key"] == "secret"
 
     @patch("ankismart.anki_gateway.client.httpx.post")
+    def test_request_skips_proxy_for_loopback(self, mock_post: MagicMock) -> None:
+        mock_post.return_value = _mock_response({"error": None, "result": "ok"})
+        client = AnkiConnectClient(url="http://127.0.0.1:8765", proxy_url="http://proxy:7890")
+        client._request("version")
+        assert "proxy" not in mock_post.call_args[1]
+
+    @patch("ankismart.anki_gateway.client.httpx.post")
+    def test_request_uses_proxy_for_remote_endpoint(self, mock_post: MagicMock) -> None:
+        mock_post.return_value = _mock_response({"error": None, "result": "ok"})
+        client = AnkiConnectClient(url="http://10.0.0.2:8765", proxy_url="http://proxy:7890")
+        client._request("version")
+        assert mock_post.call_args[1]["proxy"] == "http://proxy:7890"
+
+    @patch("ankismart.anki_gateway.client.httpx.post")
     def test_request_ankiconnect_error(self, mock_post: MagicMock) -> None:
         mock_post.return_value = _mock_response({"error": "deck not found", "result": None})
         client = AnkiConnectClient()
