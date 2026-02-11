@@ -72,9 +72,12 @@ def main() -> None:
     setup_logging()
     config = load_config()
 
+    from ankismart.ui.i18n import set_language, t
+    set_language(config.language)
+
     app = QApplication(sys.argv)
     app.setApplicationName("AnkiSmart")
-    app.setStyleSheet(get_stylesheet())
+    app.setStyleSheet(get_stylesheet(dark=config.theme == "dark"))
 
     window = MainWindow(config)
 
@@ -98,7 +101,7 @@ def main() -> None:
     # Check AnkiConnect on startup
     from ankismart.ui.workers import ConnectionCheckWorker
 
-    checker = ConnectionCheckWorker(config.anki_connect_url, config.anki_connect_key)
+    checker = ConnectionCheckWorker(config.anki_connect_url, config.anki_connect_key, proxy_url=config.proxy_url)
     checker.finished.connect(window.set_connection_status)
     checker.start()
     # Keep reference to prevent GC
@@ -110,7 +113,7 @@ def main() -> None:
     if missing_models:
         names = ", ".join(missing_models)
         window.statusBar().showMessage(
-            f"OCR 模型缺失（{names}）。处理 PDF/图片 时将提示下载。",
+            t("import.ocr_status_missing", names=names),
             15000,
         )
 

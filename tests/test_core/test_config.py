@@ -52,6 +52,30 @@ class TestAppConfig:
         assert p.model == ""
         assert p.rpm_limit == 0
 
+    def test_persistence_fields_defaults(self):
+        cfg = AppConfig()
+        assert cfg.last_deck == ""
+        assert cfg.last_tags == ""
+        assert cfg.last_strategy == ""
+        assert cfg.last_update_mode == ""
+        assert cfg.window_geometry == ""
+
+    def test_persistence_fields_round_trip(self):
+        cfg = AppConfig(
+            last_deck="MyDeck",
+            last_tags="tag1,tag2",
+            last_strategy="cloze",
+            last_update_mode="update_only",
+            window_geometry="01020304abcd",
+        )
+        data = cfg.model_dump()
+        restored = AppConfig(**data)
+        assert restored.last_deck == "MyDeck"
+        assert restored.last_tags == "tag1,tag2"
+        assert restored.last_strategy == "cloze"
+        assert restored.last_update_mode == "update_only"
+        assert restored.window_geometry == "01020304abcd"
+
 
 class TestLoadConfig:
     def test_returns_defaults_when_file_missing(self):

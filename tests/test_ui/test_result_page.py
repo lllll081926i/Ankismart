@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import pytest
+from PySide6.QtWidgets import QApplication
+
 from ankismart.core.models import CardDraft
 from ankismart.ui.card_edit_widget import CardEditWidget
+from ankismart.ui.result_page import ResultPage
 
 
 def _make_card(front: str = "Q", back: str = "A") -> CardDraft:
@@ -63,3 +67,40 @@ def test_card_editor_get_cards_returns_edited():
     result = w.get_cards()
     assert result[0].fields["Front"] == "Edited"
     assert result[1].fields["Front"] == "Q2"
+
+
+# --- ResultPage update-mode combo tests ---
+
+@pytest.fixture(scope="session")
+def _qapp():
+    """Ensure a QApplication exists for the test session."""
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
+
+
+class _FakeMainWindow:
+    def __init__(self):
+        self.cards = []
+        self.config = type("C", (), {
+            "anki_connect_url": "",
+            "anki_connect_key": "",
+            "last_update_mode": None,
+        })()
+
+
+def test_update_combo_has_three_items(_qapp):
+    """The update-mode combo exposes exactly 3 items with correct data values."""
+    page = ResultPage(_FakeMainWindow())
+    combo = page._update_combo
+    assert combo.count() == 3
+    assert combo.itemData(0) == "create_only"
+    assert combo.itemData(1) == "update_only"
+    assert combo.itemData(2) == "create_or_update"
+
+
+def test_update_combo_default_is_create_only(_qapp):
+    """The default selection of the update-mode combo is 'create_only'."""
+    page = ResultPage(_FakeMainWindow())
+    assert page._update_combo.currentData() == "create_only"

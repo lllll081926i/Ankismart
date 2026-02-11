@@ -74,3 +74,87 @@ def test_batch_convert_worker_emits_ocr_progress(monkeypatch) -> None:
     worker.run()
 
     assert any("OCR" in msg for msg in captured_messages)
+
+
+def test_batch_convert_worker_cancel_stops_processing(monkeypatch) -> None:
+    convert_count = {"n": 0}
+
+    class _SlowConverter:
+        def __init__(self, *a, **kw):
+            pass
+
+        def convert(self, path, *, progress_callback=None):
+            convert_count["n"] += 1
+            return MarkdownResult(
+                content="ok",
+                source_path=str(path),
+                source_format="md",
+                trace_id="t",
+            )
+
+    monkeypatch.setattr("ankismart.ui.workers.DocumentConverter", _SlowConverter)
+
+    worker = BatchConvertWorker([Path(f"{i}.md") for i in range(10)])
+    # Cancel immediately
+    worker.cancel()
+    worker.run()
+
+    # Should have processed 0 or very few files
+    assert convert_count["n"] < 10
+
+
+def test_batch_convert_worker_retry_on_failure(monkeypatch) -> None:
+    call_count = {"n": 0}
+
+    class _FailOnceConverter:
+        def __init__(self, *a, **kw):
+            pass
+
+        def convert(self, path, *, progress_callback=None):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise RuntimeError("transient error")
+            return MarkdownResult(
+                content="ok",
+                source_path=str(path),
+                source_format="pdf",
+                trace_id="t",
+            )
+
+    monkeypatch.setattr("ankismart.ui.workers.DocumentConverter", _FailOnceConverter)
+
+    worker = BatchConvertWorker([Path("demo.pdf")])
+    results: list = []
+    worker.finished.connect(results.append)
+    worker.run()
+
+    # The retry should have succeeded
+    assert len(results) == 1
+    assert len(results[0].documents) == 1
+    assert call_count["n"] == 2
+
+
+def test_batch_convert_worker_file_error_emitted_on_final_failure(monkeypatch) -> None:
+    class _AlwaysFailConverter:
+        def __init__(self, *a, **kw):
+            pass
+
+        def convert(self, path, *, progress_callback=None):
+            raise RuntimeError("permanent error")
+
+    monkeypatch.setattr("ankismart.ui.workers.DocumentConverter", _AlwaysFailConverter)
+
+    worker = BatchConvertWorker([Path("bad.pdf")])
+    file_errors: list[str] = []
+    worker.file_error.connect(file_errors.append)
+    worker.run()
+
+    assert len(file_errors) == 1
+    assert "permanent error" in file_errors[0]
+
+
+def test_batch_generate_worker_has_cancel() -> None:
+    worker = BatchGenerateWorker.__new__(BatchGenerateWorker)
+    worker._cancelled = False
+    worker.cancel()
+    assert worker._cancelled is True

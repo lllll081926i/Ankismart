@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
+from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut, QSyntaxHighlighter, QTextCharFormat
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
+from ankismart.ui.i18n import t
 from ankismart.ui.workers import BatchGenerateWorker
 
 
@@ -127,17 +128,24 @@ class PreviewPage(QWidget):
 
         # Title row
         title_row = QHBoxLayout()
-        title = QLabel("预览与编辑")
+        title = QLabel(t("preview.title"))
         title.setProperty("role", "heading")
         title_row.addWidget(title)
         title_row.addStretch()
 
-        self._btn_generate = QPushButton("生成卡片")
+        self._btn_generate = QPushButton(t("preview.generate"))
         self._btn_generate.setMinimumHeight(40)
         self._btn_generate.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_generate.setProperty("role", "primary")
         self._btn_generate.clicked.connect(self._start_generate)
         title_row.addWidget(self._btn_generate)
+
+        self._btn_cancel = QPushButton(t("preview.cancel"))
+        self._btn_cancel.setMinimumHeight(40)
+        self._btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_cancel.clicked.connect(self._cancel_generate)
+        self._btn_cancel.hide()
+        title_row.addWidget(self._btn_cancel)
 
         layout.addLayout(title_row)
 
@@ -150,7 +158,7 @@ class PreviewPage(QWidget):
         content_row.addWidget(self._file_list)
 
         self._editor = QPlainTextEdit()
-        self._editor.setPlaceholderText("Markdown 内容将显示在这里...")
+        self._editor.setPlaceholderText(t("preview.editor_placeholder"))
         self._highlighter = MarkdownHighlighter(self._editor.document())
         content_row.addWidget(self._editor, 1)
 
@@ -169,6 +177,9 @@ class PreviewPage(QWidget):
         self._error_label.setStyleSheet("color: red;")
         self._error_label.hide()
         layout.addWidget(self._error_label)
+
+        # Keyboard shortcuts
+        QShortcut(QKeySequence("Ctrl+G"), self, self._start_generate)
 
     def load_documents(self, batch_result: BatchConvertResult) -> None:
         """Load converted documents into the preview page."""
@@ -190,7 +201,7 @@ class PreviewPage(QWidget):
         # Show errors if any
         if batch_result.errors:
             self._error_label.setText(
-                "转换失败：\n" + "\n".join(batch_result.errors)
+                t("preview.convert_errors", errors="\n".join(batch_result.errors))
             )
             self._error_label.show()
 
@@ -240,7 +251,7 @@ class PreviewPage(QWidget):
 
     def _start_generate(self) -> None:
         if not self._documents:
-            QMessageBox.information(self, "提示", "没有可用的文档")
+            QMessageBox.information(self, t("preview.error"), t("preview.no_docs"))
             return
 
         self._save_current_edit()
@@ -249,9 +260,9 @@ class PreviewPage(QWidget):
         import_page = self._main.import_page
         deck_name = import_page._deck_combo.currentText()
         tags = [
-            t.strip()
-            for t in import_page._tags_input.text().split(",")
-            if t.strip()
+            tag.strip()
+            for tag in import_page._tags_input.text().split(",")
+            if tag.strip()
         ]
         generation_config = import_page.build_generation_config()
 
@@ -265,7 +276,7 @@ class PreviewPage(QWidget):
 
         self._btn_generate.setEnabled(False)
         self._progress.show()
-        self._status_label.setText("正在生成卡片...")
+        self._status_label.setText(t("preview.generating_status"))
 
         worker = BatchGenerateWorker(
             documents,
@@ -277,18 +288,26 @@ class PreviewPage(QWidget):
         worker.error.connect(self._on_error)
         worker.start()
         self._worker = worker
+        self._btn_cancel.show()
+
+    def _cancel_generate(self) -> None:
+        if self._worker and hasattr(self._worker, 'cancel'):
+            self._worker.cancel()
+        self._btn_cancel.hide()
+        self._status_label.setText(t("preview.cancelling"))
 
     def _on_file_progress(
         self, current: int, total: int, filename: str
     ) -> None:
         self._status_label.setText(
-            f"正在生成卡片 ({current}/{total})：{filename}"
+            t("preview.generating", current=current, total=total, filename=filename)
         )
 
     def _on_generate_done(self, cards: list) -> None:
         self._progress.hide()
         self._btn_generate.setEnabled(True)
-        self._status_label.setText(f"已生成 {len(cards)} 张卡片")
+        self._btn_cancel.hide()
+        self._status_label.setText(t("preview.generated", count=len(cards)))
 
         self._main.cards = cards
         self._main.switch_to_results()
@@ -296,5 +315,17 @@ class PreviewPage(QWidget):
     def _on_error(self, msg: str) -> None:
         self._progress.hide()
         self._btn_generate.setEnabled(True)
+        self._btn_cancel.hide()
         self._status_label.setText("")
-        QMessageBox.warning(self, "错误", msg)
+        QMessageBox.warning(self, t("preview.error"), msg)
+
+    def cancel_operation(self) -> None:
+        """Cancel the current generation if running."""
+        if self._worker and self._worker.isRunning():
+            if hasattr(self._worker, 'cancel'):
+                self._worker.cancel()
+            self._status_label.setText(t("preview.cancelled"))
+            self._progress.hide()
+            self._btn_generate.setEnabled(True)
+            if hasattr(self, '_btn_cancel'):
+                self._btn_cancel.hide()

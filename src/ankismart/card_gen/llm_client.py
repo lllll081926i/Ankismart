@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 
+import httpx
 from openai import APIError, APITimeoutError, OpenAI, RateLimitError
 
 from ankismart.core.errors import CardGenError, ErrorCode
@@ -43,13 +44,28 @@ class LLMClient:
         *,
         base_url: str | None = None,
         rpm_limit: int = 0,
+        temperature: float = 0.3,
+        max_tokens: int = 0,
+        proxy_url: str = "",
     ) -> None:
         kwargs: dict[str, object] = {"api_key": api_key}
         if base_url:
             kwargs["base_url"] = base_url
+        if proxy_url:
+            kwargs["http_client"] = httpx.Client(proxy=proxy_url)
         self._client = OpenAI(**kwargs)
         self._model = model
         self._throttle = _RpmThrottle(rpm_limit)
+        self._temperature = temperature
+        self._max_tokens = max_tokens
+
+    def validate_connection(self) -> bool:
+        """Test if the LLM endpoint is reachable by listing models."""
+        try:
+            self._client.models.list()
+            return True
+        except Exception:
+            return False
 
     @classmethod
     def from_config(cls, config) -> LLMClient:
@@ -65,6 +81,9 @@ class LLMClient:
             model=provider.model,
             base_url=provider.base_url or None,
             rpm_limit=provider.rpm_limit,
+            temperature=getattr(config, 'llm_temperature', 0.3),
+            max_tokens=getattr(config, 'llm_max_tokens', 0),
+            proxy_url=getattr(config, 'proxy_url', ''),
         )
 
     def chat(self, system_prompt: str, user_prompt: str) -> str:
@@ -75,15 +94,18 @@ class LLMClient:
         for attempt in range(_MAX_RETRIES):
             try:
                 with timed(f"llm_call_attempt_{attempt + 1}"):
-                    response = self._client.chat.completions.create(
-                        model=self._model,
-                        messages=[
+                    kwargs = {
+                        "model": self._model,
+                        "messages": [
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt},
                         ],
-                        temperature=0.3,
-                        timeout=60,
-                    )
+                        "temperature": self._temperature,
+                        "timeout": 60,
+                    }
+                    if self._max_tokens > 0:
+                        kwargs["max_tokens"] = self._max_tokens
+                    response = self._client.chat.completions.create(**kwargs)
 
                 usage = response.usage
                 if usage:

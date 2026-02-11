@@ -1,66 +1,123 @@
 # AnkiSmart Design Specifications
 
-This document outlines the design system and styling guidelines for the AnkiSmart application. The application uses PySide6 (Qt) and implements a modern, clean interface using a global stylesheet (`QSS`).
+**Version**: 2.0  
+**Updated**: 2026-02-11  
+**Scope**: PySide6 desktop UI style system for AnkiSmart.
 
-## Color Palette
+---
 
-### Primary Colors
-- **Primary Blue:** `#007AFF` (Action buttons, highlights, active states)
-- **Primary Hover:** `#0062CC`
-- **Primary Pressed:** `#004999`
+## 1. Design Principles
 
-### Backgrounds
-- **App Background:** `#F5F5F7` (Light Gray - Main window background)
-- **Surface:** `#FFFFFF` (White - Cards, panels, input fields)
+- Clean, readable, low cognitive load.
+- Efficient workflow-first layout for frequent use.
+- Consistent visual language across all pages.
+- Strong feedback for task states and failures.
 
-### Text
-- **Primary Text:** `#333333` (Headings, body text)
-- **Secondary Text:** `#666666` (Subtitles, labels, placeholders)
-- **Disabled Text:** `#999999`
+---
 
-### UI Elements
-- **Borders:** `#E5E5EA`
-- **Dividers:** `#D1D1D6`
+## 2. Color System
 
-### Status Colors
-- **Success:** `#34C759` (Green)
-- **Error:** `#FF3B30` (Red)
-- **Warning:** `#FF9500` (Orange)
+### 2.1 Primary
 
-## Typography
+- `Primary`: `#007AFF`
+- `Primary Hover`: `#0062CC`
+- `Primary Pressed`: `#004999`
 
-- **Font Family:** `Segoe UI`, `Microsoft YaHei`, `sans-serif` (System default priority)
-- **Base Size:** `14px`
-- **Headings:** `18px Bold`
-- **Navigation:** `15px`
+### 2.2 Background & Surface
 
-## Component Styling
+- `App Background`: `#F5F5F7`
+- `Surface`: `#FFFFFF`
 
-### Buttons (`QPushButton`)
-- **Default:** White background, border, dark text.
-- **Primary:** Blue background (`#007AFF`), no border, white text.
-    - usage: `btn.setProperty("role", "primary")`
-- **Navigation:** Transparent background, active state has bottom border.
-    - usage: `btn.setProperty("role", "nav")`
-- **Hover/Pressed:** subtle background changes for feedback.
-- **Cursor:** Pointing Hand (`Qt.CursorShape.PointingHandCursor`).
+### 2.3 Text
 
-### Panels / Cards
-- Pages are wrapped in a container with object name `page_content`.
-- **Style:** White background, 1px border (`#E5E5EA`), `8px` border radius.
-- **Padding:** `30px` standard padding for page content.
+- `Text Primary`: `#333333`
+- `Text Secondary`: `#666666`
+- `Text Disabled`: `#999999`
 
-### Inputs
-- **Style:** White background, 1px border, `6px` border radius.
-- **Focus:** Border color changes to Primary Blue (`#007AFF`).
+### 2.4 Border & Divider
 
-### Tables (`QTableWidget`)
-- **Header:** Light gray background, bold text.
-- **Rows:** Alternating row colors (if enabled), clean grid lines.
-- **Selection:** Light blue background with dark text.
+- `Border`: `#E5E5EA`
+- `Divider`: `#D1D1D6`
 
-## Implementation Details
+### 2.5 Status
 
-- **Stylesheet:** The global stylesheet is generated in `src/ankismart/ui/styles.py` via `get_stylesheet()`.
-- **Application:** Applied to `QApplication` in `src/ankismart/ui/app.py`.
-- **Dynamic Styling:** Some components use dynamic properties (e.g., `setProperty("role", "primary")`) which are targeted by the QSS selectors (e.g., `QPushButton[role="primary"]`).
+- `Success`: `#34C759`
+- `Error`: `#FF3B30`
+- `Warning`: `#FF9500`
+
+---
+
+## 3. Typography
+
+- Font family: `Segoe UI`, `Microsoft YaHei`, `sans-serif`
+- Base size: `14px`
+- Heading: `20px`, bold
+- Subtitle: `13px`
+- Navigation button text: `15px`
+
+---
+
+## 4. Component Specifications
+
+### 4.1 Panel / Page Container (`QWidget#page_content`)
+
+- Background: `Surface`
+- Border: `1px solid Border`
+- Radius: `12px`
+
+### 4.2 Buttons (`QPushButton`)
+
+- Default:
+  - Surface background + border
+  - Radius: `8px`
+  - Padding: `8px 16px`
+- Primary (`role="primary"`):
+  - Background: `Primary`
+  - Text: white
+  - Border: none
+- Navigation (`role="nav"`):
+  - Transparent background
+  - Checked state with surface background + border
+
+### 4.3 Inputs (`QLineEdit`, `QComboBox`, `QPlainTextEdit`)
+
+- Background: `Surface`
+- Border: `1px solid Border`
+- Radius: `8px`
+- Focus border: `Primary`
+
+### 4.4 Table (`QTableWidget`)
+
+- Surface background, bordered container
+- Radius: `8px`
+- Header section uses light background
+- Selection uses primary-tinted background
+
+### 4.5 List (`QListWidget`)
+
+- Surface background, bordered container
+- Radius: `8px`
+- Selected item with primary-tinted background
+
+---
+
+## 5. Interaction & Feedback
+
+- Hover and pressed states are mandatory for all actionable controls.
+- Long-running tasks must provide progress and status text.
+- Error state should provide actionable message, not generic failure text.
+- Disabled state must be visually obvious and semantically correct.
+
+---
+
+## 6. Mapping to Implementation
+
+- Stylesheet source: `src/ankismart/ui/styles.py`
+- App-level application: `src/ankismart/ui/app.py`
+- Dynamic roles:
+  - `QPushButton[role="primary"]`
+  - `QPushButton[role="nav"]`
+  - `QLabel[role="heading"]`
+  - `QLabel[role="subtitle"]`
+
+This document is aligned with current QSS implementation and should be updated together with `styles.py`.

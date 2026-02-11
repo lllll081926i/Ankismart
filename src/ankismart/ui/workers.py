@@ -7,7 +7,7 @@ from PySide6.QtCore import QThread, Signal
 
 from ankismart.anki_gateway.apkg_exporter import ApkgExporter
 from ankismart.anki_gateway.client import AnkiConnectClient
-from ankismart.anki_gateway.gateway import AnkiGateway, UpdateMode
+from ankismart.anki_gateway.gateway import AnkiGateway
 from ankismart.card_gen.generator import CardGenerator
 from ankismart.card_gen.llm_client import LLMClient
 from ankismart.card_gen.prompts import OCR_CORRECTION_PROMPT
@@ -78,21 +78,19 @@ class PushWorker(QThread):
         url: str,
         key: str,
         *,
-        update_mode: bool | UpdateMode = False,
+        update_mode: str = "create_only",
+        proxy_url: str = "",
     ) -> None:
         super().__init__()
         self._cards = cards
         self._url = url
         self._key = key
-        # Backward compat: accept bool (True -> create_or_update, False -> create_only)
-        if isinstance(update_mode, bool):
-            self._update_mode: UpdateMode = "create_or_update" if update_mode else "create_only"
-        else:
-            self._update_mode = update_mode
+        self._update_mode = update_mode
+        self._proxy_url = proxy_url
 
     def run(self) -> None:
         try:
-            client = AnkiConnectClient(url=self._url, key=self._key)
+            client = AnkiConnectClient(url=self._url, key=self._key, proxy_url=self._proxy_url)
             gateway = AnkiGateway(client)
             result = gateway.push(self._cards, update_mode=self._update_mode)
             self.finished.emit(result)
@@ -121,13 +119,14 @@ class ExportWorker(QThread):
 class ConnectionCheckWorker(QThread):
     finished = Signal(bool)
 
-    def __init__(self, url: str, key: str) -> None:
+    def __init__(self, url: str, key: str, proxy_url: str = "") -> None:
         super().__init__()
         self._url = url
         self._key = key
+        self._proxy_url = proxy_url
 
     def run(self) -> None:
-        client = AnkiConnectClient(url=self._url, key=self._key)
+        client = AnkiConnectClient(url=self._url, key=self._key, proxy_url=self._proxy_url)
         self.finished.emit(client.check_connection())
 
 
@@ -135,14 +134,15 @@ class DeckListWorker(QThread):
     finished = Signal(list)  # list[str]
     error = Signal(str)
 
-    def __init__(self, url: str, key: str) -> None:
+    def __init__(self, url: str, key: str, proxy_url: str = "") -> None:
         super().__init__()
         self._url = url
         self._key = key
+        self._proxy_url = proxy_url
 
     def run(self) -> None:
         try:
-            client = AnkiConnectClient(url=self._url, key=self._key)
+            client = AnkiConnectClient(url=self._url, key=self._key, proxy_url=self._proxy_url)
             decks = client.get_deck_names()
             self.finished.emit(decks)
         except Exception as exc:
@@ -155,13 +155,33 @@ _IO_EXTENSIONS = {".md", ".txt", ".docx", ".pptx"}
 class BatchConvertWorker(QThread):
     finished = Signal(BatchConvertResult)
     file_progress = Signal(int, int, str)  # current, total, filename
+    file_error = Signal(str)  # per-file error message
     ocr_progress = Signal(str)
     error = Signal(str)
+
+    _MAX_RETRIES = 1
 
     def __init__(self, file_paths: list[Path], config=None) -> None:
         super().__init__()
         self._file_paths = file_paths
         self._config = config
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def _convert_with_retry(
+        self, converter, path: Path, *, progress_callback=None
+    ) -> ConvertedDocument:
+        """Try converting a file, retrying once on failure."""
+        last_exc: Exception | None = None
+        for _attempt in range(1 + self._MAX_RETRIES):
+            try:
+                result = converter.convert(path, progress_callback=progress_callback)
+                return ConvertedDocument(result=result, file_name=path.name)
+            except Exception as exc:
+                last_exc = exc
+        raise last_exc  # type: ignore[misc]
 
     def run(self) -> None:
         try:
@@ -184,38 +204,44 @@ class BatchConvertWorker(QThread):
             results_by_idx: dict[int, ConvertedDocument | str] = {}
 
             # I/O-bound files: parallel with ThreadPoolExecutor
-            if io_files:
+            if io_files and not self._cancelled:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
                     future_map = {
-                        pool.submit(converter.convert, path): (idx, path)
+                        pool.submit(self._convert_with_retry, converter, path): (idx, path)
                         for idx, path in io_files
                     }
                     for future in concurrent.futures.as_completed(future_map):
+                        if self._cancelled:
+                            for f in future_map:
+                                f.cancel()
+                            break
                         idx, path = future_map[future]
                         completed += 1
                         self.file_progress.emit(completed, total, path.name)
                         try:
-                            result = future.result()
-                            results_by_idx[idx] = ConvertedDocument(
-                                result=result, file_name=path.name
-                            )
+                            results_by_idx[idx] = future.result()
                         except Exception as exc:
-                            results_by_idx[idx] = f"{path.name}: {exc}"
+                            err_msg = f"{path.name}: {exc}"
+                            results_by_idx[idx] = err_msg
+                            self.file_error.emit(err_msg)
 
             # CPU-bound files: sequential (OCR saturates CPU)
             for idx, path in cpu_files:
+                if self._cancelled:
+                    break
                 completed += 1
                 self.file_progress.emit(completed, total, path.name)
                 try:
-                    result = converter.convert(path, progress_callback=self.ocr_progress.emit)
-                    results_by_idx[idx] = ConvertedDocument(
-                        result=result, file_name=path.name
+                    results_by_idx[idx] = self._convert_with_retry(
+                        converter, path, progress_callback=self.ocr_progress.emit
                     )
                 except Exception as exc:
-                    results_by_idx[idx] = f"{path.name}: {exc}"
+                    err_msg = f"{path.name}: {exc}"
+                    results_by_idx[idx] = err_msg
+                    self.file_error.emit(err_msg)
 
             # Collect results in original order
-            for idx in range(total):
+            for idx in sorted(results_by_idx):
                 item = results_by_idx[idx]
                 if isinstance(item, ConvertedDocument):
                     documents.append(item)
@@ -244,6 +270,10 @@ class BatchGenerateWorker(QThread):
         self._documents = documents
         self._requests_config = requests_config
         self._config = config
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
 
     @staticmethod
     def _allocate_mix_counts(target_total: int, ratio_items: list[dict]) -> dict[str, int]:
@@ -325,6 +355,8 @@ class BatchGenerateWorker(QThread):
                 per_doc_mix = self._distribute_counts_per_document(total, mix_counts)
 
             for i, doc in enumerate(self._documents):
+                if self._cancelled:
+                    break
                 self.file_progress.emit(
                     i + 1, total, doc.file_name
                 )

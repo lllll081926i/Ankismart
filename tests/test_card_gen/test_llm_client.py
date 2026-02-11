@@ -215,3 +215,40 @@ class TestLLMClientChat:
 
         call_kwargs = mock_client.chat.completions.create.call_args[1]
         assert call_kwargs["model"] == "gpt-4o"
+
+
+class TestLLMClientGenerationParams:
+    """Tests for temperature and max_tokens parameter passing."""
+
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_llm_client_stores_temperature_and_max_tokens(self, mock_openai_cls):
+        client = LLMClient(api_key="test-key", temperature=0.7, max_tokens=1024)
+        assert client._temperature == 0.7
+        assert client._max_tokens == 1024
+
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_llm_client_default_temperature(self, mock_openai_cls):
+        client = LLMClient(api_key="test-key")
+        assert client._temperature == 0.3
+        assert client._max_tokens == 0
+
+
+class TestLLMClientProxy:
+    """Tests for proxy_url parameter passing."""
+
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_llm_client_with_proxy_url(self, mock_openai_cls):
+        client = LLMClient(api_key="test-key", proxy_url="http://proxy:8080")
+        # Verify the client was created without error
+        assert client._model == "gpt-4o"
+        # Verify http_client was passed to OpenAI constructor
+        call_kwargs = mock_openai_cls.call_args[1]
+        assert "http_client" in call_kwargs
+
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_llm_client_without_proxy_url(self, mock_openai_cls):
+        client = LLMClient(api_key="test-key")
+        assert client._model == "gpt-4o"
+        # Verify http_client was NOT passed to OpenAI constructor
+        call_kwargs = mock_openai_cls.call_args[1]
+        assert "http_client" not in call_kwargs

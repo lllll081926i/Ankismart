@@ -64,6 +64,18 @@ class AppConfig(BaseModel):
     default_tags: list[str] = ["ankismart"]
     ocr_correction: bool = False
     log_level: str = "INFO"
+    llm_temperature: float = 0.3
+    llm_max_tokens: int = 0  # 0 means use provider default
+
+    # Persistence: last-used values
+    last_deck: str = ""
+    last_tags: str = ""
+    last_strategy: str = ""
+    last_update_mode: str = ""
+    window_geometry: str = ""  # hex-encoded QByteArray
+    proxy_url: str = ""
+    theme: str = "light"
+    language: str = "zh"
 
     @property
     def active_provider(self) -> LLMProviderConfig | None:
