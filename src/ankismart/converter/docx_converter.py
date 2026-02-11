@@ -56,6 +56,45 @@ def _is_list_style(style_name: str) -> tuple[bool, bool]:
     return False, False
 
 
+def _get_list_level(paragraph) -> int:
+    """Extract the indentation level (ilvl) from a paragraph's numbering properties."""
+    ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    try:
+        p_pr = paragraph._element.find(f"{ns}pPr")
+        if p_pr is None:
+            return 0
+        num_pr = p_pr.find(f"{ns}numPr")
+        if num_pr is None:
+            return 0
+        ilvl = num_pr.find(f"{ns}ilvl")
+        if ilvl is not None:
+            return int(ilvl.get(f"{ns}val", "0"))
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return 0
+
+
+def _render_paragraph_runs(paragraph) -> str:
+    """Render paragraph runs with bold/italic Markdown formatting."""
+    parts: list[str] = []
+    for run in paragraph.runs:
+        text = run.text
+        if not text:
+            continue
+        is_bold = run.bold
+        is_italic = run.italic
+        if is_bold and is_italic:
+            parts.append(f"***{text}***")
+        elif is_bold:
+            parts.append(f"**{text}**")
+        elif is_italic:
+            parts.append(f"*{text}*")
+        else:
+            parts.append(text)
+    # Fall back to plain text if runs are empty (e.g. field codes)
+    return "".join(parts) or paragraph.text or ""
+
+
 def convert(file_path: Path, trace_id: str = "") -> MarkdownResult:
     tid = trace_id or get_trace_id()
     with timed("docx_convert"):
@@ -74,14 +113,14 @@ def convert(file_path: Path, trace_id: str = "") -> MarkdownResult:
             ) from exc
 
         parts: list[str] = []
-        numbered_counter = 0
+        numbered_counters: dict[int, int] = {}  # level -> counter
 
         body = doc.element.body
         for child in body:
             tag = child.tag.split("}")[-1]
 
             if tag == "tbl":
-                numbered_counter = 0
+                numbered_counters.clear()
                 table = next(
                     (t for t in doc.tables if t._element is child),
                     None,
@@ -95,27 +134,34 @@ def convert(file_path: Path, trace_id: str = "") -> MarkdownResult:
 
             from docx.text.paragraph import Paragraph
             para = Paragraph(child, doc)
-            text = para.text.strip()
             style_name = para.style.name if para.style else ""
 
             heading_prefix = _HEADING_MAP.get(style_name)
             if heading_prefix:
-                numbered_counter = 0
+                numbered_counters.clear()
+                text = para.text.strip()
                 if text:
                     parts.append(f"{heading_prefix}{text}")
                 continue
 
             is_list, is_numbered = _is_list_style(style_name)
             if is_list:
+                level = _get_list_level(para)
+                indent = "  " * level
+                text = _render_paragraph_runs(para).strip()
                 if is_numbered:
-                    numbered_counter += 1
-                    parts.append(f"{numbered_counter}. {text}")
+                    numbered_counters[level] = numbered_counters.get(level, 0) + 1
+                    # Reset deeper level counters
+                    for k in list(numbered_counters):
+                        if k > level:
+                            del numbered_counters[k]
+                    parts.append(f"{indent}{numbered_counters[level]}. {text}")
                 else:
-                    numbered_counter = 0
-                    parts.append(f"- {text}")
+                    parts.append(f"{indent}- {text}")
                 continue
 
-            numbered_counter = 0
+            numbered_counters.clear()
+            text = _render_paragraph_runs(para).strip()
             if text:
                 parts.append(text)
 

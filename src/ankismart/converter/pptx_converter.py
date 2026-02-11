@@ -18,14 +18,41 @@ def _get_slide_title(slide) -> str | None:
     return None
 
 
+def _render_runs(paragraph) -> str:
+    """Render paragraph runs with bold/italic Markdown formatting."""
+    parts: list[str] = []
+    for run in paragraph.runs:
+        text = run.text
+        if not text:
+            continue
+        is_bold = run.font.bold
+        is_italic = run.font.italic
+        if is_bold and is_italic:
+            parts.append(f"***{text}***")
+        elif is_bold:
+            parts.append(f"**{text}**")
+        elif is_italic:
+            parts.append(f"*{text}*")
+        else:
+            parts.append(text)
+    return "".join(parts) or paragraph.text or ""
+
+
 def _extract_slide_text(slide) -> list[str]:
     lines: list[str] = []
     for shape in slide.shapes:
         if not shape.has_text_frame:
             continue
         for paragraph in shape.text_frame.paragraphs:
-            text = paragraph.text.strip()
-            if text:
+            text = _render_runs(paragraph).strip()
+            if not text:
+                continue
+            raw_level = paragraph.level
+            level = raw_level if isinstance(raw_level, int) else 0
+            if level > 0:
+                indent = "  " * level
+                lines.append(f"{indent}- {text}")
+            else:
                 lines.append(text)
     return lines
 
