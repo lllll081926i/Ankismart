@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -150,3 +151,79 @@ class TestExport:
         ApkgExporter().export([card], tmp_path / "out.apkg")
 
         assert sorted(mock_pkg.media_files) == sorted([str(image), str(audio)])
+
+    @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
+    @patch("ankismart.anki_gateway.apkg_exporter.httpx.get")
+    def test_export_materializes_data_and_url_media(
+        self,
+        mock_http_get: MagicMock,
+        mock_pkg_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        mock_pkg = MagicMock()
+        mock_pkg_cls.return_value = mock_pkg
+        captured_media_payloads = {}
+
+        def _capture_media_payloads(_output_path: str) -> None:
+            for path in mock_pkg.media_files:
+                file_path = Path(path)
+                captured_media_payloads[file_path.name] = file_path.read_bytes()
+
+        mock_pkg.write_to_file.side_effect = _capture_media_payloads
+
+        response = MagicMock()
+        response.content = b"from-url"
+        response.raise_for_status.return_value = None
+        mock_http_get.return_value = response
+
+        card = _card()
+        card.media.picture.append(
+            SimpleNamespace(
+                filename="img-from-data.png",
+                path=None,
+                data=base64.b64encode(b"from-data").decode("ascii"),
+                url=None,
+            )
+        )
+        card.media.audio.append(
+            SimpleNamespace(
+                filename="audio-from-url.mp3",
+                path=None,
+                data=None,
+                url="https://example.com/audio.mp3",
+            )
+        )
+
+        ApkgExporter().export([card], tmp_path / "out.apkg")
+
+        assert len(mock_pkg.media_files) == 2
+        written_paths = [Path(p) for p in mock_pkg.media_files]
+        assert all("ankismart-media-" in str(p) for p in written_paths)
+        assert all(p.name in {"img-from-data.png", "audio-from-url.mp3"} for p in written_paths)
+        assert captured_media_payloads == {
+            "img-from-data.png": b"from-data",
+            "audio-from-url.mp3": b"from-url",
+        }
+
+    @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
+    def test_export_skips_invalid_base64_media(
+        self,
+        mock_pkg_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        mock_pkg = MagicMock()
+        mock_pkg_cls.return_value = mock_pkg
+
+        card = _card()
+        card.media.picture.append(
+            SimpleNamespace(
+                filename="bad.png",
+                path=None,
+                data="@@not-base64@@",
+                url=None,
+            )
+        )
+
+        ApkgExporter().export([card], tmp_path / "out.apkg")
+
+        assert mock_pkg.media_files == []
