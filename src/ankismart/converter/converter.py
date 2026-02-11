@@ -9,7 +9,12 @@ from ankismart.converter import (
     pptx_converter,
     text_converter,
 )
-from ankismart.converter.cache import save_cache
+from ankismart.converter.cache import (
+    get_cached_by_hash,
+    get_file_hash,
+    save_cache,
+    save_cache_by_hash,
+)
 from ankismart.converter.detector import detect_file_type
 from ankismart.core.errors import ConvertError, ErrorCode
 from ankismart.core.logging import get_logger
@@ -35,6 +40,17 @@ class DocumentConverter:
     def convert(self, file_path: Path) -> MarkdownResult:
         with trace_context() as trace_id:
             with timed("convert_total"):
+                # Check file-hash cache first
+                file_hash = get_file_hash(file_path)
+                cached = get_cached_by_hash(file_hash)
+                if cached is not None:
+                    logger.info(
+                        "Cache hit (file hash)",
+                        extra={"path": str(file_path), "trace_id": trace_id},
+                    )
+                    cached.trace_id = trace_id
+                    return cached
+
                 file_type = detect_file_type(file_path)
                 logger.info(
                     "Starting conversion",
@@ -61,6 +77,7 @@ class DocumentConverter:
                     ) from exc
 
                 save_cache(result)
+                save_cache_by_hash(file_hash, result)
                 logger.info(
                     "Conversion completed",
                     extra={"trace_id": trace_id, "content_length": len(result.content)},

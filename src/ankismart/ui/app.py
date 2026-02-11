@@ -19,6 +19,11 @@ def main() -> None:
     setup_logging()
     config = load_config()
 
+    # Pre-warm OCR model in background (non-blocking)
+    from ankismart.converter.ocr_converter import preload_ocr
+
+    preload_ocr()
+
     app = QApplication(sys.argv)
     app.setApplicationName("AnkiSmart")
     app.setStyleSheet(get_stylesheet())

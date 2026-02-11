@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -126,6 +127,9 @@ class DeckListWorker(QThread):
             self.error.emit(str(exc))
 
 
+_IO_EXTENSIONS = {".md", ".txt", ".docx", ".pptx"}
+
+
 class BatchConvertWorker(QThread):
     finished = Signal(BatchConvertResult)
     file_progress = Signal(int, int, str)  # current, total, filename
@@ -142,17 +146,56 @@ class BatchConvertWorker(QThread):
             errors: list[str] = []
             total = len(self._file_paths)
 
-            for i, path in enumerate(self._file_paths):
-                self.file_progress.emit(i + 1, total, path.name)
+            # Split files by type
+            io_files: list[tuple[int, Path]] = []
+            cpu_files: list[tuple[int, Path]] = []
+            for idx, path in enumerate(self._file_paths):
+                if path.suffix.lower() in _IO_EXTENSIONS:
+                    io_files.append((idx, path))
+                else:
+                    cpu_files.append((idx, path))
+
+            completed = 0
+            results_by_idx: dict[int, ConvertedDocument | str] = {}
+
+            # I/O-bound files: parallel with ThreadPoolExecutor
+            if io_files:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                    future_map = {
+                        pool.submit(converter.convert, path): (idx, path)
+                        for idx, path in io_files
+                    }
+                    for future in concurrent.futures.as_completed(future_map):
+                        idx, path = future_map[future]
+                        completed += 1
+                        self.file_progress.emit(completed, total, path.name)
+                        try:
+                            result = future.result()
+                            results_by_idx[idx] = ConvertedDocument(
+                                result=result, file_name=path.name
+                            )
+                        except Exception as exc:
+                            results_by_idx[idx] = f"{path.name}: {exc}"
+
+            # CPU-bound files: sequential (OCR saturates CPU)
+            for idx, path in cpu_files:
+                completed += 1
+                self.file_progress.emit(completed, total, path.name)
                 try:
                     result = converter.convert(path)
-                    documents.append(
-                        ConvertedDocument(
-                            result=result, file_name=path.name
-                        )
+                    results_by_idx[idx] = ConvertedDocument(
+                        result=result, file_name=path.name
                     )
                 except Exception as exc:
-                    errors.append(f"{path.name}: {exc}")
+                    results_by_idx[idx] = f"{path.name}: {exc}"
+
+            # Collect results in original order
+            for idx in range(total):
+                item = results_by_idx[idx]
+                if isinstance(item, ConvertedDocument):
+                    documents.append(item)
+                else:
+                    errors.append(item)
 
             self.finished.emit(
                 BatchConvertResult(documents=documents, errors=errors)

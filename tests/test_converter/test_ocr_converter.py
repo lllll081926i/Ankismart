@@ -74,7 +74,7 @@ class TestPdfToImages:
         mock_pdf.__getitem__ = MagicMock(return_value=mock_page)
 
         with patch("ankismart.converter.ocr_converter.pdfium.PdfDocument", return_value=mock_pdf):
-            images = _pdf_to_images(Path("test.pdf"))
+            images = list(_pdf_to_images(Path("test.pdf")))
 
         assert len(images) == 2
         assert images[0] is mock_image
@@ -82,7 +82,7 @@ class TestPdfToImages:
     def test_raises_on_failure(self) -> None:
         with patch("ankismart.converter.ocr_converter.pdfium.PdfDocument", side_effect=RuntimeError("bad pdf")):
             with pytest.raises(ConvertError) as exc_info:
-                _pdf_to_images(Path("bad.pdf"))
+                list(_pdf_to_images(Path("bad.pdf")))
             assert exc_info.value.code == ErrorCode.E_OCR_FAILED
 
     def test_empty_pdf(self) -> None:
@@ -90,7 +90,7 @@ class TestPdfToImages:
         mock_pdf.__len__ = MagicMock(return_value=0)
 
         with patch("ankismart.converter.ocr_converter.pdfium.PdfDocument", return_value=mock_pdf):
-            images = _pdf_to_images(Path("empty.pdf"))
+            images = list(_pdf_to_images(Path("empty.pdf")))
 
         assert images == []
 

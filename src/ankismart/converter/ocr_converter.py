@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +20,7 @@ logger = get_logger("ocr_converter")
 
 # Lazy-initialized singleton to avoid repeated model loading
 _ocr_instance: PaddleOCR | None = None
+_ocr_lock = threading.Lock()
 
 
 def _get_env_bool(name: str, default: bool) -> bool:
@@ -123,38 +126,47 @@ def _build_ocr_kwargs(device: str) -> dict[str, object]:
 
 def _get_ocr() -> PaddleOCR:
     global _ocr_instance
-    if _ocr_instance is None:
-        device = _resolve_ocr_device()
-        kwargs = _build_ocr_kwargs(device)
-        logger.info(
-            "Initializing PaddleOCR",
-            extra={
-                "device": device,
-                "det_model": kwargs.get("text_detection_model_name"),
-                "det_model_dir": kwargs.get("text_detection_model_dir"),
-                "rec_model": kwargs.get("text_recognition_model_name"),
-                "rec_model_dir": kwargs.get("text_recognition_model_dir"),
-                "ocr_version": kwargs.get("ocr_version"),
-                "det_limit_side_len": kwargs.get("text_det_limit_side_len"),
-                "det_limit_type": kwargs.get("text_det_limit_type"),
-            },
-        )
-        _ocr_instance = PaddleOCR(**kwargs)
+    if _ocr_instance is not None:
+        return _ocr_instance
+    with _ocr_lock:
+        if _ocr_instance is None:
+            device = _resolve_ocr_device()
+            kwargs = _build_ocr_kwargs(device)
+            logger.info(
+                "Initializing PaddleOCR",
+                extra={
+                    "device": device,
+                    "det_model": kwargs.get("text_detection_model_name"),
+                    "det_model_dir": kwargs.get("text_detection_model_dir"),
+                    "rec_model": kwargs.get("text_recognition_model_name"),
+                    "rec_model_dir": kwargs.get("text_recognition_model_dir"),
+                    "ocr_version": kwargs.get("ocr_version"),
+                    "det_limit_side_len": kwargs.get("text_det_limit_side_len"),
+                    "det_limit_type": kwargs.get("text_det_limit_type"),
+                },
+            )
+            _ocr_instance = PaddleOCR(**kwargs)
     return _ocr_instance
 
 
-def _pdf_to_images(file_path: Path) -> list:
-    """Convert PDF pages to PIL images using pypdfium2."""
+def preload_ocr() -> None:
+    """Pre-warm the OCR singleton in a background thread (non-blocking)."""
+    thread = threading.Thread(target=_get_ocr, daemon=True)
+    thread.start()
+
+
+def _pdf_to_images(file_path: Path) -> Iterator[Image.Image]:
+    """Yield PDF pages as PIL images one at a time (streaming)."""
     try:
         pdf = pdfium.PdfDocument(str(file_path))
-        images = []
         for i in range(len(pdf)):
             page = pdf[i]
             # Render at 300 DPI for good OCR quality
             bitmap = page.render(scale=300 / 72)
             pil_image = bitmap.to_pil()
-            images.append(pil_image)
-        return images
+            yield pil_image
+    except ConvertError:
+        raise
     except Exception as exc:
         raise ConvertError(
             f"Failed to convert PDF to images: {exc}",
@@ -166,6 +178,7 @@ def _ocr_image(ocr: PaddleOCR, image: Image.Image) -> str:
     """Run OCR on a single image and return extracted text."""
     img_array = np.array(image)
     result = ocr.ocr(img_array, cls=True)
+    del img_array  # release numpy array memory
     if not result or not result[0]:
         return ""
     lines = []
@@ -188,19 +201,14 @@ def convert(file_path: Path, trace_id: str = "") -> MarkdownResult:
 
     with timed("ocr_convert"):
         ocr = _get_ocr()
-        images = _pdf_to_images(file_path)
-
-        if not images:
-            raise ConvertError(
-                "PDF contains no pages",
-                code=ErrorCode.E_OCR_FAILED,
-                trace_id=trace_id,
-            )
 
         sections: list[str] = []
-        for i, image in enumerate(images, 1):
+        page_count = 0
+        for i, image in enumerate(_pdf_to_images(file_path), 1):
+            page_count += 1
             with timed(f"ocr_page_{i}"):
                 page_text = _ocr_image(ocr, image)
+            del image  # release PIL image memory
 
             if page_text.strip():
                 sections.append(f"## Page {i}\n\n{page_text}")
@@ -209,6 +217,13 @@ def convert(file_path: Path, trace_id: str = "") -> MarkdownResult:
                     "Empty OCR result for page",
                     extra={"page": i, "trace_id": trace_id},
                 )
+
+        if page_count == 0:
+            raise ConvertError(
+                "PDF contains no pages",
+                code=ErrorCode.E_OCR_FAILED,
+                trace_id=trace_id,
+            )
 
         content = "\n\n---\n\n".join(sections) if sections else ""
 
