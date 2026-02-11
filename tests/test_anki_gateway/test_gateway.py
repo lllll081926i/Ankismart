@@ -271,3 +271,167 @@ class TestPushOrUpdate:
         client.add_note.assert_called_once()
         assert result.succeeded == 1
         assert result.results[0].note_id == 888
+
+
+# ---------------------------------------------------------------------------
+# AnkiGateway.find_notes / update_note / create_or_update_note
+# ---------------------------------------------------------------------------
+
+class TestFindNotes:
+    def test_find_notes_delegates(self) -> None:
+        client = _fake_client()
+        client.find_notes.return_value = [10, 20]
+        gw = AnkiGateway(client)
+        assert gw.find_notes("deck:Default") == [10, 20]
+        client.find_notes.assert_called_once_with("deck:Default")
+
+    def test_find_notes_empty(self) -> None:
+        client = _fake_client()
+        client.find_notes.return_value = []
+        gw = AnkiGateway(client)
+        assert gw.find_notes("deck:Nothing") == []
+
+
+class TestUpdateNote:
+    def test_update_note_delegates(self) -> None:
+        client = _fake_client()
+        gw = AnkiGateway(client)
+        gw.update_note(42, {"Front": "new Q", "Back": "new A"})
+        client.update_note_fields.assert_called_once_with(42, {"Front": "new Q", "Back": "new A"})
+
+    def test_update_note_propagates_error(self) -> None:
+        client = _fake_client()
+        client.update_note_fields.side_effect = AnkiGatewayError("not found")
+        gw = AnkiGateway(client)
+        import pytest
+        with pytest.raises(AnkiGatewayError, match="not found"):
+            gw.update_note(999, {"Front": "x"})
+
+
+class TestCreateOrUpdateNote:
+    def test_creates_when_no_existing(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client(add_note_return=500)
+        client.find_notes.return_value = []
+        gw = AnkiGateway(client)
+
+        status = gw.create_or_update_note(_card())
+        assert status.success is True
+        assert status.note_id == 500
+        client.add_note.assert_called_once()
+        client.update_note_fields.assert_not_called()
+
+    def test_updates_when_existing(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client()
+        client.find_notes.return_value = [42]
+        gw = AnkiGateway(client)
+
+        status = gw.create_or_update_note(_card(fields={"Front": "Q", "Back": "A2"}))
+        assert status.success is True
+        assert status.note_id == 42
+        client.update_note_fields.assert_called_once_with(42, {"Front": "Q", "Back": "A2"})
+        client.add_note.assert_not_called()
+
+    def test_validation_error_propagates(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft",
+            lambda card, client: (_ for _ in ()).throw(
+                AnkiGatewayError("bad", code=ErrorCode.E_DECK_NOT_FOUND)
+            ),
+        )
+        client = _fake_client()
+        gw = AnkiGateway(client)
+        import pytest
+        with pytest.raises(AnkiGatewayError, match="bad"):
+            gw.create_or_update_note(_card())
+
+
+# ---------------------------------------------------------------------------
+# AnkiGateway.push with update_mode parameter
+# ---------------------------------------------------------------------------
+
+class TestPushUpdateMode:
+    def test_create_only_does_not_search(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client(add_note_return=100)
+        gw = AnkiGateway(client)
+
+        result = gw.push([_card()], update_mode="create_only")
+        assert result.succeeded == 1
+        client.find_notes.assert_not_called()
+        client.add_note.assert_called_once()
+
+    def test_update_only_updates_existing(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client()
+        client.find_notes.return_value = [55]
+        gw = AnkiGateway(client)
+
+        result = gw.push([_card(fields={"Front": "Q", "Back": "A"})], update_mode="update_only")
+        assert result.succeeded == 1
+        assert result.results[0].note_id == 55
+        client.update_note_fields.assert_called_once_with(55, {"Front": "Q", "Back": "A"})
+        client.add_note.assert_not_called()
+
+    def test_update_only_fails_when_not_found(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client()
+        client.find_notes.return_value = []
+        gw = AnkiGateway(client)
+
+        result = gw.push([_card()], update_mode="update_only")
+        assert result.succeeded == 0
+        assert result.failed == 1
+        assert "No existing note" in result.results[0].error
+        client.add_note.assert_not_called()
+
+    def test_create_or_update_creates_when_new(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client(add_note_return=200)
+        client.find_notes.return_value = []
+        gw = AnkiGateway(client)
+
+        result = gw.push([_card()], update_mode="create_or_update")
+        assert result.succeeded == 1
+        assert result.results[0].note_id == 200
+        client.add_note.assert_called_once()
+
+    def test_create_or_update_updates_when_existing(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client()
+        client.find_notes.return_value = [300]
+        gw = AnkiGateway(client)
+
+        result = gw.push([_card(fields={"Front": "Q", "Back": "A"})], update_mode="create_or_update")
+        assert result.succeeded == 1
+        assert result.results[0].note_id == 300
+        client.update_note_fields.assert_called_once_with(300, {"Front": "Q", "Back": "A"})
+        client.add_note.assert_not_called()
+
+    def test_default_update_mode_is_create_only(self, monkeypatch) -> None:
+        """push() without update_mode should behave as create_only."""
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client(add_note_return=400)
+        gw = AnkiGateway(client)
+
+        result = gw.push([_card()])
+        assert result.succeeded == 1
+        client.find_notes.assert_not_called()
+        client.add_note.assert_called_once()

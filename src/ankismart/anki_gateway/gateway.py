@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.validator import validate_card_draft
@@ -10,6 +10,8 @@ from ankismart.core.models import CardDraft, CardPushStatus, PushResult
 from ankismart.core.tracing import timed, trace_context
 
 logger = get_logger("anki_gateway")
+
+UpdateMode = Literal["create_only", "update_only", "create_or_update"]
 
 
 def _card_to_note_params(card: CardDraft) -> dict[str, Any]:
@@ -58,7 +60,40 @@ class AnkiGateway:
     def get_model_field_names(self, model_name: str) -> list[str]:
         return self._client.get_model_field_names(model_name)
 
-    def push(self, cards: list[CardDraft]) -> PushResult:
+    # ------------------------------------------------------------------
+    # Single-note operations
+    # ------------------------------------------------------------------
+
+    def find_notes(self, query: str) -> list[int]:
+        """Find note IDs matching an Anki search query."""
+        return self._client.find_notes(query)
+
+    def update_note(self, note_id: int, fields: dict[str, str]) -> None:
+        """Update fields of an existing note by ID."""
+        self._client.update_note_fields(note_id, fields)
+        logger.info("Note updated", extra={"note_id": note_id})
+
+    def create_or_update_note(self, card: CardDraft) -> CardPushStatus:
+        """Create a note or update it if a duplicate front field exists."""
+        validate_card_draft(card, self._client)
+        existing_id = self._find_existing_note(card)
+        if existing_id is not None:
+            self._client.update_note_fields(existing_id, card.fields)
+            logger.info("Updated existing note", extra={"note_id": existing_id})
+            return CardPushStatus(index=0, note_id=existing_id, success=True)
+        note_params = _card_to_note_params(card)
+        note_id = self._client.add_note(note_params)
+        return CardPushStatus(index=0, note_id=note_id, success=True)
+
+    # ------------------------------------------------------------------
+    # Batch push with update_mode
+    # ------------------------------------------------------------------
+
+    def push(
+        self,
+        cards: list[CardDraft],
+        update_mode: UpdateMode = "create_only",
+    ) -> PushResult:
         initial_trace_id = cards[0].trace_id if cards else None
         with trace_context(initial_trace_id) as trace_id:
             with timed("anki_push_total"):
@@ -69,10 +104,12 @@ class AnkiGateway:
                 for i, card in enumerate(cards):
                     try:
                         validate_card_draft(card, self._client)
-                        note_params = _card_to_note_params(card)
-                        note_id = self._client.add_note(note_params)
-                        results.append(CardPushStatus(index=i, note_id=note_id, success=True))
-                        succeeded += 1
+                        status = self._push_single(i, card, update_mode, trace_id)
+                        results.append(status)
+                        if status.success:
+                            succeeded += 1
+                        else:
+                            failed += 1
                     except AnkiGatewayError as exc:
                         logger.warning(
                             "Card push failed",
@@ -85,6 +122,7 @@ class AnkiGateway:
                     "Push completed",
                     extra={
                         "trace_id": trace_id,
+                        "update_mode": update_mode,
                         "total": len(cards),
                         "succeeded": succeeded,
                         "failed": failed,
@@ -100,66 +138,55 @@ class AnkiGateway:
                 )
 
     def push_or_update(self, cards: list[CardDraft]) -> PushResult:
-        """Push cards, updating existing notes when a duplicate is found."""
-        initial_trace_id = cards[0].trace_id if cards else None
-        with trace_context(initial_trace_id) as trace_id:
-            with timed("anki_push_or_update_total"):
-                results: list[CardPushStatus] = []
-                succeeded = 0
-                failed = 0
+        """Backward-compatible alias for ``push(cards, update_mode="create_or_update")``."""
+        return self.push(cards, update_mode="create_or_update")
 
-                for i, card in enumerate(cards):
-                    try:
-                        validate_card_draft(card, self._client)
-                        # Try to find existing note by front field
-                        existing_id = self._find_existing_note(card)
-                        if existing_id is not None:
-                            self._client.update_note_fields(existing_id, card.fields)
-                            results.append(CardPushStatus(
-                                index=i, note_id=existing_id, success=True,
-                            ))
-                            logger.info(
-                                "Updated existing note",
-                                extra={"index": i, "note_id": existing_id, "trace_id": trace_id},
-                            )
-                        else:
-                            note_params = _card_to_note_params(card)
-                            note_id = self._client.add_note(note_params)
-                            results.append(CardPushStatus(index=i, note_id=note_id, success=True))
-                        succeeded += 1
-                    except AnkiGatewayError as exc:
-                        logger.warning(
-                            "Card push/update failed",
-                            extra={"index": i, "error": exc.message, "trace_id": trace_id},
-                        )
-                        results.append(CardPushStatus(index=i, success=False, error=exc.message))
-                        failed += 1
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
-                logger.info(
-                    "Push/update completed",
-                    extra={
-                        "trace_id": trace_id,
-                        "total": len(cards),
-                        "succeeded": succeeded,
-                        "failed": failed,
-                    },
-                )
+    def _push_single(
+        self,
+        index: int,
+        card: CardDraft,
+        update_mode: UpdateMode,
+        trace_id: str,
+    ) -> CardPushStatus:
+        """Process a single card according to *update_mode*."""
+        existing_id = (
+            self._find_existing_note(card)
+            if update_mode != "create_only"
+            else None
+        )
 
-                return PushResult(
-                    total=len(cards),
-                    succeeded=succeeded,
-                    failed=failed,
-                    results=results,
-                    trace_id=trace_id,
-                )
+        if update_mode == "create_only":
+            note_params = _card_to_note_params(card)
+            note_id = self._client.add_note(note_params)
+            return CardPushStatus(index=index, note_id=note_id, success=True)
+
+        if update_mode == "update_only":
+            if existing_id is None:
+                msg = "No existing note found to update"
+                logger.warning(msg, extra={"index": index, "trace_id": trace_id})
+                return CardPushStatus(index=index, success=False, error=msg)
+            self._client.update_note_fields(existing_id, card.fields)
+            logger.info("Updated existing note", extra={"index": index, "note_id": existing_id, "trace_id": trace_id})
+            return CardPushStatus(index=index, note_id=existing_id, success=True)
+
+        # create_or_update
+        if existing_id is not None:
+            self._client.update_note_fields(existing_id, card.fields)
+            logger.info("Updated existing note", extra={"index": index, "note_id": existing_id, "trace_id": trace_id})
+            return CardPushStatus(index=index, note_id=existing_id, success=True)
+        note_params = _card_to_note_params(card)
+        note_id = self._client.add_note(note_params)
+        return CardPushStatus(index=index, note_id=note_id, success=True)
 
     def _find_existing_note(self, card: CardDraft) -> int | None:
         """Search for an existing note matching the card's front field in the same deck."""
-        # Determine the primary field to search by
         front = card.fields.get("Front") or card.fields.get("Text")
         if not front:
             return None
-        # Escape quotes in search query
         escaped = front.replace('"', '\\"')
         field_name = "Front" if "Front" in card.fields else "Text"
         model_name = card.note_type.replace('"', '\\"')

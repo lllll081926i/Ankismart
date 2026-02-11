@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -15,6 +18,97 @@ from PySide6.QtWidgets import (
 
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
 from ankismart.ui.workers import BatchGenerateWorker
+
+
+# ---------------------------------------------------------------------------
+# Markdown syntax highlighter
+# ---------------------------------------------------------------------------
+
+class MarkdownHighlighter(QSyntaxHighlighter):
+    """Lightweight Markdown syntax highlighter for QPlainTextEdit."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._rules: list[tuple[re.Pattern, QTextCharFormat]] = []
+        self._build_rules()
+
+    def _make_fmt(
+        self,
+        *,
+        color: str | None = None,
+        bold: bool = False,
+        italic: bool = False,
+    ) -> QTextCharFormat:
+        fmt = QTextCharFormat()
+        if color:
+            fmt.setForeground(QColor(color))
+        if bold:
+            fmt.setFontWeight(QFont.Weight.Bold)
+        if italic:
+            fmt.setFontItalic(True)
+        return fmt
+
+    def _build_rules(self) -> None:
+        # Headings: lines starting with 1-6 '#'
+        self._rules.append((
+            re.compile(r"^#{1,6}\s+.+", re.MULTILINE),
+            self._make_fmt(color="#007AFF", bold=True),
+        ))
+        # Bold: **text** or __text__
+        self._rules.append((
+            re.compile(r"\*\*[^*]+\*\*|__[^_]+__"),
+            self._make_fmt(bold=True),
+        ))
+        # Italic: *text* or _text_
+        self._rules.append((
+            re.compile(r"(?<!\*)\*(?!\*)[^*]+\*(?!\*)|(?<!_)_(?!_)[^_]+_(?!_)"),
+            self._make_fmt(italic=True),
+        ))
+        # Inline code: `code`
+        self._rules.append((
+            re.compile(r"`[^`]+`"),
+            self._make_fmt(color="#E45649"),
+        ))
+        # Code fence: ``` lines
+        self._rules.append((
+            re.compile(r"^```.*$", re.MULTILINE),
+            self._make_fmt(color="#999999"),
+        ))
+        # Links: [text](url)
+        self._rules.append((
+            re.compile(r"\[[^\]]*\]\([^)]*\)"),
+            self._make_fmt(color="#0062CC"),
+        ))
+        # Images: ![alt](url)
+        self._rules.append((
+            re.compile(r"!\[[^\]]*\]\([^)]*\)"),
+            self._make_fmt(color="#0062CC", italic=True),
+        ))
+        # Blockquote: lines starting with >
+        self._rules.append((
+            re.compile(r"^>\s+.*", re.MULTILINE),
+            self._make_fmt(color="#666666", italic=True),
+        ))
+        # Unordered list: lines starting with - or *
+        self._rules.append((
+            re.compile(r"^[\s]*[-*+]\s+", re.MULTILINE),
+            self._make_fmt(color="#007AFF"),
+        ))
+        # Ordered list: lines starting with number.
+        self._rules.append((
+            re.compile(r"^[\s]*\d+\.\s+", re.MULTILINE),
+            self._make_fmt(color="#007AFF"),
+        ))
+        # Horizontal rule: --- or *** or ___
+        self._rules.append((
+            re.compile(r"^[-*_]{3,}\s*$", re.MULTILINE),
+            self._make_fmt(color="#999999"),
+        ))
+
+    def highlightBlock(self, text: str) -> None:  # noqa: N802
+        for pattern, fmt in self._rules:
+            for match in pattern.finditer(text):
+                self.setFormat(match.start(), match.end() - match.start(), fmt)
 
 
 class PreviewPage(QWidget):
@@ -57,6 +151,7 @@ class PreviewPage(QWidget):
 
         self._editor = QPlainTextEdit()
         self._editor.setPlaceholderText("Markdown 内容将显示在这里...")
+        self._highlighter = MarkdownHighlighter(self._editor.document())
         content_row.addWidget(self._editor, 1)
 
         layout.addLayout(content_row, 1)

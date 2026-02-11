@@ -7,7 +7,7 @@ from PySide6.QtCore import QThread, Signal
 
 from ankismart.anki_gateway.apkg_exporter import ApkgExporter
 from ankismart.anki_gateway.client import AnkiConnectClient
-from ankismart.anki_gateway.gateway import AnkiGateway
+from ankismart.anki_gateway.gateway import AnkiGateway, UpdateMode
 from ankismart.card_gen.generator import CardGenerator
 from ankismart.card_gen.llm_client import LLMClient
 from ankismart.card_gen.prompts import OCR_CORRECTION_PROMPT
@@ -78,22 +78,23 @@ class PushWorker(QThread):
         url: str,
         key: str,
         *,
-        update_mode: bool = False,
+        update_mode: bool | UpdateMode = False,
     ) -> None:
         super().__init__()
         self._cards = cards
         self._url = url
         self._key = key
-        self._update_mode = update_mode
+        # Backward compat: accept bool (True -> create_or_update, False -> create_only)
+        if isinstance(update_mode, bool):
+            self._update_mode: UpdateMode = "create_or_update" if update_mode else "create_only"
+        else:
+            self._update_mode = update_mode
 
     def run(self) -> None:
         try:
             client = AnkiConnectClient(url=self._url, key=self._key)
             gateway = AnkiGateway(client)
-            if self._update_mode:
-                result = gateway.push_or_update(self._cards)
-            else:
-                result = gateway.push(self._cards)
+            result = gateway.push(self._cards, update_mode=self._update_mode)
             self.finished.emit(result)
         except Exception as exc:
             self.error.emit(str(exc))
