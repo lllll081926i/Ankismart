@@ -173,7 +173,11 @@ class PreviewPage(QWidget):
         self._status_label.setText("正在生成卡片...")
 
         worker = BatchGenerateWorker(
-            documents, requests_config, config.openai_api_key, config.openai_model
+            documents,
+            requests_config,
+            config.deepseek_api_key if config.llm_provider == "deepseek" else config.openai_api_key,
+            config.deepseek_model if config.llm_provider == "deepseek" else config.openai_model,
+            base_url="https://api.deepseek.com" if config.llm_provider == "deepseek" else None,
         )
         worker.file_progress.connect(self._on_file_progress)
         worker.finished.connect(self._on_generate_done)

@@ -84,6 +84,11 @@ class ResultPage(QWidget):
 
         layout.addLayout(btn_row)
 
+        # Update mode option
+        self._update_check = QCheckBox("更新模式（已有相同卡片时更新而非新建）")
+        self._update_check.setCursor(Qt.CursorShape.PointingHandCursor)
+        layout.addWidget(self._update_check)
+
         # Result summary
         self._result_label = QLabel("")
         layout.addWidget(self._result_label)
@@ -143,7 +148,10 @@ class ResultPage(QWidget):
         self._btn_push.setEnabled(False)
         self._result_label.setText("正在推送到 Anki...")
 
-        worker = PushWorker(cards, config.anki_connect_url, config.anki_connect_key)
+        worker = PushWorker(
+            cards, config.anki_connect_url, config.anki_connect_key,
+            update_mode=self._update_check.isChecked(),
+        )
         worker.finished.connect(lambda result, rows=selected_rows: self._on_push_done(result, rows))
         worker.error.connect(self._on_push_error)
         worker.start()

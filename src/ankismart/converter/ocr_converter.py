@@ -188,7 +188,7 @@ def _ocr_image(ocr: PaddleOCR, image: Image.Image) -> str:
     return "\n".join(lines)
 
 
-def convert(file_path: Path, trace_id: str = "") -> MarkdownResult:
+def convert(file_path: Path, trace_id: str = "", *, ocr_correction_fn=None) -> MarkdownResult:
     """Convert a PDF file to Markdown via OCR."""
     trace_id = trace_id or get_trace_id()
 
@@ -227,6 +227,17 @@ def convert(file_path: Path, trace_id: str = "") -> MarkdownResult:
 
         content = "\n\n---\n\n".join(sections) if sections else ""
 
+        # Optional LLM-based OCR correction
+        if content.strip() and ocr_correction_fn is not None:
+            try:
+                with timed("ocr_correction"):
+                    content = ocr_correction_fn(content)
+            except Exception:
+                logger.warning(
+                    "OCR correction failed, using raw text",
+                    extra={"trace_id": trace_id},
+                )
+
         if not content.strip():
             logger.warning(
                 "OCR produced no text from PDF",
@@ -241,7 +252,7 @@ def convert(file_path: Path, trace_id: str = "") -> MarkdownResult:
     )
 
 
-def convert_image(file_path: Path, trace_id: str = "") -> MarkdownResult:
+def convert_image(file_path: Path, trace_id: str = "", *, ocr_correction_fn=None) -> MarkdownResult:
     """Convert a single image file to Markdown via OCR."""
     trace_id = trace_id or get_trace_id()
 
@@ -256,6 +267,17 @@ def convert_image(file_path: Path, trace_id: str = "") -> MarkdownResult:
         image = Image.open(file_path)
         ocr = _get_ocr()
         text = _ocr_image(ocr, image)
+
+        # Optional LLM-based OCR correction
+        if text.strip() and ocr_correction_fn is not None:
+            try:
+                with timed("ocr_correction"):
+                    text = ocr_correction_fn(text)
+            except Exception:
+                logger.warning(
+                    "OCR correction failed, using raw text",
+                    extra={"trace_id": trace_id},
+                )
 
     return MarkdownResult(
         content=text,

@@ -204,7 +204,7 @@ def test_start_convert_uses_batch_worker(monkeypatch):
     captured = {}
 
     class _FakeBatchWorker:
-        def __init__(self, file_paths):
+        def __init__(self, file_paths, config=None):
             captured["file_paths"] = file_paths
             self.file_progress = type(
                 "_Sig", (), {"connect": lambda self, fn: None}

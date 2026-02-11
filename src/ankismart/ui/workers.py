@@ -10,6 +10,7 @@ from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.gateway import AnkiGateway
 from ankismart.card_gen.generator import CardGenerator
 from ankismart.card_gen.llm_client import LLMClient
+from ankismart.card_gen.prompts import OCR_CORRECTION_PROMPT
 from ankismart.converter.converter import DocumentConverter
 from ankismart.core.models import (
     BatchConvertResult,
@@ -21,17 +22,27 @@ from ankismart.core.models import (
 )
 
 
+def _build_ocr_correction_fn(config) -> object:
+    """Build an OCR correction callable from config, or return None."""
+    if not getattr(config, "ocr_correction", False):
+        return None
+    llm = LLMClient.from_config(config)
+    return lambda text: llm.chat(OCR_CORRECTION_PROMPT, text)
+
+
 class ConvertWorker(QThread):
     finished = Signal(MarkdownResult)
     error = Signal(str)
 
-    def __init__(self, file_path: Path) -> None:
+    def __init__(self, file_path: Path, config=None) -> None:
         super().__init__()
         self._file_path = file_path
+        self._config = config
 
     def run(self) -> None:
         try:
-            converter = DocumentConverter()
+            ocr_fn = _build_ocr_correction_fn(self._config)
+            converter = DocumentConverter(ocr_correction_fn=ocr_fn)
             result = converter.convert(self._file_path)
             self.finished.emit(result)
         except Exception as exc:
@@ -42,15 +53,27 @@ class GenerateWorker(QThread):
     finished = Signal(list)  # list[CardDraft]
     error = Signal(str)
 
-    def __init__(self, request: GenerateRequest, api_key: str, model: str) -> None:
+    def __init__(
+        self,
+        request: GenerateRequest,
+        api_key: str,
+        model: str,
+        *,
+        base_url: str | None = None,
+    ) -> None:
         super().__init__()
         self._request = request
         self._api_key = api_key
         self._model = model
+        self._base_url = base_url
 
     def run(self) -> None:
         try:
-            llm_client = LLMClient(api_key=self._api_key, model=self._model)
+            llm_client = LLMClient(
+                api_key=self._api_key,
+                model=self._model,
+                base_url=self._base_url,
+            )
             generator = CardGenerator(llm_client)
             cards = generator.generate(self._request)
             self.finished.emit(cards)
@@ -62,17 +85,28 @@ class PushWorker(QThread):
     finished = Signal(PushResult)
     error = Signal(str)
 
-    def __init__(self, cards: list[CardDraft], url: str, key: str) -> None:
+    def __init__(
+        self,
+        cards: list[CardDraft],
+        url: str,
+        key: str,
+        *,
+        update_mode: bool = False,
+    ) -> None:
         super().__init__()
         self._cards = cards
         self._url = url
         self._key = key
+        self._update_mode = update_mode
 
     def run(self) -> None:
         try:
             client = AnkiConnectClient(url=self._url, key=self._key)
             gateway = AnkiGateway(client)
-            result = gateway.push(self._cards)
+            if self._update_mode:
+                result = gateway.push_or_update(self._cards)
+            else:
+                result = gateway.push(self._cards)
             self.finished.emit(result)
         except Exception as exc:
             self.error.emit(str(exc))
@@ -135,13 +169,15 @@ class BatchConvertWorker(QThread):
     file_progress = Signal(int, int, str)  # current, total, filename
     error = Signal(str)
 
-    def __init__(self, file_paths: list[Path]) -> None:
+    def __init__(self, file_paths: list[Path], config=None) -> None:
         super().__init__()
         self._file_paths = file_paths
+        self._config = config
 
     def run(self) -> None:
         try:
-            converter = DocumentConverter()
+            ocr_fn = _build_ocr_correction_fn(self._config)
+            converter = DocumentConverter(ocr_correction_fn=ocr_fn)
             documents: list[ConvertedDocument] = []
             errors: list[str] = []
             total = len(self._file_paths)
@@ -215,17 +251,20 @@ class BatchGenerateWorker(QThread):
         requests_config: dict,
         api_key: str,
         model: str,
+        *,
+        base_url: str | None = None,
     ) -> None:
         super().__init__()
         self._documents = documents
         self._config = requests_config  # strategy, deck_name, tags
         self._api_key = api_key
         self._model = model
+        self._base_url = base_url
 
     def run(self) -> None:
         try:
             llm_client = LLMClient(
-                api_key=self._api_key, model=self._model
+                api_key=self._api_key, model=self._model, base_url=self._base_url
             )
             generator = CardGenerator(llm_client)
             all_cards: list[CardDraft] = []

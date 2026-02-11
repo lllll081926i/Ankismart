@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -35,6 +37,14 @@ class SettingsPage(QWidget):
         form.setSpacing(15)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
+        # LLM Provider
+        self._provider_combo = QComboBox()
+        self._provider_combo.addItem("OpenAI", "openai")
+        self._provider_combo.addItem("DeepSeek", "deepseek")
+        self._provider_combo.setMinimumHeight(36)
+        self._provider_combo.currentIndexChanged.connect(self._on_provider_changed)
+        form.addRow("LLM 提供商：", self._provider_combo)
+
         # OpenAI
         self._api_key_input = QLineEdit()
         self._api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
@@ -46,6 +56,24 @@ class SettingsPage(QWidget):
         self._model_input.setPlaceholderText("gpt-4o")
         self._model_input.setMinimumHeight(36)
         form.addRow("OpenAI 模型：", self._model_input)
+
+        # DeepSeek
+        self._deepseek_key_input = QLineEdit()
+        self._deepseek_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._deepseek_key_input.setPlaceholderText("sk-...")
+        self._deepseek_key_input.setMinimumHeight(36)
+        form.addRow("DeepSeek API Key：", self._deepseek_key_input)
+
+        self._deepseek_model_input = QLineEdit()
+        self._deepseek_model_input.setPlaceholderText("deepseek-chat")
+        self._deepseek_model_input.setMinimumHeight(36)
+        form.addRow("DeepSeek 模型：", self._deepseek_model_input)
+
+        # Store DeepSeek row indices for visibility toggling
+        self._deepseek_key_label = form.labelForField(self._deepseek_key_input)
+        self._deepseek_model_label = form.labelForField(self._deepseek_model_input)
+        self._openai_key_label = form.labelForField(self._api_key_input)
+        self._openai_model_label = form.labelForField(self._model_input)
 
         # AnkiConnect
         self._anki_url_input = QLineEdit()
@@ -67,6 +95,10 @@ class SettingsPage(QWidget):
         self._default_tags_input = QLineEdit()
         self._default_tags_input.setMinimumHeight(36)
         form.addRow("默认标签：", self._default_tags_input)
+
+        # OCR correction
+        self._ocr_correction_check = QCheckBox("启用 OCR 文本纠错（使用 LLM 自动修正 OCR 错误）")
+        form.addRow("", self._ocr_correction_check)
 
         layout.addLayout(form)
         layout.addSpacing(10)
@@ -101,22 +133,55 @@ class SettingsPage(QWidget):
 
     def _load_config(self) -> None:
         config = self._main.config
+        # Provider
+        idx = self._provider_combo.findData(config.llm_provider)
+        if idx >= 0:
+            self._provider_combo.setCurrentIndex(idx)
+        # OpenAI
         self._api_key_input.setText(config.openai_api_key)
         self._model_input.setText(config.openai_model)
+        # DeepSeek
+        self._deepseek_key_input.setText(config.deepseek_api_key)
+        self._deepseek_model_input.setText(config.deepseek_model)
+        # AnkiConnect
         self._anki_url_input.setText(config.anki_connect_url)
         self._anki_key_input.setText(config.anki_connect_key)
+        # Defaults
         self._default_deck_input.setText(config.default_deck)
         self._default_tags_input.setText(", ".join(config.default_tags))
+        # OCR correction
+        self._ocr_correction_check.setChecked(config.ocr_correction)
+        # Toggle visibility
+        self._on_provider_changed()
+
+    def _on_provider_changed(self) -> None:
+        is_openai = self._provider_combo.currentData() == "openai"
+        openai_widgets = (
+            self._api_key_input, self._model_input,
+            self._openai_key_label, self._openai_model_label,
+        )
+        deepseek_widgets = (
+            self._deepseek_key_input, self._deepseek_model_input,
+            self._deepseek_key_label, self._deepseek_model_label,
+        )
+        for w in openai_widgets:
+            w.setVisible(is_openai)
+        for w in deepseek_widgets:
+            w.setVisible(not is_openai)
 
     def _save(self) -> None:
         tags = [t.strip() for t in self._default_tags_input.text().split(",") if t.strip()]
         config = AppConfig(
+            llm_provider=self._provider_combo.currentData() or "openai",
             openai_api_key=self._api_key_input.text(),
             openai_model=self._model_input.text() or "gpt-4o",
+            deepseek_api_key=self._deepseek_key_input.text(),
+            deepseek_model=self._deepseek_model_input.text() or "deepseek-chat",
             anki_connect_url=self._anki_url_input.text() or "http://127.0.0.1:8765",
             anki_connect_key=self._anki_key_input.text(),
             default_deck=self._default_deck_input.text() or "Default",
             default_tags=tags or ["ankismart"],
+            ocr_correction=self._ocr_correction_check.isChecked(),
         )
         try:
             save_config(config)

@@ -80,3 +80,15 @@ class AnkiConnectClient:
     def add_notes(self, notes_params: list[dict[str, Any]]) -> list[int | None]:
         """Add multiple notes. Returns list of note IDs (None for failures)."""
         return self._request("addNotes", {"notes": notes_params})
+
+    def find_notes(self, query: str) -> list[int]:
+        """Find note IDs matching an Anki search query."""
+        return self._request("findNotes", {"query": query})
+
+    def update_note_fields(self, note_id: int, fields: dict[str, str]) -> None:
+        """Update fields of an existing note."""
+        self._request("updateNoteFields", {"note": {"id": note_id, "fields": fields}})
+
+    def notes_info(self, note_ids: list[int]) -> list[dict[str, Any]]:
+        """Get detailed info for a list of note IDs."""
+        return self._request("notesInfo", {"notes": note_ids})

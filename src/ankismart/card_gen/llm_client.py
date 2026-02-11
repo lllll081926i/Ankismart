@@ -15,10 +15,33 @@ _MAX_RETRIES = 3
 _BASE_DELAY = 1.0  # seconds
 
 
+_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+
+
 class LLMClient:
-    def __init__(self, api_key: str, model: str = "gpt-4o") -> None:
-        self._client = OpenAI(api_key=api_key)
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-4o",
+        *,
+        base_url: str | None = None,
+    ) -> None:
+        kwargs: dict[str, object] = {"api_key": api_key}
+        if base_url:
+            kwargs["base_url"] = base_url
+        self._client = OpenAI(**kwargs)
         self._model = model
+
+    @classmethod
+    def from_config(cls, config) -> LLMClient:
+        """Create an LLMClient from AppConfig, dispatching by provider."""
+        if config.llm_provider == "deepseek":
+            return cls(
+                api_key=config.deepseek_api_key,
+                model=config.deepseek_model,
+                base_url=_DEEPSEEK_BASE_URL,
+            )
+        return cls(api_key=config.openai_api_key, model=config.openai_model)
 
     def chat(self, system_prompt: str, user_prompt: str) -> str:
         """Send a chat completion request with retry logic."""

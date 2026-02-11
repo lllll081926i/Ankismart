@@ -205,7 +205,7 @@ class ImportPage(QWidget):
         self._progress.show()
         self._status_label.setText("正在转换文档...")
 
-        worker = BatchConvertWorker(self._file_paths)
+        worker = BatchConvertWorker(self._file_paths, self._main.config)
         worker.file_progress.connect(self._on_file_progress)
         worker.finished.connect(self._on_batch_convert_done)
         worker.error.connect(self._on_error)

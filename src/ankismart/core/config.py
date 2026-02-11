@@ -14,17 +14,21 @@ logger = get_logger("config")
 CONFIG_DIR: Path = Path.home() / ".ankismart"
 CONFIG_PATH: Path = CONFIG_DIR / "config.yaml"
 
-_ENCRYPTED_FIELDS: set[str] = {"openai_api_key", "anki_connect_key"}
+_ENCRYPTED_FIELDS: set[str] = {"openai_api_key", "deepseek_api_key", "anki_connect_key"}
 _ENCRYPTED_PREFIX: str = "encrypted:"
 
 
 class AppConfig(BaseModel):
+    llm_provider: str = "openai"  # "openai" or "deepseek"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
     anki_connect_url: str = "http://127.0.0.1:8765"
     anki_connect_key: str = ""
     default_deck: str = "Default"
     default_tags: list[str] = ["ankismart"]
+    ocr_correction: bool = False
     log_level: str = "INFO"
 
 
