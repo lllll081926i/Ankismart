@@ -2,18 +2,67 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QPushButton,
     QStackedWidget,
     QStatusBar,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from ankismart.core.config import AppConfig
 from ankismart.core.models import BatchConvertResult, CardDraft
+from ankismart.core.tracing import metrics
+
+
+class MetricsDialog(QDialog):
+    """Simple dialog showing performance metrics."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("性能统计")
+        self.setMinimumSize(500, 400)
+
+        layout = QVBoxLayout(self)
+
+        # Cache stats
+        hits = metrics.cache_hits
+        misses = metrics.cache_misses
+        total = hits + misses
+        rate = f"{hits / total * 100:.1f}%" if total else "N/A"
+        cache_label = QLabel(f"缓存命中：{hits} / {total}（命中率 {rate}）")
+        layout.addWidget(cache_label)
+
+        # Stage timing table
+        snapshot = metrics.snapshot()
+        table = QTableWidget(len(snapshot), 5)
+        table.setHorizontalHeaderLabels(["阶段", "次数", "平均 (ms)", "最小 (ms)", "最大 (ms)"])
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        for row, (name, m) in enumerate(sorted(snapshot.items())):
+            table.setItem(row, 0, QTableWidgetItem(name))
+            table.setItem(row, 1, QTableWidgetItem(str(m.count)))
+            table.setItem(row, 2, QTableWidgetItem(f"{m.avg_ms:.1f}"))
+            table.setItem(row, 3, QTableWidgetItem(f"{m.min_ms:.1f}" if m.count else "N/A"))
+            table.setItem(row, 4, QTableWidgetItem(f"{m.max_ms:.1f}" if m.count else "N/A"))
+
+        table.resizeColumnsToContents()
+        layout.addWidget(table)
+
+        # Reset button
+        btn_reset = QPushButton("重置统计")
+        btn_reset.clicked.connect(self._reset)
+        layout.addWidget(btn_reset)
+
+    def _reset(self) -> None:
+        metrics.reset()
+        self.accept()
 
 
 class MainWindow(QMainWindow):
@@ -67,6 +116,12 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self._status_bar)
         self._connection_label = QLabel("AnkiConnect：检测中...")
         self._status_bar.addPermanentWidget(self._connection_label)
+
+        self._btn_metrics = QPushButton("性能统计")
+        self._btn_metrics.setFlat(True)
+        self._btn_metrics.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_metrics.clicked.connect(self._show_metrics)
+        self._status_bar.addPermanentWidget(self._btn_metrics)
 
         # Navigation signals
         self._btn_import.clicked.connect(lambda: self._switch_page(0))
@@ -140,3 +195,7 @@ class MainWindow(QMainWindow):
     @property
     def import_page(self) -> QWidget | None:
         return self._import_page
+
+    def _show_metrics(self) -> None:
+        dialog = MetricsDialog(self)
+        dialog.exec()
