@@ -77,6 +77,21 @@ class AppConfig(BaseModel):
     theme: str = "light"
     language: str = "zh"
 
+    # Experimental features
+    enable_auto_split: bool = False  # Experimental: Auto-split long documents
+    split_threshold: int = 70000  # Character count threshold for splitting
+
+    # Performance statistics
+    total_files_processed: int = 0
+    total_conversion_time: float = 0.0
+    total_generation_time: float = 0.0
+    total_cards_generated: int = 0
+
+    # Duplicate check settings
+    duplicate_scope: str = "deck"  # "deck" or "collection"
+    duplicate_check_model: bool = True
+    allow_duplicate: bool = False
+
     @property
     def active_provider(self) -> LLMProviderConfig | None:
         for p in self.llm_providers:
@@ -144,9 +159,9 @@ def _decrypt_field(value: str, field_name: str) -> str:
         ciphertext = value[len(_ENCRYPTED_PREFIX):]
         try:
             return decrypt(ciphertext)
-        except Exception:
+        except (ValueError, TypeError) as e:
             logger.warning(
-                "Failed to decrypt field, resetting to empty",
+                f"Failed to decrypt field, resetting to empty: {e}",
                 extra={"field": field_name},
             )
             return ""

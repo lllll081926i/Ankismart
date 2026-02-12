@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Callable
 
 from ankismart.converter import (
     docx_converter,
@@ -25,7 +26,7 @@ from ankismart.core.tracing import metrics, timed, trace_context
 logger = get_logger("converter")
 
 # Map file types to their converter functions
-_CONVERTERS: dict[str, ...] = {
+_CONVERTERS: dict[str, Callable[[Path, str], MarkdownResult]] = {
     "markdown": markdown_converter.convert,
     "text": text_converter.convert,
     "docx": docx_converter.convert,

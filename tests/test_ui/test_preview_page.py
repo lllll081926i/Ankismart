@@ -4,7 +4,7 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication
 
 from ankismart.core.models import (
     BatchConvertResult,

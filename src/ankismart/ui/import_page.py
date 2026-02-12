@@ -2,26 +2,34 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Qt, Signal
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QListWidgetItem, QMessageBox, QSizePolicy, QVBoxLayout, QWidget
+from PyQt6.QtCore import QThread, Qt, pyqtSignal
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent
+from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QListWidgetItem, QMessageBox, QSizePolicy, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
+    CardWidget,
     ComboBox,
     EditableComboBox,
     ExpandLayout,
     FluentIcon as FIF,
+    InfoBar,
+    InfoBarPosition,
     LineEdit,
     ListWidget,
+    MessageBox,
     PrimaryPushButton,
+    ProgressBar,
     ProgressRing,
     PushButton,
     RangeSettingCard,
     ScrollArea,
     SettingCard,
     SettingCardGroup,
+    SimpleCardWidget,
     Slider,
     StateToolTip,
+    SubtitleLabel,
+    TitleLabel,
 )
 
 from ankismart.anki_gateway.client import AnkiConnectClient
@@ -29,16 +37,25 @@ from ankismart.anki_gateway.gateway import AnkiGateway
 from ankismart.card_gen.generator import CardGenerator
 from ankismart.card_gen.llm_client import LLMClient
 from ankismart.converter.converter import DocumentConverter
+from ankismart.converter.ocr_converter import download_missing_ocr_models, get_missing_ocr_models
 from ankismart.core.config import save_config
+from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
+from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
+from ankismart.ui.styles import SPACING_LARGE, SPACING_MEDIUM, SPACING_SMALL, MARGIN_STANDARD, MARGIN_SMALL
+from ankismart.ui.utils import ProgressMixin
+from ankismart.ui.i18n import get_text
+import re
+
+logger = get_logger(__name__)
 
 
 class BatchConvertWorker(QThread):
     """Worker thread for batch file conversion."""
 
-    file_progress = Signal(str, int, int)  # filename, current, total
-    finished = Signal(object)  # BatchConvertResult
-    error = Signal(str)  # Error message
+    file_progress = pyqtSignal(str, int, int)  # filename, current, total
+    finished = pyqtSignal(object)  # BatchConvertResult
+    error = pyqtSignal(str)  # Error message
 
     def __init__(self, file_paths: list[Path], config=None) -> None:
         super().__init__()
@@ -84,8 +101,8 @@ class BatchConvertWorker(QThread):
 class DeckLoaderWorker(QThread):
     """Worker thread for loading deck names from Anki."""
 
-    finished = Signal(list)  # list[str]
-    error = Signal(str)  # Error message
+    finished = pyqtSignal(list)  # list[str]
+    error = pyqtSignal(str)  # Error message
 
     def __init__(self, anki_url: str, anki_key: str = "") -> None:
         super().__init__()
@@ -102,35 +119,34 @@ class DeckLoaderWorker(QThread):
             self.error.emit(str(e))
 
 
-class DropAreaWidget(QWidget):
-    """Widget that accepts drag and drop files."""
+class OCRModelDownloadWorker(QThread):
+    """Worker thread for downloading OCR models."""
 
-    files_dropped = Signal(list)  # list[Path]
-    clicked = Signal()  # Signal when clicked
+    progress = pyqtSignal(int, int, str)  # current, total, message
+    finished = pyqtSignal(list)  # list[str] - downloaded model names
+    error = pyqtSignal(str)  # Error message
+
+    def run(self) -> None:
+        try:
+            downloaded = download_missing_ocr_models(
+                progress_callback=lambda current, total, msg: self.progress.emit(current, total, msg)
+            )
+            self.finished.emit(downloaded)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class DropAreaWidget(SimpleCardWidget):
+    """Widget that accepts drag and drop files using SimpleCardWidget."""
+
+    files_dropped = pyqtSignal(list)  # list[Path]
+    clicked = pyqtSignal()  # Signal when clicked
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)  # Show pointer cursor
-
-        # Set a more visible border using QPalette and paintEvent
-        self.setAutoFillBackground(False)
-
-    def paintEvent(self, event):
-        """Custom paint to draw dashed border."""
-        from PySide6.QtGui import QPainter, QPen, QColor
-        from PySide6.QtCore import Qt
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        # Draw dashed border
-        pen = QPen(QColor("#cccccc"), 2, Qt.PenStyle.DashLine)
-        painter.setPen(pen)
-
-        # Draw rounded rectangle
-        rect = self.rect().adjusted(1, 1, -1, -1)  # Adjust for pen width
-        painter.drawRoundedRect(rect, 8, 8)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setBorderRadius(8)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -172,7 +188,7 @@ class DropAreaWidget(QWidget):
         super().leaveEvent(event)
 
 
-class ImportPage(QWidget):
+class ImportPage(ProgressMixin, QWidget):
     """File import and configuration page."""
 
     def __init__(self, main_window):
@@ -181,19 +197,22 @@ class ImportPage(QWidget):
         self._file_paths: list[Path] = []
         self._worker: BatchConvertWorker | None = None
         self._deck_loader: DeckLoaderWorker | None = None
+        self._ocr_download_worker: OCRModelDownloadWorker | None = None
         self._state_tooltip: StateToolTip | None = None
+        self._model_check_in_progress = False
 
         self.setObjectName("importPage")
 
         self._init_ui()
+        self._init_shortcuts()
         self._load_decks()
 
     def _init_ui(self):
         """Initialize the user interface."""
         # Main horizontal layout
         main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
+        main_layout.setSpacing(SPACING_LARGE)
 
         # Left side (50% width) - File selection area
         left_widget = self._create_left_panel()
@@ -217,19 +236,17 @@ class ImportPage(QWidget):
         self._drop_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._drop_area.files_dropped.connect(self._on_files_dropped)
         self._drop_area.clicked.connect(self._select_files)
-        self._drop_area.setStyleSheet("background: transparent;")
 
         drop_layout = QVBoxLayout(self._drop_area)
-        drop_layout.setContentsMargins(20, 20, 20, 20)
-        drop_layout.setSpacing(12)
+        drop_layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
+        drop_layout.setSpacing(SPACING_MEDIUM)
 
         # Top row: Title and file count
         top_row = QHBoxLayout()
-        top_row.setSpacing(10)
+        top_row.setSpacing(MARGIN_SMALL)
 
-        title = BodyLabel()
+        title = SubtitleLabel()
         title.setText("文件选择" if self._main.config.language == "zh" else "File Selection")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; background: transparent;")
         top_row.addWidget(title)
 
         top_row.addStretch()
@@ -239,20 +256,18 @@ class ImportPage(QWidget):
         self._file_count_label.setText(
             "已选择 0 个文件" if self._main.config.language == "zh" else "0 files selected"
         )
-        self._file_count_label.setStyleSheet("font-size: 12px; color: #999; background: transparent;")
         top_row.addWidget(self._file_count_label)
 
         drop_layout.addLayout(top_row)
 
         # Center hint label - shown only when no files
-        self._drop_label = BodyLabel()
+        self._drop_label = SubtitleLabel()
         self._drop_label.setText(
             "拖拽文件到此处或点击选择文件"
             if self._main.config.language == "zh"
             else "Drag files here or click to select"
         )
         self._drop_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._drop_label.setStyleSheet("font-size: 16px; color: #ccc; background: transparent;")
         drop_layout.addStretch()
         drop_layout.addWidget(self._drop_label)
         drop_layout.addStretch()
@@ -261,7 +276,6 @@ class ImportPage(QWidget):
         self._file_list = ListWidget()
         self._file_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._file_list.customContextMenuRequested.connect(self._show_file_context_menu)
-        self._file_list.setStyleSheet("background: transparent; border: none;")
         self._file_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._file_list.setMinimumHeight(200)
         self._file_list.setVisible(False)  # Hidden initially
@@ -285,15 +299,35 @@ class ImportPage(QWidget):
         # Use ScrollArea for right panel
         scroll = ScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
+        # Hide scrollbars
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        # Remove gray background - make transparent
+        scroll.setStyleSheet("""
+            ScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+            QScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+
         self._scroll_widget = QWidget()
-        self._scroll_widget.setStyleSheet("background: transparent;")
+        self._scroll_widget.setStyleSheet("background-color: transparent;")
         scroll.setWidget(self._scroll_widget)
 
         # Use ExpandLayout for right panel content
         self.expand_layout = ExpandLayout(self._scroll_widget)
         self.expand_layout.setContentsMargins(0, 0, 0, 0)
-        self.expand_layout.setSpacing(20)
+        self.expand_layout.setSpacing(SPACING_LARGE)
+
+        # Top buttons (moved from bottom)
+        top_button_widget = self._create_top_buttons()
+        self.expand_layout.addWidget(top_button_widget)
 
         # Configuration area (without LLM provider)
         config_group = self._create_config_group()
@@ -303,9 +337,9 @@ class ImportPage(QWidget):
         strategy_group = self._create_strategy_group()
         self.expand_layout.addWidget(strategy_group)
 
-        # Action buttons
-        button_widget = self._create_action_buttons()
-        self.expand_layout.addWidget(button_widget)
+        # Bottom action buttons
+        bottom_button_widget = self._create_bottom_buttons()
+        self.expand_layout.addWidget(bottom_button_widget)
 
         # Progress display
         progress_widget = self._create_progress_display()
@@ -332,6 +366,12 @@ class ImportPage(QWidget):
         self._total_count_input = LineEdit()
         self._total_count_input.setText("20")
         self._total_count_input.setFixedWidth(100)
+        self._total_count_input.setPlaceholderText(
+            get_text("import.card_count_placeholder", self._main.config.language)
+        )
+        self._total_count_input.setToolTip(
+            get_text("import.card_count_tooltip", self._main.config.language)
+        )
         self._count_card.hBoxLayout.addWidget(self._total_count_input)
         self._count_card.hBoxLayout.addSpacing(16)
         group.addSettingCard(self._count_card)
@@ -352,6 +392,12 @@ class ImportPage(QWidget):
         self._deck_combo = EditableComboBox()
         self._deck_combo.addItem("Default")
         self._deck_combo.setCurrentText("Default")
+        self._deck_combo.setPlaceholderText(
+            get_text("import.deck_name_placeholder", self._main.config.language)
+        )
+        self._deck_combo.setToolTip(
+            get_text("import.deck_name_tooltip", self._main.config.language)
+        )
         self._deck_card.hBoxLayout.addWidget(self._deck_combo)
         self._deck_card.hBoxLayout.addSpacing(16)
         group.addSettingCard(self._deck_card)
@@ -364,7 +410,12 @@ class ImportPage(QWidget):
             group
         )
         self._tags_input = LineEdit()
-        self._tags_input.setPlaceholderText("ankismart")
+        self._tags_input.setPlaceholderText(
+            get_text("import.tags_placeholder", self._main.config.language)
+        )
+        self._tags_input.setToolTip(
+            get_text("import.tags_tooltip", self._main.config.language)
+        )
         if self._main.config.last_tags:
             self._tags_input.setText(self._main.config.last_tags)
         self._tags_card.hBoxLayout.addWidget(self._tags_input)
@@ -433,19 +484,61 @@ class ImportPage(QWidget):
 
         return group
 
-    def _create_action_buttons(self) -> QWidget:
-        """Create action buttons."""
+    def _init_shortcuts(self):
+        """Initialize page-specific keyboard shortcuts."""
+        # Ctrl+O: Open files
+        create_shortcut(self, ShortcutKeys.OPEN_FILE, self._select_files)
+
+        # Ctrl+G: Start generation
+        create_shortcut(self, ShortcutKeys.START_GENERATION, self._start_convert)
+
+    def _create_top_buttons(self) -> QWidget:
+        """Create top-right button row."""
         widget = QWidget()
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(MARGIN_SMALL)
 
-        self._btn_convert = PrimaryPushButton(
-            "开始生成" if self._main.config.language == "zh" else "Start Generation"
+        is_zh = self._main.config.language == "zh"
+
+        layout.addStretch()  # Push buttons to right
+
+        self._btn_load_example = PushButton(
+            "加载示例" if is_zh else "Load Example"
         )
+        self._btn_load_example.setIcon(FIF.DOCUMENT)
+        self._btn_load_example.clicked.connect(self._load_example)
+
+        self._btn_recommend = PushButton(
+            "推荐策略" if is_zh else "Recommend Strategy"
+        )
+        self._btn_recommend.setIcon(FIF.ROBOT)
+        self._btn_recommend.clicked.connect(self._recommend_strategy)
+
+        layout.addWidget(self._btn_load_example)
+        layout.addWidget(self._btn_recommend)
+
+        return widget
+
+    def _create_bottom_buttons(self) -> QWidget:
+        """Create bottom action buttons."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(MARGIN_SMALL)
+
+        is_zh = self._main.config.language == "zh"
+
+        # Add shortcut hints to button tooltips
+        start_text = "开始生成" if is_zh else "Start Generation"
+        start_shortcut = get_shortcut_text(ShortcutKeys.START_GENERATION, self._main.config.language)
+
+        self._btn_convert = PrimaryPushButton(start_text)
+        self._btn_convert.setToolTip(f"{start_text} ({start_shortcut})")
         self._btn_convert.clicked.connect(self._start_convert)
 
         self._btn_clear = PushButton(
-            "清除" if self._main.config.language == "zh" else "Clear"
+            "清除" if is_zh else "Clear"
         )
         self._btn_clear.clicked.connect(self._clear_all)
 
@@ -455,22 +548,52 @@ class ImportPage(QWidget):
 
         return widget
 
+
     def _create_progress_display(self) -> QWidget:
         """Create progress display area."""
         widget = QWidget()
-        layout = QHBoxLayout(widget)
+        layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(MARGIN_SMALL)
 
-        self._progress = ProgressRing()
-        self._progress.setFixedSize(40, 40)
-        self._progress.hide()
+        # Progress bar with percentage
+        progress_row = QHBoxLayout()
+        progress_row.setSpacing(MARGIN_SMALL)
+
+        self._progress_bar = ProgressBar()
+        self._progress_bar.setMinimum(0)
+        self._progress_bar.setMaximum(100)
+        self._progress_bar.setValue(0)
+        self._progress_bar.hide()
+
+        self._progress_ring = ProgressRing()
+        self._progress_ring.setFixedSize(40, 40)
+        self._progress_ring.hide()
+
+        progress_row.addWidget(self._progress_ring)
+        progress_row.addWidget(self._progress_bar, 1)
+
+        layout.addLayout(progress_row)
+
+        # Status label and cancel button row
+        status_row = QHBoxLayout()
+        status_row.setSpacing(MARGIN_SMALL)
 
         self._status_label = BodyLabel()
         self._status_label.setText("")
         self._status_label.setWordWrap(True)
 
-        layout.addWidget(self._progress)
-        layout.addWidget(self._status_label, 1)
+        self._btn_cancel = PushButton(
+            "取消" if self._main.config.language == "zh" else "Cancel"
+        )
+        self._btn_cancel.setIcon(FIF.CLOSE)
+        self._btn_cancel.clicked.connect(self._cancel_operation)
+        self._btn_cancel.hide()
+
+        status_row.addWidget(self._status_label, 1)
+        status_row.addWidget(self._btn_cancel)
+
+        layout.addLayout(status_row)
 
         return widget
 
@@ -571,15 +694,130 @@ class ImportPage(QWidget):
         if file_paths:
             self._add_files([Path(p) for p in file_paths])
 
+    def _validate_card_count(self, count_str: str) -> tuple[bool, int | None, str | None]:
+        """Validate target card count input.
+
+        Returns:
+            Tuple of (is_valid, value, error_message)
+        """
+        is_zh = self._main.config.language == "zh"
+
+        # Check if it's a valid integer
+        try:
+            count = int(count_str)
+        except ValueError:
+            return (
+                False,
+                None,
+                get_text("import.card_count_must_be_number", is_zh)
+            )
+
+        # Check range (1-1000)
+        if count < 1 or count > 1000:
+            return (
+                False,
+                None,
+                get_text("import.card_count_out_of_range", is_zh)
+            )
+
+        return (True, count, None)
+
+    def _validate_tags(self, tags_str: str) -> tuple[bool, str | None]:
+        """Validate tags format.
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not tags_str.strip():
+            return (True, None)  # Empty tags are allowed
+
+        is_zh = self._main.config.language == "zh"
+
+        # Split by comma and validate each tag
+        tags = [tag.strip() for tag in tags_str.split(",")]
+
+        # Pattern: letters, numbers, Chinese characters, underscores, hyphens
+        tag_pattern = re.compile(r'^[\w\u4e00-\u9fff-]+$')
+
+        for tag in tags:
+            if tag and not tag_pattern.match(tag):
+                return (
+                    False,
+                    get_text("import.tags_contain_invalid_chars", is_zh)
+                )
+
+        return (True, None)
+
+    def _validate_deck_name(self, deck_name: str) -> tuple[bool, str | None]:
+        """Validate deck name.
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        is_zh = self._main.config.language == "zh"
+
+        # Check if empty
+        if not deck_name.strip():
+            return (
+                False,
+                get_text("import.deck_name_empty", is_zh)
+            )
+
+        # Check for invalid characters: < > : " / \ | ? *
+        invalid_chars = r'[<>:"/\\|?*]'
+        if re.search(invalid_chars, deck_name):
+            return (
+                False,
+                get_text("import.deck_name_invalid_chars", is_zh)
+            )
+
+        return (True, None)
+
     def _start_convert(self):
         """Start batch conversion and generation."""
-        # Validation
+        is_zh = self._main.config.language == "zh"
+
+        # Validation: Files
         if not self._file_paths:
-            QMessageBox.warning(
-                self,
-                "警告" if self._main.config.language == "zh" else "Warning",
-                "请先选择文件" if self._main.config.language == "zh" else "Please select files first"
+            MessageBox.warning(
+                get_text("import.warning", is_zh),
+                get_text("import.please_select_files", is_zh),
+                self
             )
+            return
+
+        # Validation: Target card count
+        is_valid, count_value, error_msg = self._validate_card_count(self._total_count_input.text())
+        if not is_valid:
+            MessageBox.warning(
+                get_text("import.invalid_card_count", is_zh),
+                error_msg,
+                self
+            )
+            self._total_count_input.setFocus()
+            return
+
+        # Validation: Tags format
+        is_valid, error_msg = self._validate_tags(self._tags_input.text())
+        if not is_valid:
+            MessageBox.warning(
+                get_text("import.invalid_tags", is_zh),
+                error_msg,
+                self
+            )
+            self._tags_input.setFocus()
+            return
+
+        # Validation: Deck name
+        deck_name = self._deck_combo.currentText().strip()
+        is_valid, error_msg = self._validate_deck_name(deck_name)
+        if not is_valid:
+            MessageBox.warning(
+                get_text("import.invalid_deck_name", is_zh),
+                error_msg,
+                self
+            )
+            self._deck_combo.setFocus()
             return
 
         # Check if OCR models are ready
@@ -589,41 +827,29 @@ class ImportPage(QWidget):
         # Validate provider
         provider = self._main.config.active_provider
         if not provider:
-            QMessageBox.warning(
-                self,
-                "警告" if self._main.config.language == "zh" else "Warning",
-                "请先配置 LLM 提供商" if self._main.config.language == "zh" else "Please configure LLM provider first"
+            MessageBox.warning(
+                get_text("import.warning", is_zh),
+                get_text("import.please_configure_provider", is_zh),
+                self
             )
             return
 
         # Check API key (except for Ollama)
         if "Ollama" not in provider.name and not provider.api_key.strip():
-            QMessageBox.warning(
-                self,
-                "警告" if self._main.config.language == "zh" else "Warning",
-                "请先配置 API Key" if self._main.config.language == "zh" else "Please configure API Key first"
-            )
-            return
-
-        # Validate deck name
-        deck_name = self._deck_combo.currentText().strip()
-        if not deck_name:
-            QMessageBox.warning(
-                self,
-                "警告" if self._main.config.language == "zh" else "Warning",
-                "请输入卡片组名称" if self._main.config.language == "zh" else "Please enter deck name"
+            MessageBox.warning(
+                get_text("import.warning", is_zh),
+                get_text("import.please_configure_api_key", is_zh),
+                self
             )
             return
 
         # Validate strategy mix
         config = self.build_generation_config()
         if not config["strategy_mix"]:
-            QMessageBox.warning(
-                self,
-                "警告" if self._main.config.language == "zh" else "Warning",
-                "请至少选择一个生成策略（占比 > 0）"
-                if self._main.config.language == "zh"
-                else "Please select at least one strategy (ratio > 0)"
+            MessageBox.warning(
+                get_text("import.warning", is_zh),
+                get_text("import.please_select_strategy", is_zh),
+                self
             )
             return
 
@@ -634,22 +860,134 @@ class ImportPage(QWidget):
 
         # Start worker
         self._btn_convert.setEnabled(False)
-        self._progress.show()
+        self._progress_ring.show()
+        self._progress_bar.show()
+        self._progress_bar.setValue(0)
+        self._btn_cancel.show()
         self._status_label.setText(
             "正在转换文件..." if self._main.config.language == "zh" else "Converting files..."
         )
 
         self._worker = BatchConvertWorker(self._file_paths, self._main.config)
         self._worker.file_progress.connect(self._on_file_progress)
+        self._worker.page_progress.connect(self._on_page_progress)
         self._worker.finished.connect(self._on_batch_convert_done)
         self._worker.error.connect(self._on_convert_error)
+        self._worker.cancelled.connect(self._on_operation_cancelled)
         self._worker.start()
 
     def _ensure_ocr_models_ready(self) -> bool:
-        """Check if OCR models are ready (placeholder for actual implementation)."""
-        # This would check if PaddleOCR models are downloaded
-        # For now, return True
-        return True
+        """Check if OCR models are ready and download if necessary."""
+        # Prevent multiple simultaneous checks
+        if self._model_check_in_progress:
+            return False
+
+        # Check if models are missing
+        missing_models = get_missing_ocr_models()
+        if not missing_models:
+            return True
+
+        # Show confirmation dialog
+        is_zh = self._main.config.language == "zh"
+        model_list = ", ".join(missing_models)
+        message = (
+            f"检测到缺失的 OCR 模型：{model_list}\n\n是否立即下载？（首次使用需要下载约 20MB 数据）"
+            if is_zh
+            else f"Missing OCR models detected: {model_list}\n\nDownload now? (First-time use requires ~20MB download)"
+        )
+
+        reply = QMessageBox.question(
+            self,
+            "下载 OCR 模型" if is_zh else "Download OCR Models",
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return False
+
+        # Start download in background thread
+        self._model_check_in_progress = True
+        self._btn_convert.setEnabled(False)
+
+        # Show progress tooltip
+        self._state_tooltip = StateToolTip(
+            "正在下载 OCR 模型" if is_zh else "Downloading OCR Models",
+            "请稍候..." if is_zh else "Please wait...",
+            self.window()
+        )
+        self._state_tooltip.move(self._state_tooltip.getSuitablePos())
+        self._state_tooltip.show()
+
+        # Create and start worker
+        self._ocr_download_worker = OCRModelDownloadWorker()
+        self._ocr_download_worker.progress.connect(self._on_ocr_download_progress)
+        self._ocr_download_worker.finished.connect(self._on_ocr_download_finished)
+        self._ocr_download_worker.error.connect(self._on_ocr_download_error)
+        self._ocr_download_worker.start()
+
+        return False  # Return False to prevent immediate conversion start
+
+    def _on_ocr_download_progress(self, current: int, total: int, message: str):
+        """Handle OCR model download progress."""
+        if self._state_tooltip:
+            self._state_tooltip.setContent(message)
+
+    def _on_ocr_download_finished(self, downloaded_models: list[str]):
+        """Handle successful OCR model download."""
+        self._model_check_in_progress = False
+        self._btn_convert.setEnabled(True)
+
+        if self._state_tooltip:
+            is_zh = self._main.config.language == "zh"
+            success_msg = (
+                f"模型下载完成！已下载 {len(downloaded_models)} 个模型"
+                if is_zh
+                else f"Download complete! {len(downloaded_models)} model(s) downloaded"
+            )
+            self._state_tooltip.setContent(success_msg)
+            self._state_tooltip.setState(True)
+            self._state_tooltip = None
+
+        # Show success message
+        is_zh = self._main.config.language == "zh"
+        QMessageBox.information(
+            self,
+            "下载成功" if is_zh else "Download Successful",
+            "OCR 模型已成功下载，现在可以开始转换文件了。"
+            if is_zh
+            else "OCR models downloaded successfully. You can now start converting files."
+        )
+
+    def _on_ocr_download_error(self, error_message: str):
+        """Handle OCR model download error."""
+        self._model_check_in_progress = False
+        self._btn_convert.setEnabled(True)
+
+        if self._state_tooltip:
+            is_zh = self._main.config.language == "zh"
+            self._state_tooltip.setContent(
+                "下载失败" if is_zh else "Download failed"
+            )
+            self._state_tooltip.setState(True)
+            self._state_tooltip = None
+
+        # Show error dialog
+        is_zh = self._main.config.language == "zh"
+        error_detail = (
+            f"OCR 模型下载失败：\n\n{error_message}\n\n"
+            "请检查网络连接后重试，或手动下载模型文件。"
+            if is_zh
+            else f"OCR model download failed:\n\n{error_message}\n\n"
+            "Please check your network connection and try again, or manually download the model files."
+        )
+
+        QMessageBox.critical(
+            self,
+            "下载失败" if is_zh else "Download Failed",
+            error_detail
+        )
 
     def build_generation_config(self) -> dict:
         """Build generation configuration from UI state."""
@@ -672,15 +1010,66 @@ class ImportPage(QWidget):
 
     def _on_file_progress(self, filename: str, current: int, total: int):
         """Handle file conversion progress."""
-        self._status_label.setText(
-            f"正在转换: {filename} ({current}/{total})"
-            if self._main.config.language == "zh"
-            else f"Converting: {filename} ({current}/{total})"
+        from ankismart.ui.i18n import get_text
+
+        percentage = int((current / total) * 100) if total > 0 else 0
+        self._progress_bar.setValue(percentage)
+
+        # Store current file info for page progress updates
+        self._current_file = filename
+        self._current_file_index = current
+        self._total_files = total
+
+        # Update status with overall progress
+        overall_text = get_text(
+            "import.overall_progress",
+            self._main.config.language,
+            percentage=percentage,
+            current=current,
+            total=total
         )
+
+        file_text = get_text(
+            "import.converting_file",
+            self._main.config.language,
+            filename=filename,
+            current=current,
+            total=total
+        )
+
+        self._status_label.setText(f"{file_text}\n{overall_text}")
+
+    def _on_page_progress(self, filename: str, current_page: int, total_pages: int):
+        """Handle OCR page-by-page progress."""
+        from ankismart.ui.i18n import get_text
+
+        # Update status label with detailed page information
+        if total_pages > 0:
+            file_text = get_text(
+                "import.converting_file_with_page",
+                self._main.config.language,
+                filename=filename,
+                page=current_page,
+                total_pages=total_pages
+            )
+
+            # Calculate overall progress
+            if hasattr(self, '_current_file_index') and hasattr(self, '_total_files'):
+                percentage = int((self._current_file_index / self._total_files) * 100) if self._total_files > 0 else 0
+                overall_text = get_text(
+                    "import.overall_progress",
+                    self._main.config.language,
+                    percentage=percentage,
+                    current=self._current_file_index,
+                    total=self._total_files
+                )
+                self._status_label.setText(f"{file_text}\n{overall_text}")
+            else:
+                self._status_label.setText(file_text)
 
     def _on_batch_convert_done(self, result: BatchConvertResult):
         """Handle batch conversion completion."""
-        self._progress.hide()
+        self._hide_progress()
         self._btn_convert.setEnabled(True)
 
         # Show errors if any
@@ -714,7 +1103,7 @@ class ImportPage(QWidget):
 
     def _on_convert_error(self, error: str):
         """Handle conversion error."""
-        self._progress.hide()
+        self._hide_progress()
         self._btn_convert.setEnabled(True)
         self._status_label.setText(
             f"转换失败: {error}" if self._main.config.language == "zh" else f"Conversion failed: {error}"
@@ -724,6 +1113,46 @@ class ImportPage(QWidget):
             "错误" if self._main.config.language == "zh" else "Error",
             error
         )
+
+    def _cancel_operation(self):
+        """Cancel the current operation."""
+        if self._worker and self._worker.isRunning():
+            reply = QMessageBox.question(
+                self,
+                "确认取消" if self._main.config.language == "zh" else "Confirm Cancel",
+                "确定要取消当前操作吗？" if self._main.config.language == "zh" else "Are you sure you want to cancel?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                self._worker.cancel()
+                self._btn_cancel.setEnabled(False)
+                self._status_label.setText(
+                    "正在取消..." if self._main.config.language == "zh" else "Cancelling..."
+                )
+
+    def _on_operation_cancelled(self):
+        """Handle operation cancellation."""
+        self._hide_progress()
+        self._btn_convert.setEnabled(True)
+        self._status_label.setText(
+            "操作已取消" if self._main.config.language == "zh" else "Operation cancelled"
+        )
+
+        from qfluentwidgets import InfoBar, InfoBarPosition
+        from PyQt6.QtCore import Qt
+
+        InfoBar.warning(
+            title="已取消" if self._main.config.language == "zh" else "Cancelled",
+            content="操作已被用户取消" if self._main.config.language == "zh" else "Operation cancelled by user",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=3000,
+            parent=self,
+        )
+
 
     def _clear_all(self):
         """Clear all selections and inputs."""
@@ -738,3 +1167,283 @@ class ImportPage(QWidget):
             else:
                 slider.setValue(0)
                 value_label.setText("0%")
+
+    def _load_example(self):
+        """Show dialog to select and load example documents."""
+        is_zh = self._main.config.language == "zh"
+
+        # Create custom dialog
+        dialog = MessageBox(
+            "选择示例文档" if is_zh else "Select Example Document",
+            "",
+            self
+        )
+
+        # Get examples directory
+        import sys
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable
+            base_path = Path(sys._MEIPASS)
+        else:
+            # Running as script
+            base_path = Path(__file__).parent.parent.parent.parent
+
+        examples_dir = base_path / "examples"
+
+        # Define examples
+        examples = [
+            {
+                "file": "sample.md",
+                "name": "综合知识示例" if is_zh else "Comprehensive Knowledge",
+                "desc": "包含数学公式、代码块、列表等多种内容" if is_zh else "Contains math formulas, code blocks, lists, etc.",
+                "strategy": {"basic": 40, "cloze": 30, "concept": 30}
+            },
+            {
+                "file": "sample-math.md",
+                "name": "数学公式专题" if is_zh else "Mathematics Formulas",
+                "desc": "微积分、线性代数、概率论等数学内容" if is_zh else "Calculus, linear algebra, probability, etc.",
+                "strategy": {"cloze": 50, "concept": 30, "basic": 20}
+            },
+            {
+                "file": "sample-biology.md",
+                "name": "生物学知识" if is_zh else "Biology Knowledge",
+                "desc": "细胞、遗传、生态、进化等生物学内容" if is_zh else "Cell biology, genetics, ecology, evolution, etc.",
+                "strategy": {"basic": 40, "key_terms": 30, "concept": 30}
+            }
+        ]
+
+        # Build dialog content
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setSpacing(SPACING_MEDIUM)
+
+        selected_example = [None]  # Use list to allow modification in nested function
+
+        for example in examples:
+            example_path = examples_dir / example["file"]
+            if not example_path.exists():
+                continue
+
+            # Create example card using CardWidget
+            card = CardWidget()
+            card.setBorderRadius(8)
+            card_layout = QVBoxLayout(card)
+            card_layout.setSpacing(SPACING_SMALL)
+            card_layout.setContentsMargins(SPACING_MEDIUM, SPACING_MEDIUM, SPACING_MEDIUM, SPACING_MEDIUM)
+
+            # Title
+            title_label = SubtitleLabel(example["name"])
+            card_layout.addWidget(title_label)
+
+            # Description
+            desc_label = BodyLabel(example["desc"])
+            desc_label.setWordWrap(True)
+            card_layout.addWidget(desc_label)
+
+            # Select button
+            select_btn = PushButton("选择" if is_zh else "Select")
+            select_btn.setFixedWidth(100)
+
+            def make_handler(ex):
+                def handler():
+                    selected_example[0] = ex
+                    dialog.accept()
+                return handler
+
+            select_btn.clicked.connect(make_handler(example))
+            card_layout.addWidget(select_btn)
+
+            content_layout.addWidget(card)
+
+        dialog.textEdit.hide()
+        dialog.yesButton.hide()
+        dialog.cancelButton.setText("取消" if is_zh else "Cancel")
+
+        # Add content widget to dialog
+        dialog.textLayout.addWidget(content_widget)
+
+        if dialog.exec():
+            if selected_example[0]:
+                example = selected_example[0]
+                example_path = examples_dir / example["file"]
+
+                # Load the example file
+                self._add_files([example_path])
+
+                # Apply recommended strategy
+                self._apply_strategy_mix(example["strategy"])
+
+                # Show success message
+                InfoBar.success(
+                    title="示例已加载" if is_zh else "Example Loaded",
+                    content=f"已加载示例文档：{example['name']}" if is_zh else f"Example document loaded: {example['name']}",
+                    orient=Qt.Orientation.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self,
+                )
+
+    def _recommend_strategy(self):
+        """Analyze files and recommend generation strategy."""
+        is_zh = self._main.config.language == "zh"
+
+        if not self._file_paths:
+            QMessageBox.warning(
+                self,
+                "警告" if is_zh else "Warning",
+                "请先选择文件" if is_zh else "Please select files first"
+            )
+            return
+
+        # Analyze file content to determine type
+        content_type = self._analyze_content_type()
+
+        # Get recommended strategy based on content type
+        strategy_mix = self._get_recommended_strategy(content_type)
+
+        # Show recommendation dialog
+        dialog = MessageBox(
+            "策略推荐" if is_zh else "Strategy Recommendation",
+            "",
+            self
+        )
+
+        # Build recommendation content
+        type_names = {
+            "math_science": ("数学/理科内容", "Math/Science Content"),
+            "liberal_arts": ("文科/历史内容", "Liberal Arts/History Content"),
+            "programming": ("编程/技术内容", "Programming/Technical Content"),
+            "general": ("通用内容", "General Content")
+        }
+
+        type_descs = {
+            "math_science": ("检测到数学公式、科学概念等内容", "Detected math formulas, scientific concepts, etc."),
+            "liberal_arts": ("检测到历史事件、人文知识等内容", "Detected historical events, humanities knowledge, etc."),
+            "programming": ("检测到代码块、技术文档等内容", "Detected code blocks, technical documentation, etc."),
+            "general": ("混合类型内容，使用平衡策略", "Mixed content type, using balanced strategy")
+        }
+
+        type_name = type_names.get(content_type, type_names["general"])
+        type_desc = type_descs.get(content_type, type_descs["general"])
+
+        content = f"""
+<h3>{type_name[0] if is_zh else type_name[1]}</h3>
+<p>{type_desc[0] if is_zh else type_desc[1]}</p>
+<br>
+<h4>{"推荐策略配置：" if is_zh else "Recommended Strategy:"}</h4>
+<ul>
+"""
+
+        strategy_names = {
+            "basic": ("基础问答", "Basic Q&A"),
+            "cloze": ("填空题", "Cloze"),
+            "concept": ("概念解释", "Concept"),
+            "key_terms": ("关键术语", "Key Terms"),
+            "single_choice": ("单选题", "Single Choice"),
+            "multiple_choice": ("多选题", "Multiple Choice")
+        }
+
+        for strategy_id, ratio in strategy_mix.items():
+            if ratio > 0:
+                name = strategy_names.get(strategy_id, (strategy_id, strategy_id))
+                content += f"<li>{name[0] if is_zh else name[1]}: {ratio}%</li>"
+
+        content += "</ul>"
+
+        dialog.setText(content)
+        dialog.yesButton.setText("应用推荐" if is_zh else "Apply Recommendation")
+        dialog.cancelButton.setText("取消" if is_zh else "Cancel")
+
+        if dialog.exec():
+            # Apply recommended strategy
+            self._apply_strategy_mix(strategy_mix)
+
+            InfoBar.success(
+                title="已应用推荐策略" if is_zh else "Recommendation Applied",
+                content="已根据文档类型应用推荐的生成策略" if is_zh else "Applied recommended strategy based on document type",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
+            )
+
+    def _analyze_content_type(self) -> str:
+        """Analyze file content to determine content type."""
+        # Simple heuristic based on file content
+        math_keywords = ["$$", "\\frac", "\\int", "\\sum", "\\lim", "公式", "定理", "证明"]
+        programming_keywords = ["```", "def ", "class ", "function", "import", "代码", "函数"]
+        history_keywords = ["年", "世纪", "朝代", "历史", "事件", "人物"]
+
+        math_score = 0
+        programming_score = 0
+        history_score = 0
+
+        for file_path in self._file_paths[:3]:  # Check first 3 files
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")[:5000]  # First 5000 chars
+
+                for keyword in math_keywords:
+                    math_score += content.count(keyword)
+
+                for keyword in programming_keywords:
+                    programming_score += content.count(keyword)
+
+                for keyword in history_keywords:
+                    history_score += content.count(keyword)
+            except (OSError, UnicodeDecodeError) as e:
+                logger.warning(f"Failed to read file {file_path}: {e}")
+                pass
+
+        # Determine content type based on scores
+        if math_score > programming_score and math_score > history_score and math_score > 3:
+            return "math_science"
+        elif programming_score > math_score and programming_score > history_score and programming_score > 2:
+            return "programming"
+        elif history_score > math_score and history_score > programming_score and history_score > 5:
+            return "liberal_arts"
+        else:
+            return "general"
+
+    def _get_recommended_strategy(self, content_type: str) -> dict:
+        """Get recommended strategy mix based on content type."""
+        strategies = {
+            "math_science": {"cloze": 50, "concept": 30, "basic": 20},
+            "liberal_arts": {"basic": 40, "key_terms": 30, "concept": 30},
+            "programming": {"basic": 40, "cloze": 30, "concept": 30},
+            "general": {"basic": 35, "cloze": 25, "concept": 25, "key_terms": 15}
+        }
+        return strategies.get(content_type, strategies["general"])
+
+    def _apply_strategy_mix(self, strategy_mix: dict):
+        """Apply strategy mix to sliders."""
+        # Reset all sliders first
+        for strategy_id, slider, value_label in self._strategy_sliders:
+            slider.setValue(0)
+            value_label.setText("0%")
+
+        # Apply recommended values
+        for strategy_id, slider, value_label in self._strategy_sliders:
+            if strategy_id in strategy_mix:
+                ratio = strategy_mix[strategy_id]
+                slider.setValue(ratio)
+                value_label.setText(f"{ratio}%")
+
+    def retranslate_ui(self):
+        """Retranslate UI elements when language changes."""
+        is_zh = self._main.config.language == "zh"
+
+        # Update button text and tooltips
+        start_text = "开始生成" if is_zh else "Start Generation"
+        start_shortcut = get_shortcut_text(ShortcutKeys.START_GENERATION, self._main.config.language)
+        self._btn_convert.setText(start_text)
+        self._btn_convert.setToolTip(f"{start_text} ({start_shortcut})")
+
+        self._btn_clear.setText("清除" if is_zh else "Clear")
+
+    def update_theme(self):
+        """Update theme-dependent components when theme changes."""
+        # ImportPage uses QFluentWidgets components that handle theme automatically
+        # No custom styling that needs manual updates
+        pass

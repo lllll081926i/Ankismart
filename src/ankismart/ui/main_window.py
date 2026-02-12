@@ -2,33 +2,58 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon
-from qfluentwidgets import FluentIcon, FluentWindow, NavigationItemPosition, setTheme, Theme
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QMessageBox
+from qfluentwidgets import FluentIcon, FluentWindow, NavigationItemPosition, setTheme, Theme, qconfig, isDarkTheme
 
 from ankismart.core.config import AppConfig, load_config, save_config
+from .i18n import set_language, t
 from .import_page import ImportPage
 from .preview_page import PreviewPage
 from .result_page import ResultPage
+from .card_preview_page import CardPreviewPage
 from .settings_page import SettingsPage
+from .shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
 
 
 class MainWindow(FluentWindow):
     """Main application window with navigation and page management."""
 
+    language_changed = pyqtSignal(str)  # Signal emitted when language changes
+    theme_changed = pyqtSignal(str)  # Signal emitted when theme changes
+
     def __init__(self):
         super().__init__()
         self.config = load_config()
+        self._cards = []
+        self._batch_result = None
+        self._connection_status = False
+
+        # Set initial language
+        set_language(self.config.language)
+
+        # Apply initial theme before creating pages
+        self._apply_theme()
 
         # Initialize pages
         self.import_page = ImportPage(self)
         self.preview_page = PreviewPage(self)
+        self.card_preview_page = CardPreviewPage(self)
         self.result_page = ResultPage(self)
         self.settings_page = SettingsPage(self)
+        self._import_page = self.import_page
+        self._preview_page = self.preview_page
+        self._card_preview_page = self.card_preview_page
+        self._result_page = self.result_page
+        self._settings_page = self.settings_page
 
         self._init_window()
         self._init_navigation()
-        self._apply_theme()
+        self._init_shortcuts()
+
+        # Connect to qconfig theme change signal for real-time updates
+        qconfig.themeChanged.connect(self._on_theme_changed)
 
     def _init_window(self):
         """Initialize window properties."""
@@ -43,6 +68,10 @@ class MainWindow(FluentWindow):
 
     def _init_navigation(self):
         """Initialize navigation interface with pages."""
+        # Set navigation panel width to 1/3 of default (narrower)
+        self.navigationInterface.setMinimumExpandWidth(150)
+        self.navigationInterface.setExpandWidth(150)
+
         # Get translated labels
         labels = self._get_navigation_labels()
 
@@ -62,6 +91,13 @@ class MainWindow(FluentWindow):
         )
 
         self.addSubInterface(
+            self.card_preview_page,
+            FluentIcon.BOOK_SHELF,
+            labels.get("card_preview", "卡片预览" if self.config.language == "zh" else "Card Preview"),
+            NavigationItemPosition.TOP
+        )
+
+        self.addSubInterface(
             self.result_page,
             FluentIcon.COMPLETED,
             labels["result"],
@@ -75,54 +111,191 @@ class MainWindow(FluentWindow):
             NavigationItemPosition.BOTTOM
         )
 
+    def _init_shortcuts(self):
+        """Initialize global keyboard shortcuts."""
+        # Ctrl+, : Open Settings
+        create_shortcut(
+            self,
+            ShortcutKeys.OPEN_SETTINGS,
+            self._open_settings,
+            Qt.ShortcutContext.ApplicationShortcut
+        )
+
+        # F1: Help
+        create_shortcut(
+            self,
+            ShortcutKeys.HELP,
+            self._show_help,
+            Qt.ShortcutContext.ApplicationShortcut
+        )
+
+        # Ctrl+Q: Quit
+        create_shortcut(
+            self,
+            ShortcutKeys.QUIT,
+            self._quit_application,
+            Qt.ShortcutContext.ApplicationShortcut
+        )
+
+    def _open_settings(self):
+        """Open settings page via shortcut."""
+        self.switchTo(self.settings_page)
+
+    def _show_help(self):
+        """Show keyboard shortcuts help dialog."""
+        from .shortcuts_dialog import ShortcutsHelpDialog
+
+        dialog = ShortcutsHelpDialog(self.config.language, self)
+        dialog.exec()
+
+    def _quit_application(self):
+        """Quit application via shortcut."""
+        self.close()
+
     def _apply_theme(self):
         """Apply theme based on configuration."""
-        theme = Theme.DARK if self.config.theme == "dark" else Theme.LIGHT
+        theme_name = self.config.theme.lower()
+
+        if theme_name == "dark":
+            theme = Theme.DARK
+        elif theme_name == "light":
+            theme = Theme.LIGHT
+        elif theme_name == "auto":
+            theme = Theme.AUTO
+        else:
+            theme = Theme.LIGHT  # Default fallback
+
         setTheme(theme)
+
+    def _on_theme_changed(self, theme: Theme):
+        """Handle theme change from qconfig signal.
+
+        This is called when the theme actually changes (including auto mode
+        following system theme changes).
+        """
+        # Emit our own signal to notify all pages
+        theme_name = "dark" if isDarkTheme() else "light"
+        self.theme_changed.emit(theme_name)
+
+        # Notify all pages to update their custom styles
+        if hasattr(self.preview_page, 'update_theme'):
+            self.preview_page.update_theme()
+        if hasattr(self.import_page, 'update_theme'):
+            self.import_page.update_theme()
+        if hasattr(self.result_page, 'update_theme'):
+            self.result_page.update_theme()
+        if hasattr(self.settings_page, 'update_theme'):
+            self.settings_page.update_theme()
 
     def _get_navigation_labels(self) -> dict[str, str]:
         """Get navigation labels based on current language."""
-        if self.config.language == "en":
-            return {
-                "import": "Import",
-                "preview": "Preview",
-                "result": "Result",
-                "settings": "Settings"
-            }
-        else:  # zh (default)
-            return {
-                "import": "导入",
-                "preview": "预览",
-                "result": "结果",
-                "settings": "设置"
-            }
+        lang = self.config.language
+        return {
+            "import": t("nav.import", lang),
+            "preview": t("nav.preview", lang),
+            "result": t("nav.result", lang),
+            "settings": t("nav.settings", lang)
+        }
 
     def _get_icon_path(self) -> Path:
         """Get the path to the application icon."""
-        # Resolve project root (3 levels up from this file)
-        project_root = Path(__file__).resolve().parents[3]
-        return project_root / "icon.png"
+        return Path(__file__).resolve().parent / "assets" / "icon.ico"
 
     def switch_theme(self, theme: str):
-        """Switch application theme.
+        """Switch application theme and apply immediately.
 
         Args:
-            theme: Theme name ("light" or "dark")
+            theme: Theme name ("light", "dark", or "auto")
         """
         self.config.theme = theme
         save_config(self.config)
         self._apply_theme()
+        # Note: _on_theme_changed will be called automatically by qconfig.themeChanged signal
 
     def switch_language(self, language: str):
-        """Switch application language.
+        """Switch application language and refresh all UI components.
 
         Args:
             language: Language code ("zh" or "en")
         """
+        if self.config.language == language:
+            return  # No change needed
+
         self.config.language = language
+        set_language(language)
         save_config(self.config)
-        # Note: Full language switch requires window restart or dynamic update
-        # This can be implemented in the settings page
+
+        # Emit signal to notify all pages
+        self.language_changed.emit(language)
+
+        # Refresh navigation labels
+        self._refresh_navigation()
+
+        # Refresh all pages
+        if hasattr(self.import_page, 'retranslate_ui'):
+            self.import_page.retranslate_ui()
+        if hasattr(self.preview_page, 'retranslate_ui'):
+            self.preview_page.retranslate_ui()
+        if hasattr(self.result_page, 'retranslate_ui'):
+            self.result_page.retranslate_ui()
+        if hasattr(self.settings_page, 'retranslate_ui'):
+            self.settings_page.retranslate_ui()
+
+    def _refresh_navigation(self):
+        """Refresh navigation labels after language change."""
+        labels = self._get_navigation_labels()
+
+        # Update navigation item text
+        # Note: FluentWindow doesn't provide direct API to update navigation text
+        # We need to recreate navigation items
+        # For now, we'll just update the window title
+        # A full implementation would require recreating the navigation interface
+
+    def _switch_page(self, index: int) -> None:
+        """Switch page by index for backward compatibility."""
+        pages = [self.import_page, self.preview_page, self.result_page, self.settings_page]
+        if 0 <= index < len(pages):
+            self.switchTo(pages[index])
+
+    def switch_to_preview(self) -> None:
+        """Switch to preview page and load batch result when available."""
+        preview_page = getattr(self, "_preview_page", None)
+        if preview_page is None:
+            preview_page = getattr(self, "preview_page", None)
+        batch_result = getattr(self, "_batch_result", None)
+        if preview_page is not None and batch_result is not None:
+            load_documents = getattr(preview_page, "load_documents", None)
+            if callable(load_documents):
+                load_documents(batch_result)
+        self._switch_page(1)
+
+    def switch_to_result(self) -> None:
+        """Switch to result page."""
+        self._switch_page(2)
+
+    def switch_to_results(self) -> None:
+        """Compatibility alias for old callers."""
+        self.switch_to_result()
+
+    def set_connection_status(self, connected: bool) -> None:
+        """Store connection status for settings page feedback."""
+        self._connection_status = connected
+
+    @property
+    def cards(self):
+        return self._cards
+
+    @cards.setter
+    def cards(self, value):
+        self._cards = value
+
+    @property
+    def batch_result(self):
+        return self._batch_result
+
+    @batch_result.setter
+    def batch_result(self, value):
+        self._batch_result = value
 
     def closeEvent(self, event):
         """Save window geometry before closing."""

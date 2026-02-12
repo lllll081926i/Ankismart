@@ -64,7 +64,7 @@ class LLMClient:
         try:
             self._client.models.list()
             return True
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
             return False
 
     @classmethod

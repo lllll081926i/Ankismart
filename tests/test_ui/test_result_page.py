@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication
 
 from ankismart.core.models import CardDraft
 from ankismart.ui.card_edit_widget import CardEditWidget

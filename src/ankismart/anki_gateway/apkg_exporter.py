@@ -12,6 +12,7 @@ from ankismart.core.errors import AnkiGatewayError, ErrorCode
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft, MediaItem
 from ankismart.core.tracing import get_trace_id, timed
+from .styling import MODERN_CARD_CSS
 
 logger = get_logger("anki_gateway.apkg_exporter")
 
@@ -27,6 +28,7 @@ _BASIC_MODEL = genanki.Model(
             "afmt": '{{FrontSide}}<hr id="answer">{{Back}}',
         },
     ],
+    css=MODERN_CARD_CSS,
 )
 
 _CLOZE_MODEL = genanki.Model(
@@ -41,6 +43,7 @@ _CLOZE_MODEL = genanki.Model(
         },
     ],
     model_type=genanki.Model.CLOZE,
+    css=MODERN_CARD_CSS,
 )
 
 _MODEL_MAP: dict[str, genanki.Model] = {
@@ -103,9 +106,9 @@ def _materialize_media_file(media: MediaItem, temp_dir: Path) -> Path | None:
             raw = base64.b64decode(media_data, validate=True)
             out_path.write_bytes(raw)
             return out_path
-        except Exception:
+        except (ValueError, OSError) as e:
             logger.warning(
-                "Invalid media data, skipping",
+                f"Invalid media data, skipping: {e}",
                 extra={"media_filename": media_filename},
             )
 
@@ -115,9 +118,9 @@ def _materialize_media_file(media: MediaItem, temp_dir: Path) -> Path | None:
             response.raise_for_status()
             out_path.write_bytes(response.content)
             return out_path
-        except Exception:
+        except (httpx.HTTPError, OSError) as e:
             logger.warning(
-                "Failed to download media url, skipping",
+                f"Failed to download media url, skipping: {e}",
                 extra={"media_url": media_url, "media_filename": media_filename},
             )
 

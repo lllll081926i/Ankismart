@@ -123,3 +123,35 @@ def setup_logging(level: int = logging.INFO) -> None:
 
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(f"ankismart.{name}")
+
+
+def set_log_level(level: str) -> None:
+    """Dynamically change the log level for all ankismart loggers.
+
+    Args:
+        level: Log level name (DEBUG, INFO, WARNING, ERROR)
+    """
+    level_name = level.upper()
+    level_int = getattr(logging, level_name, logging.INFO)
+
+    # Update root ankismart logger
+    root_logger = logging.getLogger("ankismart")
+    root_logger.setLevel(level_int)
+
+    # Update all handlers
+    for handler in root_logger.handlers:
+        # Only update file handler level, keep console handler as configured
+        if isinstance(handler, logging.FileHandler):
+            handler.setLevel(level_int)
+
+    logger = get_logger("logging")
+    logger.info(f"Log level changed to: {level_name}")
+
+
+def get_log_directory() -> Path:
+    """Get the directory where log files are stored.
+
+    Returns:
+        Path to the log directory.
+    """
+    return _resolve_app_dir() / "logs"

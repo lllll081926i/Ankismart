@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QWidget
+from typing import TYPE_CHECKING
+
+from PyQt6.QtWidgets import QWidget
 from qfluentwidgets import InfoBar, InfoBarPosition, MessageBox
 
 from ankismart.core.config import AppConfig
+
+if TYPE_CHECKING:
+    from qfluentwidgets import ProgressBar, ProgressRing, PushButton
 
 
 def show_error(parent: QWidget, title: str, message: str) -> None:
@@ -91,3 +96,44 @@ def validate_config(config: AppConfig) -> tuple[bool, str]:
         return False, "未配置默认牌组"
 
     return True, ""
+
+
+class ProgressMixin:
+    """Mixin class for common progress display functionality.
+
+    Requires the following attributes in the subclass:
+    - _progress_ring: ProgressRing widget
+    - _progress_bar: ProgressBar widget
+    - _btn_cancel: PushButton widget
+    """
+
+    _progress_ring: ProgressRing
+    _progress_bar: ProgressBar
+    _btn_cancel: PushButton
+
+    def _show_progress(self, message: str = "") -> None:
+        """Show progress indicators.
+
+        Args:
+            message: Optional status message to display
+        """
+        self._progress_ring.show()
+        self._progress_bar.show()
+        self._progress_bar.setValue(0)
+        self._btn_cancel.show()
+
+    def _hide_progress(self) -> None:
+        """Hide all progress indicators."""
+        self._progress_ring.hide()
+        self._progress_bar.hide()
+        self._btn_cancel.hide()
+        self._btn_cancel.setEnabled(True)
+
+    def _update_progress(self, value: int, message: str = "") -> None:
+        """Update progress bar value.
+
+        Args:
+            value: Progress value (0-100)
+            message: Optional status message to display
+        """
+        self._progress_bar.setValue(value)

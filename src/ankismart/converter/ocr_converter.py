@@ -208,9 +208,9 @@ def _cuda_available() -> bool:
             return False
         try:
             return paddle.device.cuda.device_count() > 0
-        except Exception:
+        except (RuntimeError, AttributeError):
             return True
-    except Exception:
+    except (ImportError, ModuleNotFoundError):
         return False
 
 
@@ -405,7 +405,8 @@ def _ocr_image(ocr: PaddleOCR, image: Image.Image) -> str:
     if not rec_texts and hasattr(page_result, "json"):
         try:
             rec_texts = page_result.json.get("res", {}).get("rec_texts")
-        except Exception:
+        except (AttributeError, TypeError, KeyError) as e:
+            logger.warning(f"Failed to extract rec_texts from page_result.json: {e}")
             rec_texts = None
 
     if not rec_texts:
@@ -422,7 +423,14 @@ def convert(
     ocr_correction_fn=None,
     progress_callback=None,
 ) -> MarkdownResult:
-    """Convert a PDF file to Markdown via OCR."""
+    """Convert a PDF file to Markdown via OCR.
+
+    Args:
+        file_path: Path to PDF file
+        trace_id: Trace ID for logging
+        ocr_correction_fn: Optional function for OCR text correction
+        progress_callback: Optional callback(current_page, total_pages, message)
+    """
     trace_id = trace_id or get_trace_id()
 
     if not file_path.exists():
@@ -434,11 +442,21 @@ def convert(
 
     with timed("ocr_convert"):
         sections: list[str] = []
+
+        # First pass: count total pages
+        try:
+            pdf = pdfium.PdfDocument(str(file_path))
+            total_pages = len(pdf)
+            pdf.close()
+        except (OSError, RuntimeError) as e:
+            logger.warning(f"Failed to get PDF page count: {e}", extra={"trace_id": trace_id})
+            total_pages = 0
+
         page_count = 0
         for i, image in enumerate(_pdf_to_images(file_path), 1):
             page_count += 1
             if progress_callback is not None:
-                progress_callback(f"OCR 正在识别第 {i} 页...")
+                progress_callback(i, total_pages, f"正在识别第 {i}/{total_pages} 页")
             with timed(f"ocr_page_{i}"):
                 ocr = _get_ocr()
                 page_text = _ocr_image(ocr, image)
@@ -460,7 +478,7 @@ def convert(
             )
 
         if progress_callback is not None:
-            progress_callback(f"OCR 识别完成，共 {page_count} 页")
+            progress_callback(page_count, page_count, f"OCR 识别完成，共 {page_count} 页")
 
         content = "\n\n---\n\n".join(sections) if sections else ""
 
@@ -469,9 +487,9 @@ def convert(
             try:
                 with timed("ocr_correction"):
                     content = ocr_correction_fn(content)
-            except Exception:
+            except (ValueError, RuntimeError, OSError) as e:
                 logger.warning(
-                    "OCR correction failed, using raw text",
+                    f"OCR correction failed, using raw text: {e}",
                     extra={"trace_id": trace_id},
                 )
 
@@ -520,9 +538,9 @@ def convert_image(
             try:
                 with timed("ocr_correction"):
                     text = ocr_correction_fn(text)
-            except Exception:
+            except (ValueError, RuntimeError, OSError) as e:
                 logger.warning(
-                    "OCR correction failed, using raw text",
+                    f"OCR correction failed, using raw text: {e}",
                     extra={"trace_id": trace_id},
                 )
 

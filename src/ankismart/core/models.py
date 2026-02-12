@@ -107,6 +107,8 @@ class GenerateRequest(BaseModel):
     trace_id: str = ""
     source_path: str = ""  # Original file path, used for image attachment
     target_count: int = 0  # 0 means keep strategy default card count
+    enable_auto_split: bool = False  # Experimental: Enable auto-split for long documents
+    split_threshold: int = 70000  # Character count threshold for splitting
 
 
 # ---------------------------------------------------------------------------

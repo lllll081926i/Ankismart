@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
+from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
 from qfluentwidgets import ScrollArea
 from qfluentwidgets import BodyLabel
 

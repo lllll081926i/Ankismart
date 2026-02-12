@@ -10,9 +10,9 @@ import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QMessageBox
 from qfluentwidgets import setTheme, Theme
 
 from ankismart.core.config import load_config, save_config
@@ -26,20 +26,28 @@ def _get_icon_path() -> Path:
     """Get the path to the application icon.
 
     Returns:
-        Path to icon.png in the project root.
+        Path to icon.ico in package assets.
     """
-    # Resolve project root (3 levels up from this file)
-    project_root = Path(__file__).resolve().parents[3]
-    return project_root / "icon.png"
+    return Path(__file__).resolve().parent / "assets" / "icon.ico"
 
 
 def _apply_theme(theme_name: str) -> None:
     """Apply the application theme.
 
     Args:
-        theme_name: Theme name ("light" or "dark")
+        theme_name: Theme name ("light", "dark", or "auto")
     """
-    theme = Theme.DARK if theme_name == "dark" else Theme.LIGHT
+    theme_name = theme_name.lower()
+
+    if theme_name == "dark":
+        theme = Theme.DARK
+    elif theme_name == "light":
+        theme = Theme.LIGHT
+    elif theme_name == "auto":
+        theme = Theme.AUTO
+    else:
+        theme = Theme.LIGHT  # Default fallback
+
     setTheme(theme)
     logger.info(f"Applied theme: {theme_name}")
 
@@ -73,8 +81,6 @@ def main() -> int:
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
 
     # Create application instance
     app = QApplication(sys.argv)

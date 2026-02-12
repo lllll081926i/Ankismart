@@ -54,8 +54,8 @@ def get_cached_by_hash(file_hash: str) -> MarkdownResult | None:
             source_format=meta.get("source_format", ""),
             trace_id=meta.get("trace_id", ""),
         )
-    except Exception:
-        logger.warning("Failed to read hash cache", extra={"file_hash": file_hash})
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(f"Failed to read hash cache: {e}", extra={"file_hash": file_hash})
         return None
 
 
@@ -121,6 +121,87 @@ def get_cached(trace_id: str) -> MarkdownResult | None:
             source_format=meta.get("source_format", ""),
             trace_id=trace_id,
         )
-    except Exception:
-        logger.warning("Failed to read cache", extra={"trace_id": trace_id})
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(f"Failed to read cache: {e}", extra={"trace_id": trace_id})
         return None
+
+
+# ---------------------------------------------------------------------------
+# Cache management utilities
+# ---------------------------------------------------------------------------
+
+
+def get_cache_size() -> float:
+    """Calculate total cache directory size in MB.
+
+    Returns:
+        Total size of all cache files in megabytes.
+    """
+    if not CACHE_DIR.exists():
+        return 0.0
+
+    total_size = 0
+    try:
+        for file_path in CACHE_DIR.rglob("*"):
+            if file_path.is_file():
+                total_size += file_path.stat().st_size
+    except OSError:
+        logger.warning("Failed to calculate cache size")
+        return 0.0
+
+    return total_size / (1024 * 1024)  # Convert bytes to MB
+
+
+def get_cache_count() -> int:
+    """Count the number of cache files.
+
+    Returns:
+        Number of cache files (both .md and .json files).
+    """
+    if not CACHE_DIR.exists():
+        return 0
+
+    try:
+        return sum(1 for f in CACHE_DIR.rglob("*") if f.is_file())
+    except OSError:
+        logger.warning("Failed to count cache files")
+        return 0
+
+
+def clear_cache() -> bool:
+    """Delete all cache files.
+
+    Returns:
+        True if cache was cleared successfully, False otherwise.
+    """
+    if not CACHE_DIR.exists():
+        return True
+
+    try:
+        for file_path in CACHE_DIR.rglob("*"):
+            if file_path.is_file():
+                file_path.unlink()
+        logger.info("Cache cleared successfully")
+        return True
+    except OSError as e:
+        logger.error("Failed to clear cache", extra={"error": str(e)})
+        return False
+
+
+def get_cache_stats() -> dict[str, float | int]:
+    """Get cache statistics.
+
+    Returns:
+        Dictionary containing cache statistics:
+        - size_mb: Total cache size in megabytes
+        - count: Number of cache files
+        - size_gb: Total cache size in gigabytes (for display)
+    """
+    size_mb = get_cache_size()
+    count = get_cache_count()
+
+    return {
+        "size_mb": size_mb,
+        "size_gb": size_mb / 1024,
+        "count": count,
+    }

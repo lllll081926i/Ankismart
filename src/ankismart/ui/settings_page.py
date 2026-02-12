@@ -3,9 +3,9 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QWheelEvent
-from PySide6.QtWidgets import (
+from PyQt6.QtCore import QEvent, Qt, pyqtSignal, QUrl
+from PyQt6.QtGui import QWheelEvent, QDesktopServices
+from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -16,7 +16,9 @@ from PySide6.QtWidgets import (
 )
 from qfluentwidgets import (
     BodyLabel,
+    CaptionLabel,
     ComboBox,
+    ComboBoxSettingCard,
     ExpandLayout,
     FluentIcon as FIF,
     InfoBar,
@@ -28,16 +30,22 @@ from qfluentwidgets import (
     PrimaryPushSettingCard,
     PushButton,
     PushSettingCard,
+    RangeSettingCard,
     ScrollArea,
     SettingCard,
     SettingCardGroup,
     Slider,
     SmoothMode,
     SpinBox,
+    SubtitleLabel,
     SwitchButton,
+    SwitchSettingCard,
+    isDarkTheme,
 )
 
 from ankismart.core.config import KNOWN_PROVIDERS, LLMProviderConfig, save_config
+from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
+from ankismart.ui.styles import PROVIDER_ITEM_HEIGHT, MAX_VISIBLE_PROVIDERS, SPACING_MEDIUM, SPACING_LARGE, MARGIN_STANDARD, MARGIN_SMALL
 
 if TYPE_CHECKING:
     from ankismart.ui.main_window import MainWindow
@@ -46,7 +54,7 @@ if TYPE_CHECKING:
 class LLMProviderDialog(QDialog):
     """Dialog for adding/editing LLM provider."""
 
-    saved = Signal(LLMProviderConfig)
+    saved = pyqtSignal(LLMProviderConfig)
 
     def __init__(self, provider: LLMProviderConfig | None = None, parent=None) -> None:
         super().__init__(parent)
@@ -58,8 +66,8 @@ class LLMProviderDialog(QDialog):
         self._provider = provider or LLMProviderConfig(id=uuid.uuid4().hex[:12])
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(16)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(SPACING_MEDIUM)
+        layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
 
         # Name
         self._name_edit = LineEdit()
@@ -126,10 +134,10 @@ class LLMProviderDialog(QDialog):
 class ProviderListItemWidget(QWidget):
     """Custom widget for provider list item."""
 
-    editClicked = Signal(LLMProviderConfig)
-    testClicked = Signal(LLMProviderConfig)
-    deleteClicked = Signal(LLMProviderConfig)
-    activateClicked = Signal(LLMProviderConfig)
+    editClicked = pyqtSignal(LLMProviderConfig)
+    testClicked = pyqtSignal(LLMProviderConfig)
+    deleteClicked = pyqtSignal(LLMProviderConfig)
+    activateClicked = pyqtSignal(LLMProviderConfig)
 
     def __init__(self, provider: LLMProviderConfig, is_active: bool, can_delete: bool, parent=None):
         super().__init__(parent)
@@ -137,35 +145,30 @@ class ProviderListItemWidget(QWidget):
         self._is_active = is_active
         self.setObjectName("providerListItem")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-
-        # Use transparent row background so parent white panel is visually dominant
-        self.setStyleSheet("""
-            QWidget#providerListItem {
-                background-color: transparent;
-                border-bottom: 1px solid #ECECEC;
-            }
-            QWidget#providerListItem:hover {
-                background-color: #F7F7F7;
-            }
-        """)
+        self._update_style()
         self.setAutoFillBackground(False)
+        self._init_ui(is_active, can_delete)
 
+    def _init_ui(self, is_active: bool, can_delete: bool):
+        """Initialize UI components."""
         # Main layout
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 12, 12, 12)  # Reduced left margin to 8px
-        layout.setSpacing(4)  # Reduced spacing to 4px
+        layout.setContentsMargins(8, 12, 12, 12)
+        layout.setSpacing(4)
 
         # Active indicator placeholder (always reserve space for green dot at the front)
         indicator_container = QWidget()
-        indicator_container.setFixedWidth(16)  # Reduced width to 16px
+        indicator_container.setFixedWidth(16)
         indicator_layout = QHBoxLayout(indicator_container)
         indicator_layout.setContentsMargins(0, 0, 0, 0)
-        indicator_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)  # Align to left
+        indicator_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         if is_active:
-            active_label = BodyLabel("●")
-            active_label.setStyleSheet("color: #10b981; font-size: 20px; background: transparent;")  # Larger dot
-            indicator_layout.addWidget(active_label)
+            self._active_label = SubtitleLabel("●")
+            self._active_label.setStyleSheet("color: #10b981;")
+            indicator_layout.addWidget(self._active_label)
+        else:
+            self._active_label = None
 
         layout.addWidget(indicator_container)
 
@@ -173,38 +176,30 @@ class ProviderListItemWidget(QWidget):
         info_layout = QVBoxLayout()
         info_layout.setSpacing(3)
 
-        name_label = BodyLabel(provider.name)
-        name_label.setStyleSheet("font-weight: bold; font-size: 14px; background: transparent;")
-        name_label.setToolTip(provider.name)
-        info_layout.addWidget(name_label)
+        self._name_label = SubtitleLabel(self._provider.name)
+        self._name_label.setToolTip(self._provider.name)
+        info_layout.addWidget(self._name_label)
 
-        model_text = provider.model.strip() if provider.model else "未设置"
-        model_label = BodyLabel(f"模型：{model_text}")
-        model_label.setObjectName("providerModelLabel")
-        model_label.setStyleSheet("color: #606060; font-size: 12px; background: transparent;")
-        model_label.setToolTip(provider.model or "")
-        info_layout.addWidget(model_label)
-
-        base_url_text = provider.base_url.strip() if provider.base_url else "未设置"
-        base_url_label = BodyLabel(f"地址：{base_url_text}")
-        base_url_label.setObjectName("providerUrlLabel")
-        base_url_label.setStyleSheet("color: #606060; font-size: 12px; background: transparent;")
-        base_url_label.setWordWrap(True)
-        base_url_label.setToolTip(provider.base_url or "")
-        info_layout.addWidget(base_url_label)
-
-        rpm_text = str(provider.rpm_limit) if provider.rpm_limit > 0 else "默认"
-        rpm_label = BodyLabel(f"RPM：{rpm_text}")
-        rpm_label.setObjectName("providerRpmLabel")
-        rpm_label.setStyleSheet("color: #808080; font-size: 11px; background: transparent;")
-        info_layout.addWidget(rpm_label)
+        model_text_inline = self._provider.model.strip() if self._provider.model else "未设置"
+        base_url_text_inline = self._provider.base_url.strip() if self._provider.base_url else "未设置"
+        detail_parts_inline = [
+            f"模型：{model_text_inline}",
+            f"地址：{base_url_text_inline}",
+        ]
+        if self._provider.rpm_limit > 0:
+            detail_parts_inline.append(f"RPM：{self._provider.rpm_limit}")
+        detail_text_inline = " ｜ ".join(detail_parts_inline)
+        self._detail_label = CaptionLabel(detail_text_inline)
+        self._detail_label.setWordWrap(False)
+        self._detail_label.setToolTip(detail_text_inline)
+        info_layout.addWidget(self._detail_label)
 
         layout.addLayout(info_layout, 1)
         layout.addStretch()
 
         # Action buttons
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(8)
+        button_layout.setSpacing(SPACING_SMALL)
 
         self._activate_btn = PrimaryPushButton("激活", self) if not is_active else PushButton("当前使用", self)
         self._activate_btn.setFixedWidth(80)
@@ -230,29 +225,70 @@ class ProviderListItemWidget(QWidget):
 
         layout.addLayout(button_layout)
 
+    def _update_style(self):
+        """Update style based on current theme - using QFluentWidgets theme system."""
+        # Use QFluentWidgets theme colors instead of hardcoded values
+        is_dark = isDarkTheme()
+        if is_dark:
+            self.setStyleSheet("""
+                QWidget#providerListItem {
+                    background-color: transparent;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                }
+                QWidget#providerListItem:hover {
+                    background-color: rgba(255, 255, 255, 0.03);
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                QWidget#providerListItem {
+                    background-color: transparent;
+                    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+                }
+                QWidget#providerListItem:hover {
+                    background-color: rgba(0, 0, 0, 0.03);
+                }
+            """)
+
+    def update_theme(self):
+        """Update theme-dependent styles when theme changes."""
+        self._update_style()
+
 
 class ProviderListWidget(QWidget):
     """Standalone widget for displaying provider list."""
 
-    editClicked = Signal(LLMProviderConfig)
-    testClicked = Signal(LLMProviderConfig)
-    deleteClicked = Signal(LLMProviderConfig)
-    activateClicked = Signal(LLMProviderConfig)
+    editClicked = pyqtSignal(LLMProviderConfig)
+    testClicked = pyqtSignal(LLMProviderConfig)
+    deleteClicked = pyqtSignal(LLMProviderConfig)
+    activateClicked = pyqtSignal(LLMProviderConfig)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("providerListPanel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-
-        # High-contrast pure white panel for provider list block
-        self.setStyleSheet("""
-            QWidget#providerListPanel {
-                background-color: #FFFFFF;
-                border: 1px solid #D9D9D9;
-                border-radius: 10px;
-            }
-        """)
+        self._update_panel_style()
         self.setAutoFillBackground(True)
+
+    def _update_panel_style(self):
+        """Update panel style based on current theme - using QFluentWidgets theme system."""
+        is_dark = isDarkTheme()
+        if is_dark:
+            self.setStyleSheet("""
+                QWidget#providerListPanel {
+                    background-color: rgba(45, 45, 45, 1);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 10px;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                QWidget#providerListPanel {
+                    background-color: rgba(255, 255, 255, 1);
+                    border: 1px solid rgba(0, 0, 0, 0.08);
+                    border-radius: 10px;
+                }
+            """)
 
         # Main layout
         layout = QVBoxLayout(self)
@@ -262,8 +298,8 @@ class ProviderListWidget(QWidget):
         # Create list widget
         self._list_widget = ListWidget()
         # Set minimum and maximum height (auto-adjust based on content)
-        self._list_widget.setMinimumHeight(72)  # At least 1 row
-        self._list_widget.setMaximumHeight(288)  # Maximum 4 rows (4 * 72px)
+        self._list_widget.setMinimumHeight(PROVIDER_ITEM_HEIGHT)  # At least 1 row
+        self._list_widget.setMaximumHeight(PROVIDER_ITEM_HEIGHT * MAX_VISIBLE_PROVIDERS)  # Maximum 4 rows
         self._list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._list_widget.setSpacing(0)
@@ -349,15 +385,25 @@ class ProviderListWidget(QWidget):
 
         # Auto-adjust height based on number of providers
         num_providers = len(providers)
-        if num_providers <= 4:
+        if num_providers <= MAX_VISIBLE_PROVIDERS:
             # Show exact height for 1-4 providers
-            target_height = num_providers * 72
+            target_height = num_providers * PROVIDER_ITEM_HEIGHT
             self._list_widget.setFixedHeight(target_height)
             self.setFixedHeight(target_height + 2)  # +2 for borders
         else:
             # Show maximum 4 rows with scrollbar
-            self._list_widget.setFixedHeight(288)
-            self.setFixedHeight(290)  # +2 for borders
+            self._list_widget.setFixedHeight(PROVIDER_ITEM_HEIGHT * MAX_VISIBLE_PROVIDERS)
+            self.setFixedHeight(PROVIDER_ITEM_HEIGHT * MAX_VISIBLE_PROVIDERS + 2)  # +2 for borders
+
+    def update_theme(self):
+        """Update theme-dependent styles when theme changes."""
+        self._update_panel_style()
+        # Update all item widgets
+        for i in range(self._list_widget.count()):
+            item = self._list_widget.item(i)
+            widget = self._list_widget.itemWidget(item)
+            if widget and hasattr(widget, 'update_theme'):
+                widget.update_theme()
 
 
 class SettingsPage(ScrollArea):
@@ -382,6 +428,7 @@ class SettingsPage(ScrollArea):
     def __initWidget(self):
         """Initialize widgets and layout."""
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setSmoothMode(SmoothMode.LINEAR, Qt.Orientation.Vertical)
         self.setViewportMargins(0, 0, 0, 0)
         self.setWidget(self.scrollWidget)
@@ -395,6 +442,14 @@ class SettingsPage(ScrollArea):
 
         # Load current configuration
         self._load_config()
+
+        # Initialize shortcuts
+        self._init_shortcuts()
+
+    def _init_shortcuts(self):
+        """Initialize page-specific keyboard shortcuts."""
+        # Ctrl+S: Save configuration
+        create_shortcut(self, ShortcutKeys.SAVE_EDIT, self._save_config)
 
     def _show_info_bar(self, level: str, title: str, content: str, duration: int = 3000) -> None:
         """Show fluent InfoBar notifications consistently."""
@@ -417,7 +472,7 @@ class SettingsPage(ScrollArea):
 
     def __initLayout(self):
         """Initialize layout and add all setting cards."""
-        self.expandLayout.setSpacing(6)  # Reduced spacing
+        self.expandLayout.setSpacing(SPACING_MEDIUM)
         self.expandLayout.setContentsMargins(36, 10, 36, 0)
 
         # ── LLM Configuration Group ──
@@ -618,10 +673,202 @@ class SettingsPage(ScrollArea):
         self._ocr_correction_card.hBoxLayout.addSpacing(16)
         self._other_group.addSettingCard(self._ocr_correction_card)
 
+        # Log Level - Create custom setting card with ComboBox
+        from ankismart.ui.i18n import t
+        is_zh = self._main.config.language == "zh"
+
+        log_level_texts = [
+            t("log.level_debug", self._main.config.language),
+            t("log.level_info", self._main.config.language),
+            t("log.level_warning", self._main.config.language),
+            t("log.level_error", self._main.config.language),
+        ]
+
+        # Create a custom SettingCard with ComboBox
+        self._log_level_card = SettingCard(
+            FIF.DOCUMENT,
+            t("log.level", self._main.config.language),
+            t("log.level_desc", self._main.config.language),
+            parent=self._other_group,
+        )
+
+        # Add ComboBox to the card
+        self._log_level_combobox = ComboBox(self._log_level_card)
+        self._log_level_combobox.addItems(log_level_texts)
+        self._log_level_combobox.setCurrentIndex(
+            ["DEBUG", "INFO", "WARNING", "ERROR"].index(self._main.config.log_level)
+        )
+        self._log_level_combobox.currentIndexChanged.connect(self._on_log_level_changed)
+
+        # Add ComboBox to card layout
+        self._log_level_card.hBoxLayout.addWidget(self._log_level_combobox, 0, Qt.AlignmentFlag.AlignRight)
+        self._log_level_card.hBoxLayout.addSpacing(16)
+
+        self._other_group.addSettingCard(self._log_level_card)
+
+        # View Logs
+        self._view_logs_card = PushSettingCard(
+            t("log.open_folder", self._main.config.language),
+            FIF.FOLDER,
+            t("log.view_logs", self._main.config.language),
+            t("log.view_logs_desc", self._main.config.language),
+        )
+        self._view_logs_card.clicked.connect(self._open_log_directory)
+        self._other_group.addSettingCard(self._view_logs_card)
+
         self.expandLayout.addWidget(self._other_group)
+
+        # ── Cache Management Group ──
+        self._cache_group = SettingCardGroup("缓存管理", self.scrollWidget)
+
+        # Cache size card
+        self._cache_size_card = PushSettingCard(
+            "清空缓存",
+            FIF.DELETE,
+            "缓存大小",
+            "计算中...",
+        )
+        self._cache_size_card.clicked.connect(self._clear_cache)
+        self._cache_group.addSettingCard(self._cache_size_card)
+
+        # Cache count card
+        self._cache_count_card = PushSettingCard(
+            "刷新",
+            FIF.SYNC,
+            "缓存文件数",
+            "计算中...",
+        )
+        self._cache_count_card.clicked.connect(self._refresh_cache_stats)
+        self._cache_group.addSettingCard(self._cache_count_card)
+
+        self.expandLayout.addWidget(self._cache_group)
+
+        # ── Performance Statistics Group ──
+        self._stats_group = SettingCardGroup("性能统计", self.scrollWidget)
+
+        # Total files processed
+        self._total_files_card = SettingCard(
+            FIF.DOCUMENT,
+            "总处理文件数",
+            "已成功处理的文件总数",
+            self.scrollWidget,
+        )
+        self._total_files_label = BodyLabel()
+        self._total_files_label.setText("0 个文件")
+        self._total_files_label.setFixedWidth(150)
+        self._total_files_card.hBoxLayout.addWidget(self._total_files_label)
+        self._total_files_card.hBoxLayout.addSpacing(16)
+        self._stats_group.addSettingCard(self._total_files_card)
+
+        # Average conversion time
+        self._avg_conversion_card = SettingCard(
+            FIF.SPEED_OFF,
+            "平均转换时间",
+            "每个文件的平均转换时间（秒）",
+            self.scrollWidget,
+        )
+        self._avg_conversion_label = BodyLabel()
+        self._avg_conversion_label.setText("0.0 秒")
+        self._avg_conversion_label.setFixedWidth(150)
+        self._avg_conversion_card.hBoxLayout.addWidget(self._avg_conversion_label)
+        self._avg_conversion_card.hBoxLayout.addSpacing(16)
+        self._stats_group.addSettingCard(self._avg_conversion_card)
+
+        # Average generation time
+        self._avg_generation_card = SettingCard(
+            FIF.SPEED_HIGH,
+            "平均生成时间",
+            "每张卡片的平均生成时间（秒）",
+            self.scrollWidget,
+        )
+        self._avg_generation_label = BodyLabel()
+        self._avg_generation_label.setText("0.0 秒")
+        self._avg_generation_label.setFixedWidth(150)
+        self._avg_generation_card.hBoxLayout.addWidget(self._avg_generation_label)
+        self._avg_generation_card.hBoxLayout.addSpacing(16)
+        self._stats_group.addSettingCard(self._avg_generation_card)
+
+        # Total cards generated
+        self._total_cards_card = SettingCard(
+            FIF.TILES,
+            "总生成卡片数",
+            "已成功生成的卡片总数",
+            self.scrollWidget,
+        )
+        self._total_cards_label = BodyLabel()
+        self._total_cards_label.setText("0 张卡片")
+        self._total_cards_label.setFixedWidth(150)
+        self._total_cards_card.hBoxLayout.addWidget(self._total_cards_label)
+        self._total_cards_card.hBoxLayout.addSpacing(16)
+        self._stats_group.addSettingCard(self._total_cards_card)
+
+        # Reset statistics button
+        self._reset_stats_card = PushSettingCard(
+            "重置统计",
+            FIF.DELETE,
+            "重置统计数据",
+            "清除所有性能统计数据",
+        )
+        self._reset_stats_card.clicked.connect(self._reset_statistics)
+        self._stats_group.addSettingCard(self._reset_stats_card)
+
+        self.expandLayout.addWidget(self._stats_group)
+
+        # ── Experimental Features Group ──
+        self._experimental_group = SettingCardGroup("实验性功能", self.scrollWidget)
+
+        # Auto-split enable
+        self._auto_split_card = SettingCard(
+            FIF.CUT,
+            "启用长文档自动分割",
+            "当文档超过阈值时自动分割为多个片段处理",
+            parent=self._experimental_group,
+        )
+        self._auto_split_switch = SwitchButton(self._auto_split_card)
+        self._auto_split_switch.setChecked(self._main.config.enable_auto_split)
+        self._auto_split_card.hBoxLayout.addWidget(self._auto_split_switch, 0, Qt.AlignmentFlag.AlignRight)
+        self._auto_split_card.hBoxLayout.addSpacing(16)
+        self._experimental_group.addSettingCard(self._auto_split_card)
+
+        # Split threshold
+        self._split_threshold_card = SettingCard(
+            FIF.ALIGNMENT,
+            "分割阈值",
+            "触发自动分割的字符数阈值",
+            parent=self._experimental_group,
+        )
+        self._split_threshold_spinbox = SpinBox(self._split_threshold_card)
+        self._split_threshold_spinbox.setRange(10000, 200000)
+        self._split_threshold_spinbox.setSingleStep(10000)
+        self._split_threshold_spinbox.setValue(self._main.config.split_threshold)
+        self._split_threshold_card.hBoxLayout.addWidget(self._split_threshold_spinbox, 0, Qt.AlignmentFlag.AlignRight)
+        self._split_threshold_card.hBoxLayout.addSpacing(16)
+        self._experimental_group.addSettingCard(self._split_threshold_card)
+
+        # Warning label
+        self._warning_card = SettingCard(
+            FIF.INFO,
+            "注意事项",
+            "⚠️ 警告：这是实验性功能，可能影响卡片质量和生成时间。建议仅在处理超长文档时启用。",
+            self.scrollWidget,
+        )
+        self._experimental_group.addSettingCard(self._warning_card)
+
+        self.expandLayout.addWidget(self._experimental_group)
 
         # ── Action Buttons Group ──
         self._action_group = SettingCardGroup("操作", self.scrollWidget)
+
+        # Export logs button
+        is_zh = self._main.config.language == "zh"
+        self._export_logs_card = PushSettingCard(
+            "导出日志" if is_zh else "Export Logs",
+            FIF.DOCUMENT,
+            "导出日志" if is_zh else "Export Logs",
+            "导出应用日志文件用于问题排查" if is_zh else "Export application logs for troubleshooting",
+        )
+        self._export_logs_card.clicked.connect(self._export_logs)
+        self._action_group.addSettingCard(self._export_logs_card)
 
         self._reset_card = PushSettingCard(
             "恢复默认",
@@ -632,11 +879,14 @@ class SettingsPage(ScrollArea):
         self._reset_card.clicked.connect(self._reset_to_default)
         self._action_group.addSettingCard(self._reset_card)
 
+        save_text = "保存配置" if is_zh else "Save Configuration"
+        save_shortcut = get_shortcut_text(ShortcutKeys.SAVE_EDIT, self._main.config.language)
+
         self._save_card = PrimaryPushSettingCard(
-            "保存配置",
+            save_text,
             FIF.SAVE,
-            "保存设置",
-            "保存所有配置更改",
+            "保存设置" if is_zh else "Save Settings",
+            f"保存所有配置更改 ({save_shortcut})" if is_zh else f"Save all configuration changes ({save_shortcut})",
         )
         self._save_card.clicked.connect(self._save_config)
         self._action_group.addSettingCard(self._save_card)
@@ -672,6 +922,20 @@ class SettingsPage(ScrollArea):
 
         self._proxy_edit.setText(config.proxy_url)
         self._ocr_correction_switch.setChecked(config.ocr_correction)
+
+        # Experimental features
+        self._auto_split_switch.setChecked(config.enable_auto_split)
+        self._split_threshold_card.setValue(config.split_threshold)
+
+        # Performance statistics
+        self._update_statistics_display()
+
+        # Cache statistics
+        self._refresh_cache_stats()
+
+        # Log level
+        log_level_map = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3}
+        self._log_level_combobox.setCurrentIndex(log_level_map.get(config.log_level, 1))
 
     def _update_provider_list(self) -> None:
         """Update provider list display."""
@@ -796,6 +1060,110 @@ class SettingsPage(ScrollArea):
             self._show_info_bar("error", "连接失败", "无法连接到 AnkiConnect，请检查 URL/密钥与代理设置", duration=5000)
         self._main.set_connection_status(connected)
 
+    def _refresh_cache_stats(self) -> None:
+        """Refresh cache statistics display."""
+        from ankismart.converter.cache import get_cache_stats
+        from ankismart.ui.i18n import t
+
+        stats = get_cache_stats()
+        size_mb = stats["size_mb"]
+        count = stats["count"]
+
+        # Update cache size card
+        if size_mb < 0.01 and count == 0:
+            size_text = t("settings.cache_empty_msg", self._main.config.language)
+        else:
+            size_text = t("settings.cache_size_value", self._main.config.language, size=size_mb)
+        self._cache_size_card.setContent(size_text)
+
+        # Update cache count card
+        if count == 0:
+            count_text = t("settings.cache_empty_msg", self._main.config.language)
+        else:
+            count_text = t("settings.cache_count_value", self._main.config.language, count=count)
+        self._cache_count_card.setContent(count_text)
+
+    def _clear_cache(self) -> None:
+        """Clear all cache files."""
+        from ankismart.converter.cache import get_cache_stats, clear_cache
+        from ankismart.ui.i18n import t
+
+        stats = get_cache_stats()
+        size_mb = stats["size_mb"]
+        count = stats["count"]
+
+        # Check if cache is empty
+        if count == 0:
+            self._show_info_bar(
+                "info",
+                t("settings.cache_empty", self._main.config.language),
+                t("settings.cache_empty_msg", self._main.config.language),
+                duration=3000,
+            )
+            return
+
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self,
+            t("settings.confirm_clear_cache", self._main.config.language),
+            t("settings.confirm_clear_cache_msg", self._main.config.language, count=count, size=size_mb),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            success = clear_cache()
+            if success:
+                self._show_info_bar(
+                    "success",
+                    t("settings.cache_cleared", self._main.config.language),
+                    t("settings.cache_cleared_msg", self._main.config.language, size=size_mb),
+                    duration=3500,
+                )
+                # Refresh stats display
+                self._refresh_cache_stats()
+            else:
+                self._show_info_bar(
+                    "error",
+                    t("settings.cache_clear_failed", self._main.config.language),
+                    t("settings.cache_clear_failed_msg", self._main.config.language),
+                    duration=5000,
+                )
+
+    def _on_log_level_changed(self, index: int) -> None:
+        """Handle log level change."""
+        from ankismart.core.logging import set_log_level
+        from ankismart.ui.i18n import t
+
+        log_level_values = ["DEBUG", "INFO", "WARNING", "ERROR"]
+        log_level = log_level_values[index]
+
+        # Apply log level immediately
+        set_log_level(log_level)
+
+        # Show notification
+        self._show_info_bar(
+            "success",
+            t("log.level_changed", self._main.config.language),
+            t("log.level_changed_msg", self._main.config.language, level=log_level),
+            duration=2000,
+        )
+
+    def _open_log_directory(self) -> None:
+        """Open the log directory in file explorer."""
+        from ankismart.core.logging import get_log_directory
+
+        log_dir = get_log_directory()
+        if log_dir.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_dir)))
+        else:
+            from ankismart.ui.i18n import t
+            self._show_info_bar(
+                "warning",
+                t("log.no_logs_found", self._main.config.language),
+                "",
+                duration=3000,
+            )
+
     def _save_config(self) -> None:
         """Save configuration."""
         # Validate active provider
@@ -818,6 +1186,10 @@ class SettingsPage(ScrollArea):
         # Get temperature (convert from 0-20 to 0.0-2.0)
         temperature = self._temperature_slider.value() / 10.0
 
+        # Get log level
+        log_level_values = ["DEBUG", "INFO", "WARNING", "ERROR"]
+        log_level = log_level_values[self._log_level_combobox.currentIndex()]
+
         # Update config
         config = self._main.config.model_copy(
             update={
@@ -833,12 +1205,25 @@ class SettingsPage(ScrollArea):
                 "proxy_url": self._proxy_edit.text().strip(),
                 "theme": theme,
                 "language": language,
+                "log_level": log_level,
+                "enable_auto_split": self._auto_split_switch.isChecked(),
+                "split_threshold": self._split_threshold_card.value(),
             }
         )
 
         try:
             save_config(config)
             self._main.config = config
+
+            # Apply theme change immediately
+            old_theme = self._main.config.theme
+            if old_theme != theme:
+                self._main.switch_theme(theme)
+
+            # Apply language change if needed
+            if self._main.config.language != language:
+                self._main.switch_language(language)
+
             QMessageBox.information(self, "成功", "配置保存成功")
         except Exception as exc:
             QMessageBox.critical(self, "错误", f"保存配置失败：{exc}")
@@ -859,3 +1244,142 @@ class SettingsPage(ScrollArea):
             self._main.config = default_config
             self._load_config()
             QMessageBox.information(self, "重置完成", "设置已恢复为默认值")
+
+    def _export_logs(self) -> None:
+        """Export application logs to a zip file."""
+        from ankismart.ui.log_exporter import LogExporter
+        from ankismart.ui.i18n import t
+        from pathlib import Path
+        from datetime import datetime
+
+        is_zh = self._main.config.language == "zh"
+
+        try:
+            exporter = LogExporter()
+
+            # Check if logs exist
+            log_count = exporter.get_log_count()
+            if log_count == 0:
+                self._show_info_bar(
+                    "warning",
+                    t("log.no_logs_found", self._main.config.language),
+                    "",
+                    duration=3000,
+                )
+                return
+
+            # Show file dialog
+            default_filename = f"ankismart_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                t("log.select_location", self._main.config.language),
+                default_filename,
+                t("log.zip_file", self._main.config.language),
+            )
+
+            if not file_path:
+                return
+
+            # Show progress
+            self._show_info_bar(
+                "info",
+                t("log.exporting", self._main.config.language),
+                "",
+                duration=2000,
+            )
+
+            # Export logs
+            exporter.export_logs(Path(file_path))
+
+            # Show success message
+            self._show_info_bar(
+                "success",
+                t("log.export_success", self._main.config.language),
+                t("log.export_success_msg", self._main.config.language, path=file_path),
+                duration=5000,
+            )
+
+        except FileNotFoundError:
+            self._show_info_bar(
+                "warning",
+                t("log.no_logs_found", self._main.config.language),
+                "",
+                duration=3000,
+            )
+        except Exception as e:
+            self._show_info_bar(
+                "error",
+                t("log.export_failed", self._main.config.language),
+                t("log.export_failed_msg", self._main.config.language, error=str(e)),
+                duration=5000,
+            )
+
+    def _update_statistics_display(self) -> None:
+        """Update performance statistics display."""
+        config = self._main.config
+        is_zh = config.language == "zh"
+
+        # Total files
+        files_text = f"{config.total_files_processed} 个文件" if is_zh else f"{config.total_files_processed} files"
+        self._total_files_label.setText(files_text)
+
+        # Average conversion time
+        if config.total_files_processed > 0:
+            avg_conv = config.total_conversion_time / config.total_files_processed
+            conv_text = f"{avg_conv:.2f} 秒" if is_zh else f"{avg_conv:.2f} s"
+        else:
+            conv_text = "暂无数据" if is_zh else "No data"
+        self._avg_conversion_label.setText(conv_text)
+
+        # Average generation time
+        if config.total_cards_generated > 0:
+            avg_gen = config.total_generation_time / config.total_cards_generated
+            gen_text = f"{avg_gen:.2f} 秒" if is_zh else f"{avg_gen:.2f} s"
+        else:
+            gen_text = "暂无数据" if is_zh else "No data"
+        self._avg_generation_label.setText(gen_text)
+
+        # Total cards
+        cards_text = f"{config.total_cards_generated} 张卡片" if is_zh else f"{config.total_cards_generated} cards"
+        self._total_cards_label.setText(cards_text)
+
+    def _reset_statistics(self) -> None:
+        """Reset performance statistics."""
+        from ankismart.ui.i18n import t
+
+        reply = QMessageBox.question(
+            self,
+            t("settings.confirm_reset_stats", self._main.config.language),
+            t("settings.confirm_reset_stats_msg", self._main.config.language),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self._main.config.total_files_processed = 0
+            self._main.config.total_conversion_time = 0.0
+            self._main.config.total_generation_time = 0.0
+            self._main.config.total_cards_generated = 0
+            save_config(self._main.config)
+            self._update_statistics_display()
+            self._show_info_bar(
+                "success",
+                t("settings.stats_reset_success", self._main.config.language),
+                t("settings.stats_reset_success_msg", self._main.config.language),
+                duration=3000,
+            )
+
+    def retranslate_ui(self):
+        """Retranslate UI elements when language changes."""
+        is_zh = self._main.config.language == "zh"
+
+        # Update save card tooltip with shortcut
+        save_text = "保存配置" if is_zh else "Save Configuration"
+        save_shortcut = get_shortcut_text(ShortcutKeys.SAVE_EDIT, self._main.config.language)
+        self._save_card.setContent(
+            f"保存所有配置更改 ({save_shortcut})" if is_zh else f"Save all configuration changes ({save_shortcut})"
+        )
+
+    def update_theme(self):
+        """Update theme-dependent components when theme changes."""
+        if self._provider_list_widget:
+            self._provider_list_widget.update_theme()
