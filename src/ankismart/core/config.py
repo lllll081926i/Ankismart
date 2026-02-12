@@ -21,11 +21,46 @@ def _resolve_project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _is_portable_mode() -> bool:
+    """检查是否为便携版模式"""
+    root = _resolve_project_root()
+    portable_flag = root / ".portable"
+    return portable_flag.exists()
+
+
 def _resolve_app_dir() -> Path:
+    """解析应用数据目录
+
+    优先级:
+    1. 环境变量 ANKISMART_APP_DIR
+    2. 便携版模式: 应用目录下的 config/
+    3. 开发模式: 项目根目录下的 .local/ankismart/
+    4. 安装版: 用户本地数据目录
+    """
+    # 环境变量优先
     env_app_dir = os.getenv("ANKISMART_APP_DIR", "").strip()
     if env_app_dir:
         return Path(env_app_dir).expanduser().resolve()
-    return _resolve_project_root() / ".local" / "ankismart"
+
+    root = _resolve_project_root()
+
+    # 便携版模式
+    if _is_portable_mode():
+        logger.info("Running in portable mode")
+        return root / "config"
+
+    # 打包后的安装版
+    if getattr(sys, "frozen", False):
+        # Windows: %LOCALAPPDATA%\ankismart
+        # Linux/Mac: ~/.local/share/ankismart
+        if sys.platform == "win32":
+            app_data = Path(os.getenv("LOCALAPPDATA", "~/.local"))
+        else:
+            app_data = Path.home() / ".local" / "share"
+        return (app_data / "ankismart").expanduser().resolve()
+
+    # 开发模式
+    return root / ".local" / "ankismart"
 
 
 CONFIG_DIR: Path = _resolve_app_dir()
