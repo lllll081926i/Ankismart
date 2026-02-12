@@ -1,125 +1,139 @@
+"""Application entry point for Ankismart.
+
+Initializes the Qt application, loads configuration, applies theme and language
+settings, and launches the main window.
+"""
+
 from __future__ import annotations
 
-import os
+import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QApplication, QMessageBox
+from qfluentwidgets import setTheme, Theme
 
-from ankismart.core.config import load_config
-from ankismart.core.logging import setup_logging
+from ankismart.core.config import load_config, save_config
+from ankismart.core.logging import get_logger, setup_logging
 from ankismart.ui.main_window import MainWindow
-from ankismart.ui.styles import get_stylesheet
+
+logger = get_logger("app")
 
 
-def _setup_local_dependency_dirs() -> None:
-    if getattr(sys, "frozen", False):
-        project_root = Path(sys.executable).resolve().parent
-    else:
-        project_root = Path(__file__).resolve().parents[3]
+def _get_icon_path() -> Path:
+    """Get the path to the application icon.
 
-    local_root = Path(
-        os.getenv("ANKISMART_LOCAL_DIR", str(project_root / ".local"))
-    ).expanduser().resolve()
-    app_root = Path(
-        os.getenv("ANKISMART_APP_DIR", str(local_root / "ankismart"))
-    ).expanduser().resolve()
-    model_root = Path(
-        os.getenv("ANKISMART_OCR_MODEL_DIR", str(project_root / "model"))
-    ).expanduser().resolve()
-
-    defaults = {
-        "ANKISMART_LOCAL_DIR": str(local_root),
-        "ANKISMART_APP_DIR": str(app_root),
-        "ANKISMART_OCR_MODEL_DIR": str(model_root),
-        "ANKISMART_CONFIG_PATH": str(app_root / "config.yaml"),
-        "PADDLE_HOME": str(local_root / "paddle"),
-        "PADDLE_PDX_CACHE_HOME": str(model_root),
-        "PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK": "1",
-        "XDG_CACHE_HOME": str(local_root / "cache"),
-        "HF_HOME": str(local_root / "hf"),
-        "UV_CACHE_DIR": str(local_root / "uv-cache"),
-        "PIP_CACHE_DIR": str(local_root / "pip-cache"),
-        "HF_HUB_DISABLE_PROGRESS_BARS": "1",
-        "TMPDIR": str(local_root / "tmp"),
-        "TMP": str(local_root / "tmp"),
-        "TEMP": str(local_root / "tmp"),
-    }
-
-    for key, value in defaults.items():
-        os.environ.setdefault(key, value)
-
-    for env_key in (
-        "ANKISMART_LOCAL_DIR",
-        "ANKISMART_APP_DIR",
-        "ANKISMART_OCR_MODEL_DIR",
-        "PADDLE_HOME",
-        "PADDLE_PDX_CACHE_HOME",
-        "XDG_CACHE_HOME",
-        "HF_HOME",
-        "UV_CACHE_DIR",
-        "PIP_CACHE_DIR",
-        "TMPDIR",
-    ):
-        Path(os.environ[env_key]).mkdir(parents=True, exist_ok=True)
+    Returns:
+        Path to icon.png in the project root.
+    """
+    # Resolve project root (3 levels up from this file)
+    project_root = Path(__file__).resolve().parents[3]
+    return project_root / "icon.png"
 
 
-def main() -> None:
-    os.environ.setdefault("PYTHONUTF8", "1")
-    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-    _setup_local_dependency_dirs()
+def _apply_theme(theme_name: str) -> None:
+    """Apply the application theme.
 
-    setup_logging()
-    config = load_config()
+    Args:
+        theme_name: Theme name ("light" or "dark")
+    """
+    theme = Theme.DARK if theme_name == "dark" else Theme.LIGHT
+    setTheme(theme)
+    logger.info(f"Applied theme: {theme_name}")
 
-    from ankismart.ui.i18n import set_language, t
-    set_language(config.language)
 
+def _restore_window_geometry(window: MainWindow, geometry_hex: str) -> None:
+    """Restore window geometry from saved configuration.
+
+    Args:
+        window: Main window instance
+        geometry_hex: Hex-encoded QByteArray geometry string
+    """
+    if geometry_hex:
+        try:
+            geometry_bytes = bytes.fromhex(geometry_hex)
+            window.restoreGeometry(geometry_bytes)
+            logger.debug("Restored window geometry")
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Failed to restore window geometry: {e}")
+
+
+def main() -> int:
+    """Main application entry point.
+
+    Initializes the Qt application, loads configuration, sets up logging,
+    applies theme and language settings, and displays the main window.
+
+    Returns:
+        Application exit code (0 for success, non-zero for error)
+    """
+    # Enable High DPI scaling
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
+
+    # Create application instance
     app = QApplication(sys.argv)
-    app.setApplicationName("AnkiSmart")
-    app.setStyleSheet(get_stylesheet(dark=config.theme == "dark"))
+    app.setApplicationName("Ankismart")
+    app.setOrganizationName("Ankismart")
 
-    window = MainWindow(config)
+    # Set application icon
+    icon_path = _get_icon_path()
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
+        logger.debug(f"Set application icon: {icon_path}")
+    else:
+        logger.warning(f"Application icon not found: {icon_path}")
 
-    # Import pages lazily to avoid circular imports
-    from ankismart.ui.import_page import ImportPage
-    from ankismart.ui.preview_page import PreviewPage
-    from ankismart.ui.result_page import ResultPage
-    from ankismart.ui.settings_page import SettingsPage
+    try:
+        # Load configuration
+        config = load_config()
+        logger.info("Configuration loaded successfully")
 
-    import_page = ImportPage(window)
-    preview_page = PreviewPage(window)
-    result_page = ResultPage(window)
-    settings_page = SettingsPage(window)
+        # Setup logging with configured level
+        log_level = getattr(logging, config.log_level.upper(), logging.INFO)
+        setup_logging(level=log_level)
+        logger.info(f"Logging initialized at level: {config.log_level}")
 
-    window.add_page(import_page)
-    window.add_preview_page(preview_page)
-    window.add_page(result_page)
-    window.add_page(settings_page)
-    window.set_import_page(import_page)
+        # Apply theme
+        _apply_theme(config.theme)
 
-    # Check AnkiConnect on startup
-    from ankismart.ui.workers import ConnectionCheckWorker
+        # Create and configure main window
+        window = MainWindow()
+        logger.info("Main window created")
 
-    checker = ConnectionCheckWorker(config.anki_connect_url, config.anki_connect_key, proxy_url=config.proxy_url)
-    checker.finished.connect(window.set_connection_status)
-    checker.start()
-    # Keep reference to prevent GC
-    window._connection_checker = checker
+        # Restore window geometry if available
+        if config.window_geometry:
+            _restore_window_geometry(window, config.window_geometry)
 
-    from ankismart.converter.ocr_converter import get_missing_ocr_models
+        # Show window
+        window.show()
+        logger.info("Application started successfully")
 
-    missing_models = get_missing_ocr_models()
-    if missing_models:
-        names = ", ".join(missing_models)
-        window.statusBar().showMessage(
-            t("import.ocr_status_missing", names=names),
-            15000,
+        # Run event loop
+        return app.exec()
+
+    except Exception as e:
+        logger.exception("Fatal error during application startup")
+
+        # Show error dialog
+        error_box = QMessageBox()
+        error_box.setIcon(QMessageBox.Icon.Critical)
+        error_box.setWindowTitle("Ankismart - Startup Error")
+        error_box.setText("Failed to start application")
+        error_box.setInformativeText(str(e))
+        error_box.setDetailedText(
+            "Please check the log files for more details.\n\n"
+            f"Error: {type(e).__name__}: {e}"
         )
+        error_box.exec()
 
-    window.show()
-    sys.exit(app.exec())
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

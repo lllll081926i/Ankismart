@@ -1,623 +1,861 @@
 from __future__ import annotations
 
 import uuid
+from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDoubleSpinBox,
-    QFormLayout,
-    QGroupBox,
+    QDialog,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
+    QListWidgetItem,
     QMessageBox,
-    QPushButton,
-    QScrollArea,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
-
-from ankismart.core.config import (
-    KNOWN_PROVIDERS,
-    LLMProviderConfig,
-    save_config,
+from qfluentwidgets import (
+    BodyLabel,
+    ComboBox,
+    ExpandLayout,
+    FluentIcon as FIF,
+    InfoBar,
+    InfoBarPosition,
+    LineEdit,
+    ListWidget,
+    PasswordLineEdit,
+    PrimaryPushButton,
+    PrimaryPushSettingCard,
+    PushButton,
+    PushSettingCard,
+    ScrollArea,
+    SettingCard,
+    SettingCardGroup,
+    Slider,
+    SmoothMode,
+    SpinBox,
+    SwitchButton,
 )
-from ankismart.ui.i18n import set_language, t
-from ankismart.ui.workers import ConnectionCheckWorker
+
+from ankismart.core.config import KNOWN_PROVIDERS, LLMProviderConfig, save_config
+
+if TYPE_CHECKING:
+    from ankismart.ui.main_window import MainWindow
 
 
-class SettingsPage(QWidget):
-    def __init__(self, main_window) -> None:
-        super().__init__()
-        self.setObjectName("page_content")
-        self._main = main_window
-        self._worker = None
-        self._providers: list[LLMProviderConfig] = []
-        self._active_provider_id: str = ""
-        self._updating_ui = False
+class LLMProviderDialog(QDialog):
+    """Dialog for adding/editing LLM provider."""
 
-        # Root layout with scroll area to avoid controls being compressed together
-        root_layout = QVBoxLayout(self)
-        root_layout.setSpacing(0)
-        root_layout.setContentsMargins(0, 0, 0, 0)
+    saved = Signal(LLMProviderConfig)
 
-        scroll = QScrollArea(self)
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+    def __init__(self, provider: LLMProviderConfig | None = None, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("LLM 提供商配置")
+        self.setMinimumWidth(500)
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
 
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setSpacing(20)
-        layout.setContentsMargins(16, 16, 16, 16)
+        self._provider = provider or LLMProviderConfig(id=uuid.uuid4().hex[:12])
 
-        # Title
-        title = QLabel(t("settings.title"))
-        title.setProperty("role", "heading")
-        layout.addWidget(title)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(16)
+        layout.setContentsMargins(20, 20, 20, 20)
 
-        # ── LLM Provider Section ──
-        llm_group = QGroupBox(t("settings.provider_group"))
-        llm_layout = QVBoxLayout(llm_group)
-        llm_layout.setSpacing(16)
-        llm_layout.setContentsMargins(16, 20, 16, 16)
+        # Name
+        self._name_edit = LineEdit()
+        self._name_edit.setPlaceholderText("提供商名称（例如：OpenAI）")
+        self._name_edit.setText(self._provider.name)
+        layout.addWidget(self._name_edit)
 
-        # Provider Selection Row
-        sel_row = QHBoxLayout()
-        sel_row.setSpacing(15)
-        
-        sel_label = QLabel(t("settings.provider"))
-        sel_label.setFixedWidth(100)
-        sel_row.addWidget(sel_label)
+        # Base URL
+        self._base_url_edit = LineEdit()
+        self._base_url_edit.setPlaceholderText("基础 URL（例如：https://api.openai.com/v1）")
+        self._base_url_edit.setText(self._provider.base_url)
+        layout.addWidget(self._base_url_edit)
 
-        self._provider_combo = QComboBox()
-        self._provider_combo.setMinimumHeight(40) # Taller input
-        self._provider_combo.currentIndexChanged.connect(self._on_provider_changed)
-        sel_row.addWidget(self._provider_combo, 1)
+        # API Key
+        self._api_key_edit = PasswordLineEdit()
+        self._api_key_edit.setPlaceholderText("API 密钥")
+        self._api_key_edit.setText(self._provider.api_key)
+        layout.addWidget(self._api_key_edit)
 
-        btn_add = QPushButton(t("settings.add_provider"))
-        btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_add.setFixedWidth(80)
-        btn_add.setMinimumHeight(40) # Taller button
-        btn_add.clicked.connect(self._add_provider)
-        sel_row.addWidget(btn_add)
+        # Model
+        self._model_edit = LineEdit()
+        self._model_edit.setPlaceholderText("模型（例如：gpt-4o）")
+        self._model_edit.setText(self._provider.model)
+        layout.addWidget(self._model_edit)
 
-        self._btn_delete = QPushButton(t("settings.remove_provider"))
-        self._btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_delete.setFixedWidth(80)
-        self._btn_delete.setMinimumHeight(40) # Taller button
-        self._btn_delete.clicked.connect(self._delete_provider)
-        sel_row.addWidget(self._btn_delete)
-        
-        llm_layout.addLayout(sel_row)
-
-        # Divider
-        line = QWidget()
-        line.setFixedHeight(1)
-        line.setStyleSheet("background-color: #E0E0E0;")
-        llm_layout.addWidget(line)
-
-        # Provider Details Form
-        form = QFormLayout()
-        form.setSpacing(12)
-        form.setVerticalSpacing(14)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
-
-        self._name_combo = QComboBox()
-        self._name_combo.setEditable(True)
-        self._name_combo.setMinimumHeight(40) # Taller input
-        for name in KNOWN_PROVIDERS:
-            self._name_combo.addItem(name)
-        self._name_combo.currentTextChanged.connect(self._on_name_edited)
-        form.addRow(t("settings.name"), self._name_combo)
-
-        self._base_url_input = QLineEdit()
-        self._base_url_input.setPlaceholderText("https://api.openai.com/v1")
-        self._base_url_input.setMinimumHeight(40) # Taller input
-        form.addRow(t("settings.base_url"), self._base_url_input)
-
-        self._provider_key_input = QLineEdit()
-        self._provider_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._provider_key_input.setPlaceholderText("sk-...")
-        self._provider_key_input.setMinimumHeight(40) # Taller input
-        form.addRow(t("settings.api_key"), self._provider_key_input)
-
-        self._provider_model_input = QLineEdit()
-        self._provider_model_input.setPlaceholderText("gpt-4o")
-        self._provider_model_input.setMinimumHeight(40) # Taller input
-        form.addRow(t("settings.model"), self._provider_model_input)
-
-        # Ollama model refresh
-        ollama_row = QHBoxLayout()
-        self._btn_refresh_models = QPushButton(t("settings.refresh_models"))
-        self._btn_refresh_models.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_refresh_models.setMinimumHeight(40)
-        self._btn_refresh_models.clicked.connect(self._refresh_ollama_models)
-        self._btn_refresh_models.hide()  # Only shown for Ollama providers
-        ollama_row.addWidget(self._btn_refresh_models)
-        ollama_row.addStretch()
-        form.addRow("", ollama_row)
-
-        # Rate limit
-        rpm_row = QHBoxLayout()
-        self._rpm_toggle = QPushButton(t("settings.rpm_off"))
-        self._rpm_toggle.setCheckable(True)
-        self._rpm_toggle.setFixedWidth(70)
-        self._rpm_toggle.setMinimumHeight(40) # Taller input
-        self._rpm_toggle.toggled.connect(self._on_rpm_toggled)
-        rpm_row.addWidget(self._rpm_toggle)
-
-        self._rpm_spin = QSpinBox()
-        self._rpm_spin.setRange(1, 9999)
-        self._rpm_spin.setValue(60)
-        self._rpm_spin.setSuffix(" RPM")
-        self._rpm_spin.setMinimumHeight(40) # Taller input
-        self._rpm_spin.hide()
-        rpm_row.addWidget(self._rpm_spin)
-        rpm_row.addStretch()
-        form.addRow(t("settings.rpm"), rpm_row)
-
-        llm_layout.addLayout(form)
-        layout.addWidget(llm_group)
-
-        # ── AnkiConnect + Defaults ──
-        other_group = QGroupBox(t("settings.other_group"))
-        other_layout = QVBoxLayout(other_group)
-        other_layout.setContentsMargins(16, 20, 16, 16)
-
-        other_form = QFormLayout()
-        other_form.setSpacing(12)
-        other_form.setVerticalSpacing(14)
-        other_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        other_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
-
-        self._anki_url_input = QLineEdit()
-        self._anki_url_input.setPlaceholderText("http://127.0.0.1:8765")
-        self._anki_url_input.setMinimumHeight(40) # Taller input
-        other_form.addRow(t("settings.anki_url"), self._anki_url_input)
-
-        self._anki_key_input = QLineEdit()
-        self._anki_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._anki_key_input.setPlaceholderText(t("settings.anki_key_placeholder"))
-        self._anki_key_input.setMinimumHeight(40) # Taller input
-        other_form.addRow(t("settings.anki_key"), self._anki_key_input)
-
-        self._default_deck_input = QLineEdit()
-        self._default_deck_input.setMinimumHeight(40) # Taller input
-        other_form.addRow(t("settings.default_deck"), self._default_deck_input)
-
-        self._default_tags_input = QLineEdit()
-        self._default_tags_input.setMinimumHeight(40) # Taller input
-        other_form.addRow(t("settings.default_tags"), self._default_tags_input)
-
-        self._ocr_correction_check = QCheckBox(
-            t("settings.ocr_correction")
-        )
-        self._ocr_correction_check.setMinimumHeight(30)
-        other_form.addRow("", self._ocr_correction_check)
-        
-        other_layout.addLayout(other_form)
-        layout.addWidget(other_group)
-
-        # ── Language Settings ──
-        lang_group = QGroupBox(t("settings.language_group"))
-        lang_layout = QVBoxLayout(lang_group)
-        lang_layout.setContentsMargins(16, 20, 16, 16)
-
-        lang_form = QFormLayout()
-        self._lang_combo = QComboBox()
-        self._lang_combo.addItem("中文", "zh")
-        self._lang_combo.addItem("English", "en")
-        self._lang_combo.setMinimumHeight(40)
-        lang_form.addRow(t("settings.language"), self._lang_combo)
-        lang_layout.addLayout(lang_form)
-        layout.addWidget(lang_group)
-
-        # ── Generation Parameters ──
-        gen_group = QGroupBox(t("settings.gen_group"))
-        gen_layout = QVBoxLayout(gen_group)
-        gen_layout.setContentsMargins(16, 20, 16, 16)
-
-        gen_form = QFormLayout()
-        gen_form.setSpacing(12)
-        gen_form.setVerticalSpacing(14)
-        gen_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        gen_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
-
-        self._temperature_spin = QDoubleSpinBox()
-        self._temperature_spin.setRange(0.0, 2.0)
-        self._temperature_spin.setSingleStep(0.1)
-        self._temperature_spin.setDecimals(1)
-        self._temperature_spin.setMinimumHeight(40)
-        gen_form.addRow(t("settings.temperature"), self._temperature_spin)
-
-        self._max_tokens_spin = QSpinBox()
-        self._max_tokens_spin.setRange(0, 128000)
-        self._max_tokens_spin.setSpecialValueText(t("settings.max_tokens_default"))
-        self._max_tokens_spin.setSingleStep(256)
-        self._max_tokens_spin.setMinimumHeight(40)
-        gen_form.addRow(t("settings.max_tokens"), self._max_tokens_spin)
-
-        gen_layout.addLayout(gen_form)
-        layout.addWidget(gen_group)
-
-        # ── Network Settings ──
-        net_group = QGroupBox(t("settings.net_group"))
-        net_layout = QVBoxLayout(net_group)
-        net_layout.setContentsMargins(16, 20, 16, 16)
-
-        net_form = QFormLayout()
-        net_form.setSpacing(12)
-        net_form.setVerticalSpacing(14)
-        net_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        net_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
-
-        self._proxy_input = QLineEdit()
-        self._proxy_input.setPlaceholderText(t("settings.proxy_placeholder"))
-        self._proxy_input.setMinimumHeight(40)
-        net_form.addRow(t("settings.proxy"), self._proxy_input)
-
-        net_layout.addLayout(net_form)
-        layout.addWidget(net_group)
-
-        # ── OCR Model Management ──
-        ocr_group = QGroupBox(t("settings.ocr_group"))
-        ocr_layout = QVBoxLayout(ocr_group)
-        ocr_layout.setContentsMargins(16, 20, 16, 16)
-
-        self._ocr_status_label = QLabel(t("settings.ocr_checking"))
-        ocr_layout.addWidget(self._ocr_status_label)
-
-        ocr_btn_row = QHBoxLayout()
-        self._btn_download_ocr = QPushButton(t("settings.ocr_download"))
-        self._btn_download_ocr.setMinimumHeight(40)
-        self._btn_download_ocr.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_download_ocr.clicked.connect(self._download_ocr_models)
-        self._btn_download_ocr.hide()
-        ocr_btn_row.addWidget(self._btn_download_ocr)
-
-        self._btn_check_ocr = QPushButton(t("settings.ocr_check"))
-        self._btn_check_ocr.setMinimumHeight(40)
-        self._btn_check_ocr.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_check_ocr.clicked.connect(self._check_ocr_status)
-        ocr_btn_row.addWidget(self._btn_check_ocr)
-        ocr_btn_row.addStretch()
-
-        ocr_layout.addLayout(ocr_btn_row)
-        layout.addWidget(ocr_group)
-
-        layout.addSpacing(15)
+        # RPM Limit
+        rpm_layout = QHBoxLayout()
+        self._rpm_spin = SpinBox()
+        self._rpm_spin.setRange(0, 9999)
+        self._rpm_spin.setValue(self._provider.rpm_limit)
+        self._rpm_spin.setPrefix("RPM 限制: ")
+        rpm_layout.addWidget(self._rpm_spin)
+        layout.addLayout(rpm_layout)
 
         # Buttons
-        btn_bar = QHBoxLayout()
-        btn_bar.setSpacing(25) # Increased spacing
-        btn_bar.addStretch()
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
 
-        btn_test = QPushButton(t("settings.test_connection"))
-        btn_test.setMinimumHeight(48) # Taller button
-        btn_test.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_test.clicked.connect(self._test_connection)
-        btn_bar.addWidget(btn_test)
+        cancel_btn = PushButton("取消")
+        cancel_btn.clicked.connect(self.close)
+        btn_layout.addWidget(cancel_btn)
 
-        btn_save = QPushButton(t("settings.save"))
-        btn_save.setMinimumHeight(48) # Taller button
-        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_save.setProperty("role", "primary")
-        btn_save.clicked.connect(self._save)
-        btn_bar.addWidget(btn_save)
+        save_btn = PrimaryPushButton("保存")
+        save_btn.clicked.connect(self._save)
+        btn_layout.addWidget(save_btn)
 
-        layout.addLayout(btn_bar)
+        layout.addLayout(btn_layout)
 
-        self._status_label = QLabel("")
-        self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._status_label.setMinimumHeight(30)
-        layout.addWidget(self._status_label)
+    def _save(self) -> None:
+        self._provider.name = self._name_edit.text().strip()
+        self._provider.base_url = self._base_url_edit.text().strip()
+        self._provider.api_key = self._api_key_edit.text().strip()
+        self._provider.model = self._model_edit.text().strip()
+        self._provider.rpm_limit = self._rpm_spin.value()
 
+        if not self._provider.name:
+            QMessageBox.warning(self, "错误", "提供商名称为必填项")
+            return
+
+        self.saved.emit(self._provider)
+        self.close()
+
+
+class ProviderListItemWidget(QWidget):
+    """Custom widget for provider list item."""
+
+    editClicked = Signal(LLMProviderConfig)
+    testClicked = Signal(LLMProviderConfig)
+    deleteClicked = Signal(LLMProviderConfig)
+    activateClicked = Signal(LLMProviderConfig)
+
+    def __init__(self, provider: LLMProviderConfig, is_active: bool, can_delete: bool, parent=None):
+        super().__init__(parent)
+        self._provider = provider
+        self._is_active = is_active
+        self.setObjectName("providerListItem")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        # Use transparent row background so parent white panel is visually dominant
+        self.setStyleSheet("""
+            QWidget#providerListItem {
+                background-color: transparent;
+                border-bottom: 1px solid #ECECEC;
+            }
+            QWidget#providerListItem:hover {
+                background-color: #F7F7F7;
+            }
+        """)
+        self.setAutoFillBackground(False)
+
+        # Main layout
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 12, 12, 12)  # Reduced left margin to 8px
+        layout.setSpacing(4)  # Reduced spacing to 4px
+
+        # Active indicator placeholder (always reserve space for green dot at the front)
+        indicator_container = QWidget()
+        indicator_container.setFixedWidth(16)  # Reduced width to 16px
+        indicator_layout = QHBoxLayout(indicator_container)
+        indicator_layout.setContentsMargins(0, 0, 0, 0)
+        indicator_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)  # Align to left
+
+        if is_active:
+            active_label = BodyLabel("●")
+            active_label.setStyleSheet("color: #10b981; font-size: 20px; background: transparent;")  # Larger dot
+            indicator_layout.addWidget(active_label)
+
+        layout.addWidget(indicator_container)
+
+        # Provider info
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(3)
+
+        name_label = BodyLabel(provider.name)
+        name_label.setStyleSheet("font-weight: bold; font-size: 14px; background: transparent;")
+        name_label.setToolTip(provider.name)
+        info_layout.addWidget(name_label)
+
+        model_text = provider.model.strip() if provider.model else "未设置"
+        model_label = BodyLabel(f"模型：{model_text}")
+        model_label.setObjectName("providerModelLabel")
+        model_label.setStyleSheet("color: #606060; font-size: 12px; background: transparent;")
+        model_label.setToolTip(provider.model or "")
+        info_layout.addWidget(model_label)
+
+        base_url_text = provider.base_url.strip() if provider.base_url else "未设置"
+        base_url_label = BodyLabel(f"地址：{base_url_text}")
+        base_url_label.setObjectName("providerUrlLabel")
+        base_url_label.setStyleSheet("color: #606060; font-size: 12px; background: transparent;")
+        base_url_label.setWordWrap(True)
+        base_url_label.setToolTip(provider.base_url or "")
+        info_layout.addWidget(base_url_label)
+
+        rpm_text = str(provider.rpm_limit) if provider.rpm_limit > 0 else "默认"
+        rpm_label = BodyLabel(f"RPM：{rpm_text}")
+        rpm_label.setObjectName("providerRpmLabel")
+        rpm_label.setStyleSheet("color: #808080; font-size: 11px; background: transparent;")
+        info_layout.addWidget(rpm_label)
+
+        layout.addLayout(info_layout, 1)
         layout.addStretch()
-        scroll.setWidget(content)
-        root_layout.addWidget(scroll)
 
+        # Action buttons
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(8)
+
+        self._activate_btn = PrimaryPushButton("激活", self) if not is_active else PushButton("当前使用", self)
+        self._activate_btn.setFixedWidth(80)
+        self._activate_btn.setEnabled(not is_active)
+        self._activate_btn.clicked.connect(lambda: self.activateClicked.emit(self._provider))
+        button_layout.addWidget(self._activate_btn)
+
+        self._edit_btn = PushButton("修改", self)
+        self._edit_btn.setFixedWidth(70)
+        self._edit_btn.clicked.connect(lambda: self.editClicked.emit(self._provider))
+        button_layout.addWidget(self._edit_btn)
+
+        self._test_btn = PushButton("测试", self)
+        self._test_btn.setFixedWidth(70)
+        self._test_btn.clicked.connect(lambda: self.testClicked.emit(self._provider))
+        button_layout.addWidget(self._test_btn)
+
+        self._delete_btn = PushButton("删除", self)
+        self._delete_btn.setFixedWidth(70)
+        self._delete_btn.setEnabled(can_delete)
+        self._delete_btn.clicked.connect(lambda: self.deleteClicked.emit(self._provider))
+        button_layout.addWidget(self._delete_btn)
+
+        layout.addLayout(button_layout)
+
+
+class ProviderListWidget(QWidget):
+    """Standalone widget for displaying provider list."""
+
+    editClicked = Signal(LLMProviderConfig)
+    testClicked = Signal(LLMProviderConfig)
+    deleteClicked = Signal(LLMProviderConfig)
+    activateClicked = Signal(LLMProviderConfig)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("providerListPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        # High-contrast pure white panel for provider list block
+        self.setStyleSheet("""
+            QWidget#providerListPanel {
+                background-color: #FFFFFF;
+                border: 1px solid #D9D9D9;
+                border-radius: 10px;
+            }
+        """)
+        self.setAutoFillBackground(True)
+
+        # Main layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(0)
+
+        # Create list widget
+        self._list_widget = ListWidget()
+        # Set minimum and maximum height (auto-adjust based on content)
+        self._list_widget.setMinimumHeight(72)  # At least 1 row
+        self._list_widget.setMaximumHeight(288)  # Maximum 4 rows (4 * 72px)
+        self._list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._list_widget.setSpacing(0)
+        self._list_widget.setStyleSheet("""
+            ListWidget {
+                background-color: transparent;
+                border: none;
+            }
+            QListView {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        self._list_widget.installEventFilter(self)
+        self._list_widget.viewport().installEventFilter(self)
+
+        layout.addWidget(self._list_widget)
+
+    def _forward_wheel_to_parent(self, event: QWheelEvent) -> None:
+        parent = self.parentWidget()
+        while parent is not None:
+            if isinstance(parent, ScrollArea):
+                parent.wheelEvent(event)
+                return
+            parent = parent.parentWidget()
+
+    def _should_forward_from_list(self, event: QWheelEvent) -> bool:
+        bar = self._list_widget.verticalScrollBar()
+        if not bar.isVisible():
+            return True
+
+        delta = event.angleDelta().y()
+        if delta > 0 and bar.value() <= bar.minimum():
+            return True
+        if delta < 0 and bar.value() >= bar.maximum():
+            return True
+        return False
+
+    def eventFilter(self, watched, event):
+        if watched in {self._list_widget, self._list_widget.viewport()} and event.type() == QEvent.Type.Wheel:
+            if self._should_forward_from_list(event):
+                self._forward_wheel_to_parent(event)
+                return True
+        return super().eventFilter(watched, event)
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        """Forward wheel events to parent settings scroll area when needed."""
+        if not isinstance(event, QWheelEvent):
+            self._forward_wheel_to_parent(event)
+            return
+
+        if self._list_widget.verticalScrollBar().isVisible():
+            super().wheelEvent(event)
+            if event.isAccepted():
+                return
+
+        self._forward_wheel_to_parent(event)
+
+    def update_providers(self, providers: list[LLMProviderConfig], active_provider_id: str):
+        """Update the provider list display."""
+        self._list_widget.clear()
+
+        can_delete = len(providers) > 1
+        for provider in providers:
+            is_active = provider.id == active_provider_id
+
+            # Create list item
+            item = QListWidgetItem(self._list_widget)
+
+            # Create custom widget
+            widget = ProviderListItemWidget(provider, is_active, can_delete)
+            widget.editClicked.connect(self.editClicked.emit)
+            widget.testClicked.connect(self.testClicked.emit)
+            widget.deleteClicked.connect(self.deleteClicked.emit)
+            widget.activateClicked.connect(self.activateClicked.emit)
+
+            # Set item size hint (height 72px per item)
+            item.setSizeHint(widget.sizeHint())
+
+            # Add item and widget
+            self._list_widget.addItem(item)
+            self._list_widget.setItemWidget(item, widget)
+
+        # Auto-adjust height based on number of providers
+        num_providers = len(providers)
+        if num_providers <= 4:
+            # Show exact height for 1-4 providers
+            target_height = num_providers * 72
+            self._list_widget.setFixedHeight(target_height)
+            self.setFixedHeight(target_height + 2)  # +2 for borders
+        else:
+            # Show maximum 4 rows with scrollbar
+            self._list_widget.setFixedHeight(288)
+            self.setFixedHeight(290)  # +2 for borders
+
+
+class SettingsPage(ScrollArea):
+    """Application settings page using QFluentWidgets components."""
+
+    def __init__(self, main_window: MainWindow) -> None:
+        super().__init__()
+        self._main = main_window
+        self._providers: list[LLMProviderConfig] = []
+        self._active_provider_id: str = ""
+        self._provider_list_widget: ProviderListWidget | None = None
+        self._provider_test_worker = None
+        self._anki_test_worker = None
+
+        # Create scroll widget
+        self.scrollWidget = QWidget()
+        self.expandLayout = ExpandLayout(self.scrollWidget)
+
+        # Initialize UI
+        self.__initWidget()
+
+    def __initWidget(self):
+        """Initialize widgets and layout."""
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSmoothMode(SmoothMode.LINEAR, Qt.Orientation.Vertical)
+        self.setViewportMargins(0, 0, 0, 0)
+        self.setWidget(self.scrollWidget)
+        self.setWidgetResizable(True)
+        self.setObjectName("settingsPage")
+
+        self.scrollWidget.setObjectName("scrollWidget")
+
+        # Initialize layout
+        self.__initLayout()
+
+        # Load current configuration
         self._load_config()
 
-    # ── Config load / save ──
+    def _show_info_bar(self, level: str, title: str, content: str, duration: int = 3000) -> None:
+        """Show fluent InfoBar notifications consistently."""
+        level_map = {
+            "success": InfoBar.success,
+            "warning": InfoBar.warning,
+            "error": InfoBar.error,
+            "info": InfoBar.info,
+        }
+        show = level_map.get(level, InfoBar.info)
+        show(
+            title=title,
+            content=content,
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=duration,
+            parent=self,
+        )
+
+    def __initLayout(self):
+        """Initialize layout and add all setting cards."""
+        self.expandLayout.setSpacing(6)  # Reduced spacing
+        self.expandLayout.setContentsMargins(36, 10, 36, 0)
+
+        # ── LLM Configuration Group ──
+        self._llm_group = SettingCardGroup("LLM 配置", self.scrollWidget)
+
+        # Add provider button
+        self._add_provider_card = PushSettingCard(
+            "添加提供商",
+            FIF.ADD,
+            "添加 LLM 提供商",
+            "添加新的 LLM 提供商配置",
+        )
+        self._add_provider_card.clicked.connect(self._add_provider)
+        self._llm_group.addSettingCard(self._add_provider_card)
+
+        self.expandLayout.addWidget(self._llm_group)
+
+        # ── Provider List (Standalone Widget) ──
+        self._provider_list_widget = ProviderListWidget(self.scrollWidget)
+        self._provider_list_widget.editClicked.connect(self._edit_provider)
+        self._provider_list_widget.testClicked.connect(self._test_provider_connection)
+        self._provider_list_widget.deleteClicked.connect(self._delete_provider)
+        self._provider_list_widget.activateClicked.connect(self._activate_provider)
+        self.expandLayout.addWidget(self._provider_list_widget)
+
+        # ── LLM Parameters Group ──
+        self._llm_params_group = SettingCardGroup("LLM 参数", self.scrollWidget)
+
+        # Temperature - using custom card with Slider
+        self._temperature_card = SettingCard(
+            FIF.FRIGID,
+            "温度",
+            "控制生成的随机性（0.0 = 确定性，2.0 = 创造性）",
+            self.scrollWidget,
+        )
+        self._temperature_slider = Slider(Qt.Orientation.Horizontal, self._temperature_card)
+        self._temperature_slider.setRange(0, 20)
+        self._temperature_slider.setSingleStep(1)
+        self._temperature_slider.setValue(3)  # Default 0.3
+        self._temperature_slider.setMinimumWidth(200)
+
+        self._temperature_label = BodyLabel()
+        self._temperature_label.setText("0.3")
+        self._temperature_label.setFixedWidth(50)
+
+        self._temperature_slider.valueChanged.connect(
+            lambda v: self._temperature_label.setText(f"{v/10:.1f}")
+        )
+
+        self._temperature_card.hBoxLayout.addWidget(self._temperature_slider)
+        self._temperature_card.hBoxLayout.addWidget(self._temperature_label)
+        self._temperature_card.hBoxLayout.addSpacing(16)
+        self._llm_params_group.addSettingCard(self._temperature_card)
+
+        # Max Tokens - using custom card with SpinBox
+        self._max_tokens_card = SettingCard(
+            FIF.FONT,
+            "最大令牌数",
+            "生成的最大令牌数（0 = 使用提供商默认值）",
+            self.scrollWidget,
+        )
+        self._max_tokens_spin = SpinBox(self._max_tokens_card)
+        self._max_tokens_spin.setRange(0, 128000)
+        self._max_tokens_spin.setSingleStep(256)
+        self._max_tokens_spin.setSpecialValueText("默认")
+        self._max_tokens_spin.setMinimumWidth(200)
+        self._max_tokens_card.hBoxLayout.addWidget(self._max_tokens_spin)
+        self._max_tokens_card.hBoxLayout.addSpacing(16)
+        self._llm_params_group.addSettingCard(self._max_tokens_card)
+
+        self.expandLayout.addWidget(self._llm_params_group)
+
+        # ── Anki Configuration Group ──
+        self._anki_group = SettingCardGroup("Anki 配置", self.scrollWidget)
+
+        # AnkiConnect URL
+        self._anki_url_card = SettingCard(
+            FIF.LINK,
+            "AnkiConnect URL",
+            "AnkiConnect API 的 URL 地址",
+            self.scrollWidget,
+        )
+        self._anki_url_edit = LineEdit(self._anki_url_card)
+        self._anki_url_edit.setPlaceholderText("http://127.0.0.1:8765")
+        self._anki_url_edit.setMinimumWidth(300)
+        self._anki_url_card.hBoxLayout.addWidget(self._anki_url_edit)
+        self._anki_url_card.hBoxLayout.addSpacing(16)
+        self._anki_group.addSettingCard(self._anki_url_card)
+
+        # AnkiConnect Key
+        self._anki_key_card = SettingCard(
+            FIF.FINGERPRINT,
+            "AnkiConnect 密钥",
+            "AnkiConnect 的可选 API 密钥",
+            self.scrollWidget,
+        )
+        self._anki_key_edit = PasswordLineEdit(self._anki_key_card)
+        self._anki_key_edit.setPlaceholderText("可选的 API 密钥")
+        self._anki_key_edit.setMinimumWidth(300)
+        self._anki_key_card.hBoxLayout.addWidget(self._anki_key_edit)
+        self._anki_key_card.hBoxLayout.addSpacing(16)
+        self._anki_group.addSettingCard(self._anki_key_card)
+
+        # Default Deck
+        self._default_deck_card = SettingCard(
+            FIF.BOOK_SHELF,
+            "默认牌组",
+            "新卡片的默认 Anki 牌组",
+            self.scrollWidget,
+        )
+        self._default_deck_edit = LineEdit(self._default_deck_card)
+        self._default_deck_edit.setPlaceholderText("默认")
+        self._default_deck_edit.setMinimumWidth(300)
+        self._default_deck_card.hBoxLayout.addWidget(self._default_deck_edit)
+        self._default_deck_card.hBoxLayout.addSpacing(16)
+        self._anki_group.addSettingCard(self._default_deck_card)
+
+        # Default Tags
+        self._default_tags_card = SettingCard(
+            FIF.TAG,
+            "默认标签",
+            "新卡片的默认标签（逗号分隔）",
+            self.scrollWidget,
+        )
+        self._default_tags_edit = LineEdit(self._default_tags_card)
+        self._default_tags_edit.setPlaceholderText("ankismart, imported")
+        self._default_tags_edit.setMinimumWidth(300)
+        self._default_tags_card.hBoxLayout.addWidget(self._default_tags_edit)
+        self._default_tags_card.hBoxLayout.addSpacing(16)
+        self._anki_group.addSettingCard(self._default_tags_card)
+
+        # Test Connection
+        self._test_connection_card = PushSettingCard(
+            "测试连接",
+            FIF.SYNC,
+            "测试连接",
+            "测试与 AnkiConnect 的连接",
+        )
+        self._test_connection_card.clicked.connect(self._test_connection)
+        self._anki_group.addSettingCard(self._test_connection_card)
+
+        self.expandLayout.addWidget(self._anki_group)
+
+        # ── Other Configuration Group ──
+        self._other_group = SettingCardGroup("其他设置", self.scrollWidget)
+
+        # Theme
+        self._theme_card = SettingCard(
+            FIF.BRUSH,
+            "主题",
+            "应用程序主题",
+            self.scrollWidget,
+        )
+        self._theme_combo = ComboBox(self._theme_card)
+        self._theme_combo.addItems(["浅色", "深色", "自动"])
+        self._theme_combo.setMinimumWidth(200)
+        self._theme_card.hBoxLayout.addWidget(self._theme_combo)
+        self._theme_card.hBoxLayout.addSpacing(16)
+        self._other_group.addSettingCard(self._theme_card)
+
+        # Language
+        self._language_card = SettingCard(
+            FIF.LANGUAGE,
+            "语言",
+            "应用程序语言",
+            self.scrollWidget,
+        )
+        self._language_combo = ComboBox(self._language_card)
+        self._language_combo.addItems(["中文", "English"])
+        self._language_combo.setMinimumWidth(200)
+        self._language_card.hBoxLayout.addWidget(self._language_combo)
+        self._language_card.hBoxLayout.addSpacing(16)
+        self._other_group.addSettingCard(self._language_card)
+
+        # Proxy
+        self._proxy_card = SettingCard(
+            FIF.GLOBE,
+            "代理设置",
+            "HTTP/HTTPS 代理 URL（可选）",
+            self.scrollWidget,
+        )
+        self._proxy_edit = LineEdit(self._proxy_card)
+        self._proxy_edit.setPlaceholderText("http://proxy.example.com:8080")
+        self._proxy_edit.setMinimumWidth(300)
+        self._proxy_card.hBoxLayout.addWidget(self._proxy_edit)
+        self._proxy_card.hBoxLayout.addSpacing(16)
+        self._other_group.addSettingCard(self._proxy_card)
+
+        # OCR Correction
+        self._ocr_correction_card = SettingCard(
+            FIF.EDIT,
+            "OCR 校正",
+            "启用基于 LLM 的 OCR 文本校正",
+            self.scrollWidget,
+        )
+        self._ocr_correction_switch = SwitchButton(self._ocr_correction_card)
+        self._ocr_correction_card.hBoxLayout.addWidget(self._ocr_correction_switch)
+        self._ocr_correction_card.hBoxLayout.addSpacing(16)
+        self._other_group.addSettingCard(self._ocr_correction_card)
+
+        self.expandLayout.addWidget(self._other_group)
+
+        # ── Action Buttons Group ──
+        self._action_group = SettingCardGroup("操作", self.scrollWidget)
+
+        self._reset_card = PushSettingCard(
+            "恢复默认",
+            FIF.RETURN,
+            "重置设置",
+            "将所有设置恢复为默认值",
+        )
+        self._reset_card.clicked.connect(self._reset_to_default)
+        self._action_group.addSettingCard(self._reset_card)
+
+        self._save_card = PrimaryPushSettingCard(
+            "保存配置",
+            FIF.SAVE,
+            "保存设置",
+            "保存所有配置更改",
+        )
+        self._save_card.clicked.connect(self._save_config)
+        self._action_group.addSettingCard(self._save_card)
+
+        self.expandLayout.addWidget(self._action_group)
 
     def _load_config(self) -> None:
+        """Load configuration from main window."""
         config = self._main.config
         self._providers = [p.model_copy() for p in config.llm_providers]
         self._active_provider_id = config.active_provider_id
-        self._refresh_provider_combo()
 
-        self._anki_url_input.setText(config.anki_connect_url)
-        self._anki_key_input.setText(config.anki_connect_key)
-        self._default_deck_input.setText(config.default_deck)
-        self._default_tags_input.setText(", ".join(config.default_tags))
-        self._ocr_correction_check.setChecked(config.ocr_correction)
-        self._temperature_spin.setValue(config.llm_temperature)
+        # Update provider list
+        self._update_provider_list()
+
+        # LLM settings
+        temp_value = int(config.llm_temperature * 10)
+        self._temperature_slider.setValue(temp_value)
         self._max_tokens_spin.setValue(config.llm_max_tokens)
-        self._proxy_input.setText(config.proxy_url)
-        lang_idx = self._lang_combo.findData(config.language)
-        if lang_idx >= 0:
-            self._lang_combo.setCurrentIndex(lang_idx)
-        self._check_ocr_status()
 
-    # ── OCR model management ──
+        # Anki settings
+        self._anki_url_edit.setText(config.anki_connect_url)
+        self._anki_key_edit.setText(config.anki_connect_key)
+        self._default_deck_edit.setText(config.default_deck)
+        self._default_tags_edit.setText(", ".join(config.default_tags))
 
-    def _check_ocr_status(self) -> None:
-        """Check which OCR models are installed."""
-        try:
-            from ankismart.converter.ocr_converter import get_missing_ocr_models
-            missing = get_missing_ocr_models()
-            if missing:
-                self._ocr_status_label.setText(t("settings.ocr_missing", models=", ".join(missing)))
-                self._btn_download_ocr.show()
-            else:
-                self._ocr_status_label.setText(t("settings.ocr_ready"))
-                self._btn_download_ocr.hide()
-        except Exception as exc:
-            self._ocr_status_label.setText(t("settings.ocr_check_failed", error=exc))
+        # Other settings
+        theme_map = {"light": 0, "dark": 1, "auto": 2}
+        self._theme_combo.setCurrentIndex(theme_map.get(config.theme, 0))
 
-    def _download_ocr_models(self) -> None:
-        """Download missing OCR models."""
-        self._btn_download_ocr.setEnabled(False)
-        self._ocr_status_label.setText(t("settings.ocr_downloading"))
+        lang_map = {"zh": 0, "en": 1}
+        self._language_combo.setCurrentIndex(lang_map.get(config.language, 0))
 
-        from PySide6.QtCore import QThread, Signal
+        self._proxy_edit.setText(config.proxy_url)
+        self._ocr_correction_switch.setChecked(config.ocr_correction)
 
-        class _DownloadWorker(QThread):
-            progress = Signal(str)
-            finished = Signal()
-            error = Signal(str)
-
-            def run(self):
-                try:
-                    from ankismart.converter.ocr_converter import download_missing_ocr_models
-                    download_missing_ocr_models(progress_callback=lambda msg: self.progress.emit(msg))
-                    self.finished.emit()
-                except Exception as exc:
-                    self.error.emit(str(exc))
-
-        self._ocr_worker = _DownloadWorker()
-        self._ocr_worker.progress.connect(lambda msg: self._ocr_status_label.setText(msg))
-        self._ocr_worker.finished.connect(self._on_ocr_download_done)
-        self._ocr_worker.error.connect(self._on_ocr_download_error)
-        self._ocr_worker.start()
-
-    def _on_ocr_download_done(self) -> None:
-        self._ocr_status_label.setText(t("settings.ocr_download_done"))
-        self._btn_download_ocr.hide()
-        self._btn_download_ocr.setEnabled(True)
-
-    def _on_ocr_download_error(self, msg: str) -> None:
-        self._ocr_status_label.setText(t("settings.ocr_download_failed", error=msg))
-        self._btn_download_ocr.setEnabled(True)
-
-    def _refresh_provider_combo(self) -> None:
-        self._updating_ui = True
-        
-        target_index = 0
-        found_index = -1
-        
-        self._provider_combo.clear()
-        for i, p in enumerate(self._providers):
-            label = p.name or t("settings.unnamed")
-            if p.model:
-                label += f" - {p.model}"
-            suffix = t("settings.active_suffix") if p.id == self._active_provider_id else ""
-            self._provider_combo.addItem(label + suffix, userData=p.id)
-            
-            if p.id == self._active_provider_id:
-                found_index = i
-
-        if found_index >= 0:
-            target_index = found_index
-        elif self._provider_combo.count() > 0:
-            target_index = 0
-            
-        self._provider_combo.setCurrentIndex(target_index)
-        self._btn_delete.setEnabled(len(self._providers) > 1)
-        self._updating_ui = False
-        
-        self._on_provider_changed(target_index)
-
-    def _selected_provider(self) -> LLMProviderConfig | None:
-        idx = self._provider_combo.currentIndex()
-        if 0 <= idx < len(self._providers):
-            return self._providers[idx]
-        return None
-
-    def _save_form_to_provider(self) -> None:
-        p = self._selected_provider()
-        if p is None:
-            return
-        p.name = self._name_combo.currentText().strip()
-        p.base_url = self._base_url_input.text().strip()
-        p.api_key = self._provider_key_input.text().strip()
-        p.model = self._provider_model_input.text().strip()
-        if self._rpm_toggle.isChecked():
-            p.rpm_limit = self._rpm_spin.value()
-        else:
-            p.rpm_limit = 0
-
-    # ── Provider interactions ──
-
-    def _on_provider_changed(self, index: int) -> None:
-        if self._updating_ui:
-            return
-            
-        p = self._selected_provider()
-        if p is None:
-            self._updating_ui = True
-            self._name_combo.setCurrentText("")
-            self._base_url_input.clear()
-            self._provider_key_input.clear()
-            self._provider_model_input.clear()
-            self._rpm_toggle.setChecked(False)
-            self._updating_ui = False
-            return
-            
-        self._updating_ui = True
-        self._name_combo.setCurrentText(p.name)
-        self._base_url_input.setText(p.base_url)
-        self._provider_key_input.setText(p.api_key)
-        self._provider_model_input.setText(p.model)
-        has_rpm = p.rpm_limit > 0
-        self._rpm_toggle.setChecked(has_rpm)
-        self._rpm_toggle.setText(t("settings.rpm_on") if has_rpm else t("settings.rpm_off"))
-        self._rpm_spin.setVisible(has_rpm)
-        if has_rpm:
-            self._rpm_spin.setValue(p.rpm_limit)
-        is_ollama = "ollama" in p.name.lower()
-        self._btn_refresh_models.setVisible(is_ollama)
-
-        self._updating_ui = False
-
-    def _on_name_edited(self, text: str) -> None:
-        if self._updating_ui:
-            return
-        url = KNOWN_PROVIDERS.get(text, "")
-        if url:
-            self._base_url_input.setText(url)
-        self._save_form_to_provider()
-        # Show/hide Ollama model refresh button
-        is_ollama = "ollama" in text.lower()
-        self._btn_refresh_models.setVisible(is_ollama)
-
-    def _on_rpm_toggled(self, checked: bool) -> None:
-        self._rpm_toggle.setText(t("settings.rpm_on") if checked else t("settings.rpm_off"))
-        self._rpm_spin.setVisible(checked)
-        self._save_form_to_provider()
+    def _update_provider_list(self) -> None:
+        """Update provider list display."""
+        if self._provider_list_widget:
+            self._provider_list_widget.update_providers(self._providers, self._active_provider_id)
 
     def _add_provider(self) -> None:
-        self._save_form_to_provider()
-        new_p = LLMProviderConfig(id=uuid.uuid4().hex[:12], name="New Provider")
-        self._providers.append(new_p)
-        self._refresh_provider_combo()
-        self._provider_combo.setCurrentIndex(len(self._providers) - 1)
-        self._name_combo.setFocus()
+        """Open dialog to add a new provider."""
+        dialog = LLMProviderDialog(parent=self)
+        dialog.saved.connect(self._on_provider_saved)
+        dialog.exec()
 
-    def _delete_provider(self) -> None:
+    def _edit_provider(self, provider: LLMProviderConfig) -> None:
+        """Open dialog to edit a provider."""
+        dialog = LLMProviderDialog(provider, parent=self)
+        dialog.saved.connect(self._on_provider_saved)
+        dialog.exec()
+
+    def _on_provider_saved(self, provider: LLMProviderConfig) -> None:
+        """Handle provider save from dialog."""
+        # Check if provider exists
+        existing = next((p for p in self._providers if p.id == provider.id), None)
+        if existing:
+            # Update existing
+            idx = self._providers.index(existing)
+            self._providers[idx] = provider
+        else:
+            # Add new
+            self._providers.append(provider)
+            if not self._active_provider_id:
+                self._active_provider_id = provider.id
+
+        self._update_provider_list()
+
+    def _delete_provider(self, provider: LLMProviderConfig) -> None:
+        """Delete a provider."""
         if len(self._providers) <= 1:
-            QMessageBox.warning(self, t("settings.delete_warning"), t("settings.delete_min"))
-            return
-            
-        if QMessageBox.question(self, t("settings.delete_confirm"), t("settings.delete_confirm_msg")) != QMessageBox.StandardButton.Yes:
-            return
-
-        idx = self._provider_combo.currentIndex()
-        if idx < 0:
+            QMessageBox.warning(
+                self, "无法删除", "至少需要保留一个提供商配置"
+            )
             return
 
-        removed = self._providers.pop(idx)
-        if removed.id == self._active_provider_id and self._providers:
-            self._active_provider_id = self._providers[0].id
-            
-        self._refresh_provider_combo()
+        reply = QMessageBox.question(
+            self,
+            "确认删除",
+            f"确定要删除提供商 '{provider.name}' 吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
 
-    # ── Save / test ──
+        if reply == QMessageBox.StandardButton.Yes:
+            self._providers.remove(provider)
+            if provider.id == self._active_provider_id and self._providers:
+                self._active_provider_id = self._providers[0].id
+            self._update_provider_list()
 
-    def _refresh_ollama_models(self) -> None:
-        """Fetch model list from Ollama /api/tags endpoint."""
-        base_url = self._base_url_input.text().strip()
-        if not base_url:
-            QMessageBox.warning(self, t("error.title"), t("settings.no_base_url"))
+    def _activate_provider(self, provider: LLMProviderConfig) -> None:
+        """Set a provider as active."""
+        self._active_provider_id = provider.id
+        self._update_provider_list()
+
+    def _test_provider_connection(self, provider: LLMProviderConfig) -> None:
+        """Test connection to a specific LLM provider."""
+        from ankismart.ui.workers import ProviderConnectionWorker
+
+        self._show_info_bar(
+            "info",
+            "测试中",
+            f"正在测试提供商「{provider.name}」连通性...",
+            duration=1500,
+        )
+
+        worker = ProviderConnectionWorker(
+            provider,
+            proxy_url=self._proxy_edit.text().strip(),
+            temperature=self._temperature_slider.value() / 10,
+            max_tokens=self._max_tokens_spin.value(),
+        )
+        worker.finished.connect(lambda ok, err: self._on_provider_test_result(provider.name, ok, err))
+        worker.start()
+        self._provider_test_worker = worker
+
+    def _on_provider_test_result(self, provider_name: str, connected: bool, error: str) -> None:
+        """Handle provider connection test result."""
+        if connected:
+            self._show_info_bar("success", "连接成功", f"提供商「{provider_name}」连通正常", duration=3500)
             return
 
-        # Derive Ollama API URL from base_url (remove /v1 suffix if present)
-        api_base = base_url.rstrip("/")
-        if api_base.endswith("/v1"):
-            api_base = api_base[:-3]
+        if error:
+            self._show_info_bar(
+                "error",
+                "连接失败",
+                f"提供商「{provider_name}」连接失败：{error}",
+                duration=5000,
+            )
+            return
 
-        self._btn_refresh_models.setEnabled(False)
-        self._btn_refresh_models.setText(t("settings.refreshing"))
+        self._show_info_bar("warning", "连接失败", f"提供商「{provider_name}」未通过连通性测试", duration=4000)
 
-        import httpx
-        try:
-            resp = httpx.get(f"{api_base}/api/tags", timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-            models = [m["name"] for m in data.get("models", [])]
-            if not models:
-                QMessageBox.information(self, t("settings.hint"), t("settings.no_models"))
-            else:
-                from PySide6.QtWidgets import QInputDialog
-                model, ok = QInputDialog.getItem(
-                    self, t("settings.select_model"), t("settings.available_models"), models, 0, False
-                )
-                if ok and model:
-                    self._provider_model_input.setText(model)
-        except Exception as exc:
-            QMessageBox.warning(self, t("settings.fetch_failed"), t("settings.ollama_error", error=exc))
-        finally:
-            self._btn_refresh_models.setEnabled(True)
-            self._btn_refresh_models.setText(t("settings.refresh_models"))
+    def _test_connection(self) -> None:
+        """Test connection to AnkiConnect."""
+        from ankismart.ui.workers import ConnectionCheckWorker
 
-    def _save(self) -> None:
-        self._save_form_to_provider()
-        current_p = self._selected_provider()
+        url = self._anki_url_edit.text() or "http://127.0.0.1:8765"
+        key = self._anki_key_edit.text()
+        proxy = self._proxy_edit.text()
 
-        # Validate active provider has API key (skip for Ollama)
-        if current_p and current_p.name and "ollama" not in current_p.name.lower():
-            if not current_p.api_key.strip():
-                QMessageBox.warning(self, t("settings.config_error"), t("settings.no_api_key_error"))
-                return
+        self._test_connection_card.setContent("测试中...")
+        self._show_info_bar("info", "测试中", "正在检测 AnkiConnect 连接...", duration=1500)
 
-        if current_p:
-            self._active_provider_id = current_p.id
+        worker = ConnectionCheckWorker(url, key, proxy_url=proxy)
+        worker.finished.connect(self._on_test_result)
+        worker.start()
+        self._anki_test_worker = worker
 
-        tags = [
-            tag.strip()
-            for tag in self._default_tags_input.text().split(",")
-            if tag.strip()
-        ]
-        base_config = self._main.config
-        config = base_config.model_copy(
+    def _on_test_result(self, connected: bool) -> None:
+        """Handle test connection result."""
+        if connected:
+            self._test_connection_card.setContent("连接成功！")
+            self._show_info_bar("success", "连接成功", "AnkiConnect 连通正常", duration=3500)
+        else:
+            self._test_connection_card.setContent("连接失败")
+            self._show_info_bar("error", "连接失败", "无法连接到 AnkiConnect，请检查 URL/密钥与代理设置", duration=5000)
+        self._main.set_connection_status(connected)
+
+    def _save_config(self) -> None:
+        """Save configuration."""
+        # Validate active provider
+        if not self._providers:
+            QMessageBox.warning(self, "错误", "至少需要配置一个 LLM 提供商")
+            return
+
+        # Parse tags
+        tags = [tag.strip() for tag in self._default_tags_edit.text().split(",") if tag.strip()]
+        if not tags:
+            tags = ["ankismart"]
+
+        # Get theme and language
+        theme_values = ["light", "dark", "auto"]
+        theme = theme_values[self._theme_combo.currentIndex()]
+
+        lang_values = ["zh", "en"]
+        language = lang_values[self._language_combo.currentIndex()]
+
+        # Get temperature (convert from 0-20 to 0.0-2.0)
+        temperature = self._temperature_slider.value() / 10.0
+
+        # Update config
+        config = self._main.config.model_copy(
             update={
                 "llm_providers": self._providers,
                 "active_provider_id": self._active_provider_id,
-                "anki_connect_url": self._anki_url_input.text()
-                or "http://127.0.0.1:8765",
-                "anki_connect_key": self._anki_key_input.text(),
-                "default_deck": self._default_deck_input.text() or "Default",
-                "default_tags": tags or ["ankismart"],
-                "ocr_correction": self._ocr_correction_check.isChecked(),
-                "llm_temperature": self._temperature_spin.value(),
+                "anki_connect_url": self._anki_url_edit.text() or "http://127.0.0.1:8765",
+                "anki_connect_key": self._anki_key_edit.text(),
+                "default_deck": self._default_deck_edit.text() or "Default",
+                "default_tags": tags,
+                "ocr_correction": self._ocr_correction_switch.isChecked(),
+                "llm_temperature": temperature,
                 "llm_max_tokens": self._max_tokens_spin.value(),
-                "proxy_url": self._proxy_input.text().strip(),
-                "language": self._lang_combo.currentData() or "zh",
+                "proxy_url": self._proxy_edit.text().strip(),
+                "theme": theme,
+                "language": language,
             }
         )
+
         try:
             save_config(config)
             self._main.config = config
-            set_language(self._lang_combo.currentData() or "zh")
-            self._status_label.setText(t("settings.saved"))
-            self._status_label.setStyleSheet("color: green;")
-            self._refresh_provider_combo()
+            QMessageBox.information(self, "成功", "配置保存成功")
         except Exception as exc:
-            QMessageBox.warning(self, t("error.title"), t("settings.save_failed", error=exc))
+            QMessageBox.critical(self, "错误", f"保存配置失败：{exc}")
 
-    def _test_connection(self) -> None:
-        url = self._anki_url_input.text() or "http://127.0.0.1:8765"
-        key = self._anki_key_input.text()
-        self._status_label.setText(t("settings.testing"))
-        self._status_label.setStyleSheet("")
+    def _reset_to_default(self) -> None:
+        """Reset configuration to default values."""
+        reply = QMessageBox.question(
+            self,
+            "确认重置",
+            "确定要将所有设置恢复为默认值吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
 
-        worker = ConnectionCheckWorker(url, key, proxy_url=self._proxy_input.text().strip())
-        worker.finished.connect(self._on_test_result)
-        worker.start()
-        self._worker = worker
+        if reply == QMessageBox.StandardButton.Yes:
+            from ankismart.core.config import AppConfig
 
-    def _on_test_result(self, connected: bool) -> None:
-        if connected:
-            self._status_label.setText(t("settings.test_ok"))
-            self._status_label.setStyleSheet("color: green;")
-        else:
-            self._status_label.setText(t("settings.test_fail"))
-            self._status_label.setStyleSheet("color: red;")
-        self._main.set_connection_status(connected)
+            default_config = AppConfig()
+            self._main.config = default_config
+            self._load_config()
+            QMessageBox.information(self, "重置完成", "设置已恢复为默认值")

@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "ankismart"
 version = "0.1.0"
@@ -19,10 +23,17 @@ dependencies = [
     "numpy>=1.26",
     "pillow>=10.0",
     "pypdfium2>=4.30",
+    "pyside6-fluent-widgets>=1.5",
 ]
 
 [project.scripts]
 ankismart = "ankismart.ui.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [dependency-groups]
 dev = [

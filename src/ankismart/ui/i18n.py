@@ -1,381 +1,195 @@
+"""Internationalization support for Ankismart UI.
+
+Provides translation dictionaries and utilities for Chinese and English locales.
+"""
+
 from __future__ import annotations
 
-_current_lang = "zh"
+# Translation dictionary: key -> {language_code: translated_text}
+TRANSLATIONS: dict[str, dict[str, str]] = {
+    # Navigation labels
+    "nav.import": {"zh": "导入", "en": "Import"},
+    "nav.preview": {"zh": "预览", "en": "Preview"},
+    "nav.result": {"zh": "结果", "en": "Result"},
+    "nav.settings": {"zh": "设置", "en": "Settings"},
 
-_translations: dict[str, dict[str, str]] = {
-    "zh": {
-        # Main window
-        "nav.import": "导入与生成",
-        "nav.preview": "预览",
-        "nav.results": "结果",
-        "nav.settings": "设置",
-        "status.checking": "AnkiConnect：检测中...",
-        "status.connected": "AnkiConnect：已连接",
-        "status.disconnected": "AnkiConnect：未连接",
-        "metrics.title": "性能统计",
-        "metrics.button": "性能统计",
-        "metrics.reset": "重置统计",
-        "metrics.cache": "缓存命中：{hits} / {total}（命中率 {rate}）",
-        "metrics.cols": ["阶段", "次数", "平均 (ms)", "最小 (ms)", "最大 (ms)"],
-        "theme.toggle": "切换深色/浅色主题",
+    # Import page
+    "import.title": {"zh": "导入文档", "en": "Import Document"},
+    "import.select_file": {"zh": "选择文件", "en": "Select File"},
+    "import.file_path": {"zh": "文件路径", "en": "File Path"},
+    "import.browse": {"zh": "浏览...", "en": "Browse..."},
+    "import.deck_name": {"zh": "牌组名称", "en": "Deck Name"},
+    "import.tags": {"zh": "标签", "en": "Tags"},
+    "import.tags_placeholder": {"zh": "用逗号分隔多个标签", "en": "Separate tags with commas"},
+    "import.strategy": {"zh": "生成策略", "en": "Generation Strategy"},
+    "import.start_generate": {"zh": "开始生成", "en": "Start Generation"},
+    "import.generating": {"zh": "生成中...", "en": "Generating..."},
+    "import.ocr_progress": {"zh": "OCR 进度: {progress}%", "en": "OCR Progress: {progress}%"},
+    "import.llm_progress": {"zh": "LLM 生成进度: {current}/{total}", "en": "LLM Progress: {current}/{total}"},
 
-        # Import page
-        "import.title": "导入与生成",
-        "import.select_files": "选择文档：",
-        "import.file_placeholder": "未选择文件 (支持 .md, .docx, .pptx, .pdf, 图片)",
-        "import.browse": "浏览...",
-        "import.supported": "支持 PDF / DOCX / PPTX / Markdown / TXT",
-        "import.deck": "目标牌组：",
-        "import.card_type": "卡片类型：",
-        "import.tags": "标签（逗号分隔）：",
-        "import.card_type_mode": "题型模式：",
-        "import.single_type": "单一题型",
-        "import.mixed_type": "自定义组合",
-        "import.type_col": "题型",
-        "import.ratio_col": "占比(%)",
-        "import.convert": "转换文档",
-        "import.cancel": "取消",
-        "import.cancelling": "正在取消...",
-        "import.converting": "正在转换 ({current}/{total}): {filename}",
-        "import.converting_docs": "正在转换文档...",
-        "import.converted": "已转换 {count} 个文档",
-        "import.no_docs": "没有成功转换的文档",
-        "import.partial_fail": "部分文件转换失败",
-        "import.no_files": "请先选择文件",
-        "import.config_error": "配置错误",
-        "import.no_api_key": "请先在设置页配置 LLM API Key。",
-        "import.no_deck": "请输入目标牌组名称。",
-        "import.mixed_ratio_error": "混合模式下至少需要一个题型的占比大于 0。",
-        "import.ocr_missing": "OCR 模型缺失",
-        "import.ocr_download_prompt": "检测到以下 OCR 模型缺失：\n{models}\n\n是否现在下载？\n（仅在处理 PDF/图片 时需要）",
-        "import.ocr_downloading": "正在下载 OCR 模型...",
-        "import.ocr_preparing": "准备下载 OCR 模型...",
-        "import.ocr_download_title": "下载 OCR 模型",
-        "import.ocr_ready": "OCR 模型已就绪",
-        "import.ocr_download_failed": "OCR 模型下载失败",
-        "import.ocr_download_failed_detail": "下载 OCR 模型失败：{error}",
-        "import.ocr_cancelled": "已取消 OCR 模型下载",
-        "import.ocr_user_cancel": "用户取消下载",
-        "import.cancelled": "已取消",
-        "import.selected_files": "已选择 {count} 个文件",
-        "import.unsupported_type": "当前版本不支持该文件类型",
-        "import.select_dialog": "选择文档",
-        "import.file_filter": "文档文件 (*.md *.txt *.docx *.pptx *.pdf *.png *.jpg *.jpeg *.bmp *.tiff *.webp)",
-        "import.ocr_status_missing": "OCR 模型缺失（{names}）。处理 PDF/图片 时将提示下载。",
+    # Preview page
+    "preview.title": {"zh": "预览卡片", "en": "Preview Cards"},
+    "preview.card_count": {"zh": "共 {count} 张卡片", "en": "{count} cards total"},
+    "preview.edit": {"zh": "编辑", "en": "Edit"},
+    "preview.delete": {"zh": "删除", "en": "Delete"},
+    "preview.save": {"zh": "保存", "en": "Save"},
+    "preview.cancel": {"zh": "取消", "en": "Cancel"},
+    "preview.front": {"zh": "正面", "en": "Front"},
+    "preview.back": {"zh": "背面", "en": "Back"},
+    "preview.tags": {"zh": "标签", "en": "Tags"},
+    "preview.confirm_delete": {"zh": "确认删除", "en": "Confirm Delete"},
+    "preview.delete_message": {"zh": "确定要删除这张卡片吗？", "en": "Are you sure you want to delete this card?"},
+    "preview.next_step": {"zh": "下一步", "en": "Next Step"},
+    "preview.update_mode": {"zh": "更新模式", "en": "Update Mode"},
+    "preview.update_mode.skip": {"zh": "跳过重复", "en": "Skip Duplicates"},
+    "preview.update_mode.update": {"zh": "更新现有", "en": "Update Existing"},
+    "preview.update_mode.add_new": {"zh": "全部添加", "en": "Add All"},
 
-        # Card types
-        "card.basic": "基础问答",
-        "card.cloze": "完形填空",
-        "card.concept": "概念解释",
-        "card.key_terms": "关键术语",
-        "card.single_choice": "单选题",
-        "card.multiple_choice": "多选题",
-        "card.image_qa": "图片问答（附图）",
+    # Result page
+    "result.title": {"zh": "生成结果", "en": "Generation Result"},
+    "result.success": {"zh": "成功", "en": "Success"},
+    "result.failed": {"zh": "失败", "en": "Failed"},
+    "result.cards_generated": {"zh": "已生成 {count} 张卡片", "en": "{count} cards generated"},
+    "result.export_apkg": {"zh": "导出 .apkg", "en": "Export .apkg"},
+    "result.push_anki": {"zh": "推送到 Anki", "en": "Push to Anki"},
+    "result.export_success": {"zh": "导出成功", "en": "Export Successful"},
+    "result.export_failed": {"zh": "导出失败", "en": "Export Failed"},
+    "result.push_success": {"zh": "推送成功", "en": "Push Successful"},
+    "result.push_failed": {"zh": "推送失败", "en": "Push Failed"},
+    "result.new_import": {"zh": "新建导入", "en": "New Import"},
+    "result.pushed_count": {"zh": "已推送 {count} 张卡片", "en": "{count} cards pushed"},
+    "result.skipped_count": {"zh": "跳过 {count} 张重复卡片", "en": "{count} duplicates skipped"},
+    "result.updated_count": {"zh": "更新 {count} 张卡片", "en": "{count} cards updated"},
 
-        # Preview page
-        "preview.title": "预览与编辑",
-        "preview.generate": "生成卡片",
-        "preview.generating": "正在生成卡片 ({current}/{total})：{filename}",
-        "preview.generating_status": "正在生成卡片...",
-        "preview.generated": "已生成 {count} 张卡片",
-        "preview.no_cards": "未生成任何卡片",
-        "preview.no_docs": "没有可用的文档",
-        "preview.cancel": "取消",
-        "preview.cancelled": "已取消",
-        "preview.cancelling": "正在取消...",
-        "preview.editor_placeholder": "Markdown 内容将显示在这里...",
-        "preview.convert_errors": "转换失败：\n{errors}",
-        "preview.error": "错误",
+    # Settings page
+    "settings.title": {"zh": "设置", "en": "Settings"},
+    "settings.llm": {"zh": "LLM 配置", "en": "LLM Configuration"},
+    "settings.llm_provider": {"zh": "LLM 提供商", "en": "LLM Provider"},
+    "settings.add_provider": {"zh": "添加提供商", "en": "Add Provider"},
+    "settings.edit_provider": {"zh": "编辑提供商", "en": "Edit Provider"},
+    "settings.delete_provider": {"zh": "删除提供商", "en": "Delete Provider"},
+    "settings.provider_name": {"zh": "提供商名称", "en": "Provider Name"},
+    "settings.api_key": {"zh": "API Key", "en": "API Key"},
+    "settings.base_url": {"zh": "Base URL", "en": "Base URL"},
+    "settings.model": {"zh": "模型", "en": "Model"},
+    "settings.rpm_limit": {"zh": "RPM 限制", "en": "RPM Limit"},
+    "settings.temperature": {"zh": "Temperature", "en": "Temperature"},
+    "settings.max_tokens": {"zh": "最大 Token 数", "en": "Max Tokens"},
+    "settings.max_tokens_hint": {"zh": "0 表示使用默认值", "en": "0 means use default"},
 
-        # Result page
-        "result.title": "生成结果",
-        "result.push": "推送到 Anki",
-        "result.export": "导出 APKG",
-        "result.update_mode": "更新模式：",
-        "result.create_only": "仅创建",
-        "result.update_only": "仅更新",
-        "result.create_or_update": "创建或更新",
-        "result.no_cards": "没有卡片可推送",
-        "result.no_cards_export": "没有卡片可导出",
-        "result.pushing": "正在推送到 Anki...",
-        "result.push_done": "推送完成：成功 {succeeded}，失败 {failed}",
-        "result.push_partial_fail": "部分推送失败",
-        "result.card_error": "卡片 #{index}：{error}",
-        "result.more_errors": "... 还有 {count} 个错误",
-        "result.export_done": "已导出到：{path}",
-        "result.export_dialog": "导出 APKG",
-        "result.export_filter": "Anki 牌组包 (*.apkg)",
-        "result.exporting": "正在导出...",
-        "result.push_error": "推送错误",
-        "result.export_error": "导出错误",
-        "result.hint": "提示",
+    "settings.anki": {"zh": "Anki 配置", "en": "Anki Configuration"},
+    "settings.anki_connect_url": {"zh": "AnkiConnect URL", "en": "AnkiConnect URL"},
+    "settings.anki_connect_key": {"zh": "AnkiConnect Key", "en": "AnkiConnect Key"},
+    "settings.default_deck": {"zh": "默认牌组", "en": "Default Deck"},
+    "settings.default_tags": {"zh": "默认标签", "en": "Default Tags"},
 
-        # Settings page
-        "settings.title": "设置",
-        "settings.provider_group": "LLM 服务商设置",
-        "settings.provider": "选择服务商：",
-        "settings.add_provider": "新建",
-        "settings.remove_provider": "删除",
-        "settings.name": "服务商名称：",
-        "settings.api_key": "API Key：",
-        "settings.model": "模型名称：",
-        "settings.base_url": "API 地址：",
-        "settings.rpm": "速率限制：",
-        "settings.rpm_on": "开",
-        "settings.rpm_off": "关",
-        "settings.other_group": "通用设置",
-        "settings.anki_url": "AnkiConnect 地址：",
-        "settings.anki_key": "AnkiConnect Key：",
-        "settings.default_deck": "默认牌组：",
-        "settings.default_tags": "默认标签：",
-        "settings.ocr_correction": "启用 OCR 文本纠错（使用 LLM 自动修正 OCR 错误）",
-        "settings.save": "保存设置",
-        "settings.saved": "设置已保存",
-        "settings.test_connection": "测试连接",
-        "settings.testing": "正在测试连接...",
-        "settings.test_ok": "AnkiConnect：连接成功！",
-        "settings.test_fail": "AnkiConnect：连接失败",
-        "settings.gen_group": "生成参数",
-        "settings.temperature": "Temperature：",
-        "settings.max_tokens": "Max Tokens：",
-        "settings.max_tokens_default": "默认",
-        "settings.net_group": "网络设置",
-        "settings.proxy": "HTTP 代理：",
-        "settings.proxy_placeholder": "http://127.0.0.1:7890（留空则不使用代理）",
-        "settings.ocr_group": "OCR 模型",
-        "settings.ocr_checking": "检测中...",
-        "settings.ocr_ready": "所有 OCR 模型已就绪 ✓",
-        "settings.ocr_missing": "缺失模型：{models}",
-        "settings.ocr_check_failed": "检测失败：{error}",
-        "settings.ocr_download": "下载缺失模型",
-        "settings.ocr_check": "检查状态",
-        "settings.ocr_downloading": "正在下载...",
-        "settings.ocr_download_done": "所有 OCR 模型已就绪 ✓",
-        "settings.ocr_download_failed": "下载失败：{error}",
-        "settings.refresh_models": "刷新模型列表",
-        "settings.refreshing": "正在获取...",
-        "settings.no_models": "未找到本地模型。请先使用 ollama pull 下载模型。",
-        "settings.select_model": "选择模型",
-        "settings.available_models": "本地可用模型：",
-        "settings.fetch_failed": "获取失败",
-        "settings.ollama_error": "无法连接 Ollama：{error}",
-        "settings.config_error": "配置错误",
-        "settings.no_api_key_error": "当前服务商的 API Key 不能为空。",
-        "settings.save_failed": "保存失败：{error}",
-        "settings.no_base_url": "请先填写 API 地址。",
-        "settings.unnamed": "(未命名)",
-        "settings.active_suffix": " [当前使用]",
-        "settings.delete_warning": "警告",
-        "settings.delete_min": "至少需要保留一个服务商配置。",
-        "settings.delete_confirm": "确认",
-        "settings.delete_confirm_msg": "确定要删除当前选中的服务商配置吗？",
-        "settings.hint": "提示",
-        "settings.language": "语言 / Language：",
-        "settings.language_group": "语言设置",
-        "settings.anki_key_placeholder": "可选",
-        "import.total_count_placeholder": "总题数，例如 20",
+    "settings.general": {"zh": "通用设置", "en": "General Settings"},
+    "settings.theme": {"zh": "主题", "en": "Theme"},
+    "settings.theme.light": {"zh": "浅色", "en": "Light"},
+    "settings.theme.dark": {"zh": "深色", "en": "Dark"},
+    "settings.language": {"zh": "语言", "en": "Language"},
+    "settings.language.zh": {"zh": "中文", "en": "Chinese"},
+    "settings.language.en": {"zh": "English", "en": "English"},
+    "settings.proxy_url": {"zh": "代理 URL", "en": "Proxy URL"},
+    "settings.proxy_hint": {"zh": "留空表示不使用代理", "en": "Leave empty to disable proxy"},
+    "settings.ocr_correction": {"zh": "OCR 纠错", "en": "OCR Correction"},
+    "settings.log_level": {"zh": "日志级别", "en": "Log Level"},
 
-        # Errors
-        "error.title": "错误",
-    },
-    "en": {
-        # Main window
-        "nav.import": "Import & Generate",
-        "nav.preview": "Preview",
-        "nav.results": "Results",
-        "nav.settings": "Settings",
-        "status.checking": "AnkiConnect: Checking...",
-        "status.connected": "AnkiConnect: Connected",
-        "status.disconnected": "AnkiConnect: Disconnected",
-        "metrics.title": "Performance Metrics",
-        "metrics.button": "Metrics",
-        "metrics.reset": "Reset",
-        "metrics.cache": "Cache hits: {hits} / {total} (rate: {rate})",
-        "metrics.cols": ["Stage", "Count", "Avg (ms)", "Min (ms)", "Max (ms)"],
-        "theme.toggle": "Toggle dark/light theme",
+    "settings.save": {"zh": "保存设置", "en": "Save Settings"},
+    "settings.save_success": {"zh": "设置已保存", "en": "Settings saved"},
+    "settings.save_failed": {"zh": "保存失败", "en": "Save failed"},
+    "settings.test_connection": {"zh": "测试连接", "en": "Test Connection"},
+    "settings.connection_success": {"zh": "连接成功", "en": "Connection successful"},
+    "settings.connection_failed": {"zh": "连接失败", "en": "Connection failed"},
 
-        # Import page
-        "import.title": "Import & Generate",
-        "import.select_files": "Select Files:",
-        "import.file_placeholder": "No files selected (supports .md, .docx, .pptx, .pdf, images)",
-        "import.browse": "Browse...",
-        "import.supported": "Supports PDF / DOCX / PPTX / Markdown / TXT",
-        "import.deck": "Target Deck:",
-        "import.card_type": "Card Type:",
-        "import.tags": "Tags (comma-separated):",
-        "import.card_type_mode": "Card Type Mode:",
-        "import.single_type": "Single Type",
-        "import.mixed_type": "Custom Mix",
-        "import.type_col": "Type",
-        "import.ratio_col": "Ratio(%)",
-        "import.convert": "Convert Documents",
-        "import.cancel": "Cancel",
-        "import.cancelling": "Cancelling...",
-        "import.converting": "Converting ({current}/{total}): {filename}",
-        "import.converting_docs": "Converting documents...",
-        "import.converted": "Converted {count} documents",
-        "import.no_docs": "No documents converted",
-        "import.partial_fail": "Some files failed to convert",
-        "import.no_files": "Please select files first",
-        "import.config_error": "Configuration Error",
-        "import.no_api_key": "Please configure LLM API Key in Settings first.",
-        "import.no_deck": "Please enter a target deck name.",
-        "import.mixed_ratio_error": "Mixed mode requires at least one card type with ratio > 0.",
-        "import.ocr_missing": "OCR Models Missing",
-        "import.ocr_download_prompt": "The following OCR models are missing:\n{models}\n\nDownload now?\n(Only needed for PDF/image processing)",
-        "import.ocr_downloading": "Downloading OCR models...",
-        "import.ocr_preparing": "Preparing to download OCR models...",
-        "import.ocr_download_title": "Download OCR Models",
-        "import.ocr_ready": "OCR models ready",
-        "import.ocr_download_failed": "OCR Model Download Failed",
-        "import.ocr_download_failed_detail": "Failed to download OCR models: {error}",
-        "import.ocr_cancelled": "OCR model download cancelled",
-        "import.ocr_user_cancel": "User cancelled download",
-        "import.cancelled": "Cancelled",
-        "import.selected_files": "{count} files selected",
-        "import.unsupported_type": "File type not supported in current version",
-        "import.select_dialog": "Select Documents",
-        "import.file_filter": "Document files (*.md *.txt *.docx *.pptx *.pdf *.png *.jpg *.jpeg *.bmp *.tiff *.webp)",
-        "import.ocr_status_missing": "OCR models missing ({names}). Will prompt to download when processing PDF/images.",
+    # Common buttons
+    "common.ok": {"zh": "确定", "en": "OK"},
+    "common.cancel": {"zh": "取消", "en": "Cancel"},
+    "common.yes": {"zh": "是", "en": "Yes"},
+    "common.no": {"zh": "否", "en": "No"},
+    "common.close": {"zh": "关闭", "en": "Close"},
+    "common.apply": {"zh": "应用", "en": "Apply"},
+    "common.reset": {"zh": "重置", "en": "Reset"},
 
-        # Card types
-        "card.basic": "Basic Q&A",
-        "card.cloze": "Cloze Deletion",
-        "card.concept": "Concept Explanation",
-        "card.key_terms": "Key Terms",
-        "card.single_choice": "Single Choice",
-        "card.multiple_choice": "Multiple Choice",
-        "card.image_qa": "Image Q&A (with image)",
+    # Messages
+    "msg.error": {"zh": "错误", "en": "Error"},
+    "msg.warning": {"zh": "警告", "en": "Warning"},
+    "msg.info": {"zh": "信息", "en": "Information"},
+    "msg.success": {"zh": "成功", "en": "Success"},
+    "msg.file_not_found": {"zh": "文件未找到", "en": "File not found"},
+    "msg.invalid_file": {"zh": "无效的文件格式", "en": "Invalid file format"},
+    "msg.no_cards": {"zh": "没有生成任何卡片", "en": "No cards generated"},
+    "msg.generation_failed": {"zh": "生成失败: {error}", "en": "Generation failed: {error}"},
+    "msg.please_select_file": {"zh": "请先选择文件", "en": "Please select a file first"},
+    "msg.please_configure_llm": {"zh": "请先配置 LLM 提供商", "en": "Please configure LLM provider first"},
+    "msg.anki_not_running": {"zh": "Anki 未运行或 AnkiConnect 未安装", "en": "Anki is not running or AnkiConnect is not installed"},
+    "msg.restart_required": {"zh": "需要重启应用以应用更改", "en": "Restart required to apply changes"},
 
-        # Preview page
-        "preview.title": "Preview & Edit",
-        "preview.generate": "Generate Cards",
-        "preview.generating": "Generating ({current}/{total}): {filename}",
-        "preview.generating_status": "Generating cards...",
-        "preview.generated": "Generated {count} cards",
-        "preview.no_cards": "No cards generated",
-        "preview.no_docs": "No documents available",
-        "preview.cancel": "Cancel",
-        "preview.cancelled": "Cancelled",
-        "preview.cancelling": "Cancelling...",
-        "preview.editor_placeholder": "Markdown content will appear here...",
-        "preview.convert_errors": "Conversion failed:\n{errors}",
-        "preview.error": "Error",
-
-        # Result page
-        "result.title": "Results",
-        "result.push": "Push to Anki",
-        "result.export": "Export APKG",
-        "result.update_mode": "Update Mode:",
-        "result.create_only": "Create Only",
-        "result.update_only": "Update Only",
-        "result.create_or_update": "Create or Update",
-        "result.no_cards": "No cards to push",
-        "result.no_cards_export": "No cards to export",
-        "result.pushing": "Pushing to Anki...",
-        "result.push_done": "Push complete: {succeeded} succeeded, {failed} failed",
-        "result.push_partial_fail": "Some cards failed to push",
-        "result.card_error": "Card #{index}: {error}",
-        "result.more_errors": "... and {count} more errors",
-        "result.export_done": "Exported to: {path}",
-        "result.export_dialog": "Export APKG",
-        "result.export_filter": "Anki Package (*.apkg)",
-        "result.exporting": "Exporting...",
-        "result.push_error": "Push Error",
-        "result.export_error": "Export Error",
-        "result.hint": "Info",
-
-        # Settings page
-        "settings.title": "Settings",
-        "settings.provider_group": "LLM Provider Settings",
-        "settings.provider": "Provider:",
-        "settings.add_provider": "Add",
-        "settings.remove_provider": "Remove",
-        "settings.name": "Provider Name:",
-        "settings.api_key": "API Key:",
-        "settings.model": "Model:",
-        "settings.base_url": "API URL:",
-        "settings.rpm": "Rate Limit:",
-        "settings.rpm_on": "On",
-        "settings.rpm_off": "Off",
-        "settings.other_group": "General Settings",
-        "settings.anki_url": "AnkiConnect URL:",
-        "settings.anki_key": "AnkiConnect Key:",
-        "settings.default_deck": "Default Deck:",
-        "settings.default_tags": "Default Tags:",
-        "settings.ocr_correction": "OCR Correction (use LLM to fix OCR text)",
-        "settings.save": "Save Settings",
-        "settings.saved": "Settings saved",
-        "settings.test_connection": "Test Connection",
-        "settings.testing": "Testing connection...",
-        "settings.test_ok": "AnkiConnect: Connected!",
-        "settings.test_fail": "AnkiConnect: Connection failed",
-        "settings.gen_group": "Generation Parameters",
-        "settings.temperature": "Temperature:",
-        "settings.max_tokens": "Max Tokens:",
-        "settings.max_tokens_default": "Default",
-        "settings.net_group": "Network Settings",
-        "settings.proxy": "HTTP Proxy:",
-        "settings.proxy_placeholder": "http://127.0.0.1:7890 (leave empty for no proxy)",
-        "settings.ocr_group": "OCR Models",
-        "settings.ocr_checking": "Checking...",
-        "settings.ocr_ready": "All OCR models ready ✓",
-        "settings.ocr_missing": "Missing models: {models}",
-        "settings.ocr_check_failed": "Check failed: {error}",
-        "settings.ocr_download": "Download Missing Models",
-        "settings.ocr_check": "Check Status",
-        "settings.ocr_downloading": "Downloading...",
-        "settings.ocr_download_done": "All OCR models ready ✓",
-        "settings.ocr_download_failed": "Download failed: {error}",
-        "settings.refresh_models": "Refresh Model List",
-        "settings.refreshing": "Fetching...",
-        "settings.no_models": "No local models found. Please run 'ollama pull' first.",
-        "settings.select_model": "Select Model",
-        "settings.available_models": "Available local models:",
-        "settings.fetch_failed": "Fetch Failed",
-        "settings.ollama_error": "Cannot connect to Ollama: {error}",
-        "settings.config_error": "Configuration Error",
-        "settings.no_api_key_error": "API Key for the current provider cannot be empty.",
-        "settings.save_failed": "Save failed: {error}",
-        "settings.no_base_url": "Please enter the API URL first.",
-        "settings.unnamed": "(Unnamed)",
-        "settings.active_suffix": " [Active]",
-        "settings.delete_warning": "Warning",
-        "settings.delete_min": "At least one provider must be kept.",
-        "settings.delete_confirm": "Confirm",
-        "settings.delete_confirm_msg": "Delete the selected provider?",
-        "settings.hint": "Info",
-        "settings.language": "Language:",
-        "settings.language_group": "Language Settings",
-        "settings.anki_key_placeholder": "Optional",
-        "import.total_count_placeholder": "Total count, e.g. 20",
-
-        # Errors
-        "error.title": "Error",
-    },
+    # File filters
+    "file.all_supported": {"zh": "所有支持的文件", "en": "All Supported Files"},
+    "file.pdf": {"zh": "PDF 文件", "en": "PDF Files"},
+    "file.word": {"zh": "Word 文档", "en": "Word Documents"},
+    "file.ppt": {"zh": "PowerPoint 文件", "en": "PowerPoint Files"},
+    "file.image": {"zh": "图片文件", "en": "Image Files"},
+    "file.apkg": {"zh": "Anki 包", "en": "Anki Package"},
 }
 
 
-def set_language(lang: str) -> None:
-    global _current_lang
-    if lang in _translations:
-        _current_lang = lang
+def get_text(key: str, lang: str = "zh", **kwargs) -> str:
+    """Get translated text for a given key.
 
+    Args:
+        key: Translation key (e.g., "nav.import", "import.title")
+        lang: Language code ("zh" or "en"), defaults to "zh"
+        **kwargs: Placeholder values for string formatting
 
-def get_language() -> str:
-    return _current_lang
+    Returns:
+        Translated text with placeholders replaced. If key is not found,
+        returns the key itself as fallback.
 
+    Examples:
+        >>> get_text("nav.import", "zh")
+        '导入'
+        >>> get_text("preview.card_count", "en", count=5)
+        '5 cards total'
+        >>> get_text("import.ocr_progress", "zh", progress=75)
+        'OCR 进度: 75%'
+    """
+    translations = TRANSLATIONS.get(key, {})
+    text = translations.get(lang, translations.get("zh", key))
 
-def t(key: str, **kwargs) -> str | list:
-    """Get translated string. Supports {placeholder} formatting."""
-    text = _translations.get(_current_lang, {}).get(key)
-    if text is None:
-        text = _translations.get("zh", {}).get(key, key)
-    if isinstance(text, list):
-        return text
-    if kwargs and isinstance(text, str):
+    # Replace placeholders if any kwargs provided
+    if kwargs:
         try:
-            return text.format(**kwargs)
-        except (KeyError, IndexError):
-            return text
+            text = text.format(**kwargs)
+        except (KeyError, ValueError):
+            # If formatting fails, return text as-is
+            pass
+
     return text
+
+
+def get_all_keys() -> list[str]:
+    """Get all available translation keys.
+
+    Returns:
+        List of all translation keys in the dictionary.
+    """
+    return list(TRANSLATIONS.keys())
+
+
+def has_translation(key: str, lang: str = "zh") -> bool:
+    """Check if a translation exists for a given key and language.
+
+    Args:
+        key: Translation key
+        lang: Language code
+
+    Returns:
+        True if translation exists, False otherwise.
+    """
+    return key in TRANSLATIONS and lang in TRANSLATIONS[key]
+
+
+# Alias for convenience
+t = get_text

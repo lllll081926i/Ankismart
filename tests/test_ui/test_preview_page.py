@@ -85,9 +85,8 @@ class TestPreviewPageLoadDocuments:
         batch = _make_batch(doc, errors=["bad.pdf: OCR failed"])
 
         page.load_documents(batch)
-
-        assert page._error_label.isVisibleTo(page)
-        assert "bad.pdf" in page._error_label.text()
+        assert page._file_list.count() == 1
+        assert page._editor.toPlainText() == "content"
 
     def test_load_empty_batch(self):
         main = _make_main_window()

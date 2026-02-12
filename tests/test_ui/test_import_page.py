@@ -72,6 +72,14 @@ class _DummyModeCombo:
         return self._value
 
 
+class _DummySlider:
+    def __init__(self, value: int) -> None:
+        self._value = value
+
+    def value(self) -> int:
+        return self._value
+
+
 class _DummyCheck:
     def __init__(self, checked: bool) -> None:
         self._checked = checked
@@ -85,10 +93,11 @@ def _make_page():
     page._main = _DummyMain()
     page._file_paths = []
     page._worker = None
-    page._type_combo = _DummyCombo("basic")
-    page._type_mode_combo = _DummyModeCombo("single")
-    page._strategy_items = []
+    page._strategy_sliders = [
+        ("basic", _DummySlider(100), None),
+    ]
     page._total_count_input = _DummyLineEdit("20")
+    page._total_count_mode_combo = _DummyModeCombo("custom")
     page._deck_combo = _DummyCombo("Default")
     page._tags_input = _DummyLineEdit("tag1, tag2")
     page._status_label = type(
@@ -127,18 +136,19 @@ def test_build_generation_config_single_mode() -> None:
 
     config = ImportPage.build_generation_config(page)
 
-    assert config["mode"] == "single"
-    assert config["strategy"] == "basic"
+    assert config["mode"] == "mixed"
+    assert config["target_total"] == 20
+    assert config["strategy_mix"] == [{"strategy": "basic", "ratio": 100}]
 
 
 def test_build_generation_config_mixed_mode() -> None:
     page = _make_page()
-    page._type_mode_combo = _DummyModeCombo("mixed")
     page._total_count_input = _DummyLineEdit("30")
-    page._strategy_items = [
-        ("basic", _DummyCheck(True), _DummyLineEdit("50")),
-        ("cloze", _DummyCheck(True), _DummyLineEdit("30")),
-        ("single_choice", _DummyCheck(False), _DummyLineEdit("20")),
+    page._total_count_mode_combo = _DummyModeCombo("custom")
+    page._strategy_sliders = [
+        ("basic", _DummySlider(50), None),
+        ("cloze", _DummySlider(30), None),
+        ("single_choice", _DummySlider(0), None),
     ]
 
     config = ImportPage.build_generation_config(page)
@@ -383,10 +393,9 @@ def test_start_convert_rejects_empty_deck(monkeypatch):
 def test_start_convert_rejects_mixed_mode_without_positive_ratio(monkeypatch):
     page = _make_page()
     page._file_paths = [Path("a.md")]
-    page._type_mode_combo = _DummyModeCombo("mixed")
-    page._strategy_items = [
-        ("basic", _DummyCheck(True), _DummyLineEdit("0")),
-        ("cloze", _DummyCheck(True), _DummyLineEdit("0")),
+    page._strategy_sliders = [
+        ("basic", _DummySlider(0), None),
+        ("cloze", _DummySlider(0), None),
     ]
 
     warnings: list[tuple[str, str]] = []
