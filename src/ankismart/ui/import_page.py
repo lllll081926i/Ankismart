@@ -207,10 +207,13 @@ class OCRDownloadConfigDialog(QDialog):
         self._refresh_recommendation()
 
     def _build_tier_text(self, tier: str) -> str:
-        preset = self._presets[tier]
-        label = preset["label"]
-        det = preset["det"]
-        rec = preset["rec"]
+        preset = self._presets.get(tier)
+        if not preset:
+            return tier
+
+        label = preset.get("label_zh" if self._is_zh else "label_en", tier)
+        det = preset.get("det", "unknown")
+        rec = preset.get("rec", "unknown")
         if self._is_zh:
             return f"{label}（det: {det} / rec: {rec}）"
         return f"{label} (det: {det} / rec: {rec})"
@@ -283,6 +286,14 @@ class BatchConvertWorker(QThread):
                         # Get LLM client from active provider
                         provider = self._config.active_provider
                         if provider:
+                            # Validate provider configuration before creating LLMClient
+                            if not provider.api_key and "Ollama" not in provider.name:
+                                raise ValueError(f"Provider '{provider.name}' requires an API key but none is configured")
+                            if not provider.base_url:
+                                raise ValueError(f"Provider '{provider.name}' requires a base URL but none is configured")
+                            if not provider.model:
+                                raise ValueError(f"Provider '{provider.name}' requires a model but none is configured")
+
                             llm_client = LLMClient(
                                 api_key=provider.api_key,
                                 base_url=provider.base_url,

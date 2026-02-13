@@ -98,16 +98,40 @@ class DocumentConverter:
 
                 try:
                     if file_type in ("pdf", "image") and self._ocr_correction_fn is not None:
+                        # Wrap progress_callback to handle exceptions
+                        safe_progress_callback = None
+                        if progress_callback is not None:
+                            def safe_progress_callback(msg: str) -> None:
+                                try:
+                                    progress_callback(msg)
+                                except Exception as cb_exc:
+                                    logger.warning(
+                                        "Progress callback failed",
+                                        extra={"error": str(cb_exc), "trace_id": trace_id}
+                                    )
+
                         result = converter_fn(
                             file_path, trace_id,
                             ocr_correction_fn=self._ocr_correction_fn,
-                            progress_callback=progress_callback,
+                            progress_callback=safe_progress_callback,
                         )
                     elif file_type in ("pdf", "image"):
+                        # Wrap progress_callback to handle exceptions
+                        safe_progress_callback = None
+                        if progress_callback is not None:
+                            def safe_progress_callback(msg: str) -> None:
+                                try:
+                                    progress_callback(msg)
+                                except Exception as cb_exc:
+                                    logger.warning(
+                                        "Progress callback failed",
+                                        extra={"error": str(cb_exc), "trace_id": trace_id}
+                                    )
+
                         result = converter_fn(
                             file_path,
                             trace_id,
-                            progress_callback=progress_callback,
+                            progress_callback=safe_progress_callback,
                         )
                     else:
                         result = converter_fn(file_path, trace_id)

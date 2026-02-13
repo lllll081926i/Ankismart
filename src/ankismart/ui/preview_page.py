@@ -160,6 +160,12 @@ class PreviewPage(ProgressMixin, QWidget):
         self._btn_save.clicked.connect(self._save_current_edit)
         title_bar.addWidget(self._btn_save)
 
+        preview_text = "生成样本卡片" if is_zh else "Preview Sample"
+        self._btn_preview = PushButton(preview_text)
+        self._btn_preview.setEnabled(True)
+        self._btn_preview.clicked.connect(self._on_preview_sample)
+        title_bar.addWidget(self._btn_preview)
+
         generate_text = "开始制作卡片" if is_zh else "Generate Cards"
         self._btn_generate = PrimaryPushButton(generate_text)
         self._btn_generate.setEnabled(True)  # Explicitly enable
@@ -589,6 +595,220 @@ class PreviewPage(ProgressMixin, QWidget):
         self._generate_worker.error.connect(self._on_generation_error)
         self._generate_worker.cancelled.connect(self._on_generation_cancelled)
         self._generate_worker.start()
+
+    def _on_preview_sample(self):
+        """Generate and show sample cards."""
+        # Validate configuration
+        provider = self._main.config.active_provider
+        if not provider:
+            InfoBar.warning(
+                title="警告" if self._main.config.language == "zh" else "Warning",
+                content="请先配置 LLM 提供商" if self._main.config.language == "zh" else "Please configure LLM provider first",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
+            )
+            return
+
+        # Check if we have documents
+        if not self._documents:
+            InfoBar.warning(
+                title="警告" if self._main.config.language == "zh" else "Warning",
+                content="没有可用的文档" if self._main.config.language == "zh" else "No documents available",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
+            )
+            return
+
+        # Use first document for sample
+        document = self._documents[0]
+
+        # Get generation config
+        generation_config = self._main.import_page.build_generation_config()
+        strategy_mix = generation_config.get("strategy_mix", [])
+
+        if not strategy_mix:
+            InfoBar.warning(
+                title="警告" if self._main.config.language == "zh" else "Warning",
+                content="请先配置卡片生成策略" if self._main.config.language == "zh" else "Please configure card generation strategy first",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
+            )
+            return
+
+        # Show generating message
+        is_zh = self._main.config.language == "zh"
+        self._show_info_bar(
+            "info",
+            "生成中" if is_zh else "Generating",
+            "正在生成样本卡片..." if is_zh else "Generating sample cards...",
+            duration=2000,
+        )
+
+        # Generate sample cards in background
+        from PyQt6.QtCore import QThread
+        from ankismart.card_gen.llm_client import LLMClient
+        from ankismart.card_gen.generator import CardGenerator
+        from ankismart.core.models import GenerateRequest
+
+        class SampleGenerateWorker(QThread):
+            finished = pyqtSignal(list)
+            error = pyqtSignal(str)
+
+            def __init__(self, document, strategies, llm_client, deck_name, tags):
+                super().__init__()
+                self.document = document
+                self.strategies = strategies
+                self.llm_client = llm_client
+                self.deck_name = deck_name
+                self.tags = tags
+
+            def run(self):
+                try:
+                    generator = CardGenerator(self.llm_client)
+                    sample_cards = []
+
+                    # Generate 1 card per strategy (max 5 strategies)
+                    for strategy_item in self.strategies[:5]:
+                        strategy = strategy_item.get("strategy", "")
+                        if not strategy:
+                            continue
+
+                        request = GenerateRequest(
+                            markdown=self.document.result.content[:5000],  # Use first 5000 chars for speed
+                            strategy=strategy,
+                            deck_name=self.deck_name,
+                            tags=self.tags,
+                            trace_id=self.document.result.trace_id,
+                            source_path=self.document.result.source_path,
+                            target_count=1,  # Only 1 card per strategy
+                        )
+
+                        cards = generator.generate(request)
+                        sample_cards.extend(cards)
+
+                    self.finished.emit(sample_cards)
+                except Exception as e:
+                    self.error.emit(str(e))
+
+        # Create LLM client
+        llm_client = LLMClient(
+            api_key=provider.api_key,
+            base_url=provider.base_url,
+            model=provider.model,
+            rpm_limit=provider.rpm_limit,
+            temperature=self._main.config.llm_temperature,
+            max_tokens=self._main.config.llm_max_tokens,
+            proxy_url=self._main.config.proxy_url,
+        )
+
+        # Get deck and tags
+        deck_name = self._main.import_page._deck_combo.currentText().strip() or "Default"
+        tags_text = self._main.import_page._tags_input.text().strip()
+        from ankismart.ui.utils import split_tags_text
+        tags = split_tags_text(tags_text)
+
+        # Start worker
+        self._sample_worker = SampleGenerateWorker(
+            document, strategy_mix, llm_client, deck_name, tags
+        )
+        self._sample_worker.finished.connect(self._on_sample_finished)
+        self._sample_worker.error.connect(self._on_sample_error)
+        self._sample_worker.start()
+
+    def _on_sample_finished(self, cards):
+        """Handle sample generation completion."""
+        is_zh = self._main.config.language == "zh"
+
+        if not cards:
+            InfoBar.warning(
+                title="警告" if is_zh else "Warning",
+                content="未能生成样本卡片" if is_zh else "Failed to generate sample cards",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
+            )
+            return
+
+        # Show sample cards in a dialog
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTextEdit
+        from qfluentwidgets import SubtitleLabel, PushButton
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("样本卡片预览" if is_zh else "Sample Cards Preview")
+        dialog.setMinimumSize(600, 400)
+
+        layout = QVBoxLayout(dialog)
+
+        title = SubtitleLabel()
+        title.setText(f"生成了 {len(cards)} 张样本卡片" if is_zh else f"Generated {len(cards)} sample cards")
+        layout.addWidget(title)
+
+        # Show cards
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+
+        card_texts = []
+        for i, card in enumerate(cards, 1):
+            card_text = f"### 卡片 {i} ({card.card_type})\n\n"
+            card_text += f"**正面：**\n{card.front}\n\n"
+            card_text += f"**背面：**\n{card.back}\n\n"
+            if card.extra:
+                card_text += f"**额外信息：**\n{card.extra}\n\n"
+            card_text += "---\n\n"
+            card_texts.append(card_text)
+
+        text_edit.setMarkdown("\n".join(card_texts))
+        layout.addWidget(text_edit)
+
+        # Close button
+        close_btn = PushButton("关闭" if is_zh else "Close")
+        close_btn.clicked.connect(dialog.close)
+        layout.addWidget(close_btn)
+
+        dialog.exec()
+
+    def _on_sample_error(self, error: str):
+        """Handle sample generation error."""
+        is_zh = self._main.config.language == "zh"
+        InfoBar.error(
+            title="错误" if is_zh else "Error",
+            content=f"生成样本卡片失败：{error}" if is_zh else f"Failed to generate sample cards: {error}",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=5000,
+            parent=self,
+        )
+
+    def _show_info_bar(self, level: str, title: str, content: str, duration: int = 3000):
+        """Show info bar notification."""
+        level_map = {
+            "success": InfoBar.success,
+            "warning": InfoBar.warning,
+            "error": InfoBar.error,
+            "info": InfoBar.info,
+        }
+        show = level_map.get(level, InfoBar.info)
+        show(
+            title=title,
+            content=content,
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=duration,
+            parent=self,
+        )
 
     def _on_generation_progress(self, message: str):
         """Handle generation progress message."""
