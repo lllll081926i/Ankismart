@@ -43,11 +43,6 @@ from qfluentwidgets import (
 )
 
 from ankismart.core.config import KNOWN_PROVIDERS, LLMProviderConfig, save_config
-from ankismart.converter.ocr_converter import (
-    configure_ocr_runtime,
-    get_missing_ocr_models,
-    is_cuda_available,
-)
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
 from ankismart.ui.styles import (
     PROVIDER_ITEM_HEIGHT,
@@ -78,6 +73,37 @@ _OCR_SOURCE_CHOICES = (
     ("official", "官方地址（HuggingFace）", "Official (HuggingFace)"),
     ("cn_mirror", "国内镜像（ModelScope）", "China Mirror (ModelScope)"),
 )
+
+
+_OCR_CONVERTER_MODULE = None
+
+
+def _get_ocr_converter_module():
+    """Lazy import OCR converter to avoid loading OCR stack at startup."""
+    global _OCR_CONVERTER_MODULE
+    if _OCR_CONVERTER_MODULE is None:
+        from ankismart.converter import ocr_converter as module
+
+        _OCR_CONVERTER_MODULE = module
+    return _OCR_CONVERTER_MODULE
+
+
+def configure_ocr_runtime(*, model_tier: str, model_source: str) -> None:
+    _get_ocr_converter_module().configure_ocr_runtime(
+        model_tier=model_tier,
+        model_source=model_source,
+    )
+
+
+def get_missing_ocr_models(*, model_tier: str, model_source: str):
+    return _get_ocr_converter_module().get_missing_ocr_models(
+        model_tier=model_tier,
+        model_source=model_source,
+    )
+
+
+def is_cuda_available() -> bool:
+    return bool(_get_ocr_converter_module().is_cuda_available())
 
 
 class LLMProviderDialog(QDialog):

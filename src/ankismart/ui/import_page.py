@@ -42,14 +42,6 @@ from qfluentwidgets import (
     TitleLabel,
 )
 
-# Heavy imports moved to lazy loading methods - keep only lightweight OCR functions
-from ankismart.converter.ocr_converter import (
-    configure_ocr_runtime,
-    download_missing_ocr_models,
-    get_missing_ocr_models,
-    get_ocr_model_presets,
-    is_cuda_available,
-)
 from ankismart.core.config import save_config
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
@@ -74,6 +66,47 @@ _OCR_FILE_SUFFIXES = {
 _RIGHT_OPTION_CARD_MAX_HEIGHT = 92
 _RIGHT_CONFIG_GROUP_MAX_HEIGHT = 360
 _RIGHT_STRATEGY_GROUP_MAX_HEIGHT = 640
+
+_OCR_CONVERTER_MODULE = None
+
+
+def _get_ocr_converter_module():
+    """Lazy import OCR converter to avoid startup overhead."""
+    global _OCR_CONVERTER_MODULE
+    if _OCR_CONVERTER_MODULE is None:
+        from ankismart.converter import ocr_converter as module
+
+        _OCR_CONVERTER_MODULE = module
+    return _OCR_CONVERTER_MODULE
+
+
+def configure_ocr_runtime(*, model_tier: str, model_source: str) -> None:
+    _get_ocr_converter_module().configure_ocr_runtime(
+        model_tier=model_tier,
+        model_source=model_source,
+    )
+
+
+def download_missing_ocr_models(*, model_tier: str, model_source: str):
+    return _get_ocr_converter_module().download_missing_ocr_models(
+        model_tier=model_tier,
+        model_source=model_source,
+    )
+
+
+def get_missing_ocr_models(*, model_tier: str, model_source: str):
+    return _get_ocr_converter_module().get_missing_ocr_models(
+        model_tier=model_tier,
+        model_source=model_source,
+    )
+
+
+def get_ocr_model_presets():
+    return _get_ocr_converter_module().get_ocr_model_presets()
+
+
+def is_cuda_available() -> bool:
+    return bool(_get_ocr_converter_module().is_cuda_available())
 
 
 class OCRDownloadConfigDialog(QDialog):

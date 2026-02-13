@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -10,11 +10,16 @@ from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.gateway import AnkiGateway, UpdateMode
 from ankismart.card_gen.generator import CardGenerator
 from ankismart.card_gen.llm_client import LLMClient
-from ankismart.converter.converter import DocumentConverter
 from ankismart.core.config import LLMProviderConfig
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft, GenerateRequest, MarkdownResult
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
+
+if TYPE_CHECKING:
+    from ankismart.converter.converter import DocumentConverter
+
+# Keep monkeypatch target available while avoiding startup import cost.
+DocumentConverter = None
 
 logger = get_logger(__name__)
 
@@ -27,7 +32,7 @@ class ConvertWorker(QThread):
     error = pyqtSignal(str)  # Error message
     cancelled = pyqtSignal()
 
-    def __init__(self, converter: DocumentConverter, file_path: Path) -> None:
+    def __init__(self, converter: "DocumentConverter", file_path: Path) -> None:
         super().__init__()
         self._converter = converter
         self._file_path = file_path
@@ -296,7 +301,11 @@ class BatchConvertWorker(QThread):
                 return None
 
             try:
-                converter = DocumentConverter()
+                converter_cls = DocumentConverter
+                if converter_cls is None:
+                    from ankismart.converter.converter import DocumentConverter as converter_cls
+
+                converter = converter_cls()
 
                 # Create progress callback that emits page progress
                 def progress_callback(*args):

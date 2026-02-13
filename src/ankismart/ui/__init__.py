@@ -1,32 +1,39 @@
 """Ankismart UI module - QFluentWidgets based user interface."""
 
-from .app import main
-from .main_window import MainWindow
-from .import_page import ImportPage
-from .preview_page import PreviewPage
-from .result_page import ResultPage
-from .performance_page import PerformancePage
-from .settings_page import SettingsPage
-from .i18n import get_text
-from .workers import ConvertWorker, GenerateWorker, PushWorker, ExportWorker
-from .utils import show_error, show_success, show_info, format_card_title, validate_config
+from __future__ import annotations
 
-__all__ = [
-    "main",
-    "MainWindow",
-    "ImportPage",
-    "PreviewPage",
-    "ResultPage",
-    "PerformancePage",
-    "SettingsPage",
-    "get_text",
-    "ConvertWorker",
-    "GenerateWorker",
-    "PushWorker",
-    "ExportWorker",
-    "show_error",
-    "show_success",
-    "show_info",
-    "format_card_title",
-    "validate_config",
-]
+from importlib import import_module
+
+_LAZY_EXPORTS = {
+    "main": ("ankismart.ui.app", "main"),
+    "MainWindow": ("ankismart.ui.main_window", "MainWindow"),
+    "ImportPage": ("ankismart.ui.import_page", "ImportPage"),
+    "PreviewPage": ("ankismart.ui.preview_page", "PreviewPage"),
+    "ResultPage": ("ankismart.ui.result_page", "ResultPage"),
+    "PerformancePage": ("ankismart.ui.performance_page", "PerformancePage"),
+    "SettingsPage": ("ankismart.ui.settings_page", "SettingsPage"),
+    "get_text": ("ankismart.ui.i18n", "get_text"),
+    "ConvertWorker": ("ankismart.ui.workers", "ConvertWorker"),
+    "GenerateWorker": ("ankismart.ui.workers", "GenerateWorker"),
+    "PushWorker": ("ankismart.ui.workers", "PushWorker"),
+    "ExportWorker": ("ankismart.ui.workers", "ExportWorker"),
+    "show_error": ("ankismart.ui.utils", "show_error"),
+    "show_success": ("ankismart.ui.utils", "show_success"),
+    "show_info": ("ankismart.ui.utils", "show_info"),
+    "format_card_title": ("ankismart.ui.utils", "format_card_title"),
+    "validate_config": ("ankismart.ui.utils", "validate_config"),
+}
+
+__all__ = list(_LAZY_EXPORTS)
+
+
+def __getattr__(name: str):
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(f"module 'ankismart.ui' has no attribute '{name}'")
+
+    module_name, attr_name = _LAZY_EXPORTS[name]
+    module = import_module(module_name)
+    value = getattr(module, attr_name)
+    globals()[name] = value
+    return value
+

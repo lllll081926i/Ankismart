@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import uuid
 from pathlib import Path
 
@@ -70,6 +71,14 @@ CONFIG_PATH: Path = Path(
 
 _ENCRYPTED_FIELDS: set[str] = {"anki_connect_key", "ocr_cloud_api_key"}
 _ENCRYPTED_PREFIX: str = "encrypted:"
+
+_CONFIG_CACHE_LOCK = threading.Lock()
+_CONFIG_CACHE: dict[str, object] = {
+    "path": "",
+    "exists": False,
+    "mtime_ns": None,
+    "config": None,
+}
 
 KNOWN_PROVIDERS: dict[str, str] = {
     "OpenAI": "https://api.openai.com/v1",
@@ -212,6 +221,29 @@ def _decrypt_field(value: str, field_name: str) -> str:
     return value
 
 
+def _read_cached_config(path: Path, exists: bool, mtime_ns: int | None) -> AppConfig | None:
+    """Return cached config snapshot when file state is unchanged."""
+    cache_path = str(path)
+    with _CONFIG_CACHE_LOCK:
+        if (
+            _CONFIG_CACHE["path"] == cache_path
+            and _CONFIG_CACHE["exists"] == exists
+            and _CONFIG_CACHE["mtime_ns"] == mtime_ns
+            and isinstance(_CONFIG_CACHE["config"], AppConfig)
+        ):
+            return _CONFIG_CACHE["config"].model_copy(deep=True)
+    return None
+
+
+def _update_config_cache(path: Path, exists: bool, mtime_ns: int | None, config: AppConfig) -> None:
+    """Persist latest config snapshot in memory cache."""
+    with _CONFIG_CACHE_LOCK:
+        _CONFIG_CACHE["path"] = str(path)
+        _CONFIG_CACHE["exists"] = exists
+        _CONFIG_CACHE["mtime_ns"] = mtime_ns
+        _CONFIG_CACHE["config"] = config.model_copy(deep=True)
+
+
 def load_config() -> AppConfig:
     """Load configuration from YAML file.
 
@@ -219,12 +251,22 @@ def load_config() -> AppConfig:
     fields are transparently decrypted; decryption failures fall back to an
     empty string so the application can still start.
     """
-    if not CONFIG_PATH.exists():
-        logger.info("Config file not found, using defaults", extra={"path": str(CONFIG_PATH)})
-        return AppConfig()
+    config_path = CONFIG_PATH
+    exists = config_path.exists()
+    mtime_ns = config_path.stat().st_mtime_ns if exists else None
+
+    cached = _read_cached_config(config_path, exists, mtime_ns)
+    if cached is not None:
+        return cached
+
+    if not exists:
+        logger.info("Config file not found, using defaults", extra={"path": str(config_path)})
+        default_config = AppConfig()
+        _update_config_cache(config_path, False, None, default_config)
+        return default_config
 
     try:
-        raw = CONFIG_PATH.read_text(encoding="utf-8")
+        raw = config_path.read_text(encoding="utf-8")
         data: dict = yaml.safe_load(raw) or {}
     except Exception as exc:
         raise ConfigError(
@@ -253,7 +295,9 @@ def load_config() -> AppConfig:
             )
 
     try:
-        return AppConfig(**data)
+        config = AppConfig(**data)
+        _update_config_cache(config_path, True, mtime_ns, config)
+        return config
     except Exception as exc:
         raise ConfigError(
             f"Invalid configuration values: {exc}",
@@ -278,12 +322,15 @@ def save_config(config: AppConfig) -> None:
             provider["api_key"] = _ENCRYPTED_PREFIX + encrypt(key)
 
     try:
+        config_path = CONFIG_PATH
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        CONFIG_PATH.write_text(
+        config_path.write_text(
             yaml.safe_dump(data, default_flow_style=False, sort_keys=False),
             encoding="utf-8",
         )
-        logger.info("Configuration saved", extra={"path": str(CONFIG_PATH)})
+        mtime_ns = config_path.stat().st_mtime_ns if config_path.exists() else None
+        _update_config_cache(config_path, config_path.exists(), mtime_ns, config)
+        logger.info("Configuration saved", extra={"path": str(config_path)})
     except Exception as exc:
         raise ConfigError(
             f"Failed to save config file: {exc}",
