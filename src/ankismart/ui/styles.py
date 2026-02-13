@@ -1,5 +1,9 @@
 """UI styles and constants for Ankismart application."""
 
+from __future__ import annotations
+
+from qfluentwidgets import BodyLabel
+
 # Color constants
 COLOR_SUCCESS = "#10b981"  # Green
 COLOR_ERROR = "#ef4444"    # Red
@@ -68,6 +72,14 @@ FONT_SIZE_MEDIUM = 14
 FONT_SIZE_LARGE = 16
 FONT_SIZE_XLARGE = 20
 FONT_SIZE_TITLE = 24
+FONT_SIZE_PAGE_TITLE = 22
+
+
+def apply_page_title_style(label: BodyLabel) -> None:
+    """Apply unified style for top-level page titles."""
+    label.setStyleSheet(
+        f"font-size: {FONT_SIZE_PAGE_TITLE}px; font-weight: 600;"
+    )
 
 
 class Colors:
@@ -131,5 +143,35 @@ QPushButton, QToolButton {{
 
 QPushButton:hover, QToolButton:hover {{
     border-color: {palette.ACCENT};
+}}
+
+QScrollBar:vertical {{
+    background: transparent;
+    width: 0px;
+    margin: 0px;
+    border: none;
+}}
+
+QScrollBar:horizontal {{
+    background: transparent;
+    height: 0px;
+    margin: 0px;
+    border: none;
+}}
+
+QScrollBar::handle:vertical,
+QScrollBar::handle:horizontal,
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical,
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal,
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical,
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {{
+    background: transparent;
+    border: none;
+    width: 0px;
+    height: 0px;
 }}
 """

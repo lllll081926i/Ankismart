@@ -4,7 +4,17 @@ from pathlib import Path
 
 from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent
-from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QListWidgetItem, QMessageBox, QSizePolicy, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QFileDialog,
+    QDialog,
+    QDialogButtonBox,
+    QHBoxLayout,
+    QListWidgetItem,
+    QMessageBox,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 from qfluentwidgets import (
     BodyLabel,
     CardWidget,
@@ -32,22 +42,134 @@ from qfluentwidgets import (
     TitleLabel,
 )
 
-from ankismart.anki_gateway.client import AnkiConnectClient
-from ankismart.anki_gateway.gateway import AnkiGateway
-from ankismart.card_gen.generator import CardGenerator
-from ankismart.card_gen.llm_client import LLMClient
-from ankismart.converter.converter import DocumentConverter
-from ankismart.converter.ocr_converter import download_missing_ocr_models, get_missing_ocr_models
+# Heavy imports moved to lazy loading methods - keep only lightweight OCR functions
+from ankismart.converter.ocr_converter import (
+    configure_ocr_runtime,
+    download_missing_ocr_models,
+    get_missing_ocr_models,
+    get_ocr_model_presets,
+    is_cuda_available,
+)
 from ankismart.core.config import save_config
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
 from ankismart.ui.styles import SPACING_LARGE, SPACING_MEDIUM, SPACING_SMALL, MARGIN_STANDARD, MARGIN_SMALL
-from ankismart.ui.utils import ProgressMixin
+from ankismart.ui.utils import ProgressMixin, split_tags_text
 from ankismart.ui.i18n import get_text
 import re
 
 logger = get_logger(__name__)
+
+_OCR_FILE_SUFFIXES = {
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".bmp",
+    ".tiff",
+    ".webp",
+}
+
+_RIGHT_OPTION_CARD_MAX_HEIGHT = 92
+_RIGHT_CONFIG_GROUP_MAX_HEIGHT = 360
+_RIGHT_STRATEGY_GROUP_MAX_HEIGHT = 640
+
+
+class OCRDownloadConfigDialog(QDialog):
+    """Dialog for selecting OCR model tier and download source."""
+
+    def __init__(self, *, language: str, tier: str, source: str, parent=None) -> None:
+        super().__init__(parent)
+        self._is_zh = language == "zh"
+        self._presets = get_ocr_model_presets()
+
+        self.setWindowTitle("选择 OCR 下载配置" if self._is_zh else "Select OCR Download Options")
+        self.setMinimumWidth(580)
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(SPACING_MEDIUM)
+        layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
+
+        self._model_title = SubtitleLabel("选择 OCR 模型" if self._is_zh else "Select OCR Model")
+        layout.addWidget(self._model_title)
+
+        self._model_combo = ComboBox(self)
+        self._model_combo.addItem(self._build_tier_text("lite"), userData="lite")
+        self._model_combo.addItem(self._build_tier_text("standard"), userData="standard")
+        self._model_combo.addItem(self._build_tier_text("accuracy"), userData="accuracy")
+        layout.addWidget(self._model_combo)
+
+        self._recommend_label = BodyLabel(self)
+        self._recommend_label.setWordWrap(True)
+        layout.addWidget(self._recommend_label)
+
+        self._source_title = SubtitleLabel("选择下载源" if self._is_zh else "Select Download Source")
+        layout.addWidget(self._source_title)
+
+        self._source_combo = ComboBox(self)
+        self._source_combo.addItem(
+            "官方地址（HuggingFace）" if self._is_zh else "Official (HuggingFace)",
+            userData="official",
+        )
+        self._source_combo.addItem(
+            "国内镜像（ModelScope）" if self._is_zh else "China Mirror (ModelScope)",
+            userData="cn_mirror",
+        )
+        layout.addWidget(self._source_combo)
+
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+            parent=self,
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+        self._set_tier(tier)
+        self._set_source(source)
+        self._model_combo.currentIndexChanged.connect(lambda _: self._refresh_recommendation())
+        self._refresh_recommendation()
+
+    def _build_tier_text(self, tier: str) -> str:
+        preset = self._presets[tier]
+        label = preset["label"]
+        det = preset["det"]
+        rec = preset["rec"]
+        if self._is_zh:
+            return f"{label}（det: {det} / rec: {rec}）"
+        return f"{label} (det: {det} / rec: {rec})"
+
+    def _set_tier(self, tier: str) -> None:
+        for index in range(self._model_combo.count()):
+            if self._model_combo.itemData(index) == tier:
+                self._model_combo.setCurrentIndex(index)
+                return
+        self._model_combo.setCurrentIndex(0)
+
+    def _set_source(self, source: str) -> None:
+        for index in range(self._source_combo.count()):
+            if self._source_combo.itemData(index) == source:
+                self._source_combo.setCurrentIndex(index)
+                return
+        self._source_combo.setCurrentIndex(0)
+
+    def _refresh_recommendation(self) -> None:
+        tier = self.selected_tier
+        preset = self._presets.get(tier, self._presets["lite"])
+        if self._is_zh:
+            self._recommend_label.setText(f"推荐配置：{preset['recommended']}")
+        else:
+            self._recommend_label.setText(f"Recommended: {preset['recommended']}")
+
+    @property
+    def selected_tier(self) -> str:
+        return str(self._model_combo.currentData())
+
+    @property
+    def selected_source(self) -> str:
+        return str(self._source_combo.currentData())
 
 
 class BatchConvertWorker(QThread):
@@ -126,10 +248,17 @@ class OCRModelDownloadWorker(QThread):
     finished = pyqtSignal(list)  # list[str] - downloaded model names
     error = pyqtSignal(str)  # Error message
 
+    def __init__(self, model_tier: str, model_source: str) -> None:
+        super().__init__()
+        self._model_tier = model_tier
+        self._model_source = model_source
+
     def run(self) -> None:
         try:
             downloaded = download_missing_ocr_models(
-                progress_callback=lambda current, total, msg: self.progress.emit(current, total, msg)
+                progress_callback=lambda current, total, msg: self.progress.emit(current, total, msg),
+                model_tier=self._model_tier,
+                model_source=self._model_source,
             )
             self.finished.emit(downloaded)
         except Exception as e:
@@ -200,6 +329,11 @@ class ImportPage(ProgressMixin, QWidget):
         self._ocr_download_worker: OCRModelDownloadWorker | None = None
         self._state_tooltip: StateToolTip | None = None
         self._model_check_in_progress = False
+
+        # Lazy-loaded heavy dependencies
+        self._converter = None
+        self._gateway = None
+        self._card_generator = None
 
         self.setObjectName("importPage")
 
@@ -299,8 +433,9 @@ class ImportPage(ProgressMixin, QWidget):
         # Use ScrollArea for right panel
         scroll = ScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        # Hide scrollbars
+        # Keep right panel adaptive while hiding visible scrollbars
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
@@ -314,6 +449,18 @@ class ImportPage(ProgressMixin, QWidget):
                 background-color: transparent;
                 border: none;
             }
+            QScrollBar:vertical, QScrollBar:horizontal {
+                width: 0px;
+                height: 0px;
+                background: transparent;
+                border: none;
+            }
+            ScrollBar:vertical, ScrollBar:horizontal {
+                width: 0px;
+                height: 0px;
+                background: transparent;
+                border: none;
+            }
         """)
 
         self._scroll_widget = QWidget()
@@ -323,10 +470,11 @@ class ImportPage(ProgressMixin, QWidget):
         # Use ExpandLayout for right panel content
         self.expand_layout = ExpandLayout(self._scroll_widget)
         self.expand_layout.setContentsMargins(0, 0, 0, 0)
-        self.expand_layout.setSpacing(SPACING_LARGE)
+        self.expand_layout.setSpacing(SPACING_MEDIUM)
 
         # Top buttons (moved from bottom)
         top_button_widget = self._create_top_buttons()
+        top_button_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.expand_layout.addWidget(top_button_widget)
 
         # Configuration area (without LLM provider)
@@ -339,10 +487,12 @@ class ImportPage(ProgressMixin, QWidget):
 
         # Bottom action buttons
         bottom_button_widget = self._create_bottom_buttons()
+        bottom_button_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.expand_layout.addWidget(bottom_button_widget)
 
         # Progress display
         progress_widget = self._create_progress_display()
+        progress_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.expand_layout.addWidget(progress_widget)
 
         return scroll
@@ -355,6 +505,8 @@ class ImportPage(ProgressMixin, QWidget):
             "生成配置" if is_zh else "Generation Config",
             self._scroll_widget
         )
+        group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        group.setMaximumHeight(_RIGHT_CONFIG_GROUP_MAX_HEIGHT)
 
         # Target count card
         self._count_card = SettingCard(
@@ -374,6 +526,8 @@ class ImportPage(ProgressMixin, QWidget):
         )
         self._count_card.hBoxLayout.addWidget(self._total_count_input)
         self._count_card.hBoxLayout.addSpacing(16)
+        self._count_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self._count_card.setMaximumHeight(_RIGHT_OPTION_CARD_MAX_HEIGHT)
         group.addSettingCard(self._count_card)
 
         # Mode combo (for test compatibility)
@@ -400,6 +554,8 @@ class ImportPage(ProgressMixin, QWidget):
         )
         self._deck_card.hBoxLayout.addWidget(self._deck_combo)
         self._deck_card.hBoxLayout.addSpacing(16)
+        self._deck_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self._deck_card.setMaximumHeight(_RIGHT_OPTION_CARD_MAX_HEIGHT)
         group.addSettingCard(self._deck_card)
 
         # Tags card
@@ -416,10 +572,14 @@ class ImportPage(ProgressMixin, QWidget):
         self._tags_input.setToolTip(
             get_text("import.tags_tooltip", self._main.config.language)
         )
+        self._tags_input.setMinimumWidth(460)
+        self._tags_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         if self._main.config.last_tags:
             self._tags_input.setText(self._main.config.last_tags)
         self._tags_card.hBoxLayout.addWidget(self._tags_input)
-        self._tags_card.hBoxLayout.addSpacing(16)
+        self._tags_card.hBoxLayout.addSpacing(24)
+        self._tags_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self._tags_card.setMaximumHeight(_RIGHT_OPTION_CARD_MAX_HEIGHT)
         group.addSettingCard(self._tags_card)
 
         return group
@@ -432,6 +592,8 @@ class ImportPage(ProgressMixin, QWidget):
             "生成策略" if is_zh else "Generation Strategy",
             self._scroll_widget
         )
+        group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        group.setMaximumHeight(_RIGHT_STRATEGY_GROUP_MAX_HEIGHT)
 
         # Strategy options with RangeSettingCards
         strategies = [
@@ -475,6 +637,8 @@ class ImportPage(ProgressMixin, QWidget):
             card.hBoxLayout.addWidget(slider)
             card.hBoxLayout.addWidget(value_label)
             card.hBoxLayout.addSpacing(16)
+            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+            card.setMaximumHeight(_RIGHT_OPTION_CARD_MAX_HEIGHT)
 
             # Store reference
             self._strategy_sliders.append((strategy_id, slider, value_label))
@@ -483,6 +647,41 @@ class ImportPage(ProgressMixin, QWidget):
             group.addSettingCard(card)
 
         return group
+
+    def _get_converter(self):
+        """获取或创建文档转换器（懒加载）"""
+        if self._converter is None:
+            from ankismart.converter.converter import DocumentConverter
+            self._converter = DocumentConverter(
+                ocr_correction_enabled=self._main.config.ocr_correction_enabled,
+                ocr_correction_provider=self._main.config.ocr_correction_provider,
+                llm_providers=self._main.config.llm_providers,
+            )
+        return self._converter
+
+    def _get_gateway(self):
+        """获取或创建 Anki 网关（懒加载）"""
+        if self._gateway is None:
+            from ankismart.anki_gateway.client import AnkiConnectClient
+            from ankismart.anki_gateway.gateway import AnkiGateway
+            client = AnkiConnectClient(
+                url=self._main.config.anki_connect_url,
+                api_key=self._main.config.anki_connect_api_key,
+            )
+            self._gateway = AnkiGateway(client)
+        return self._gateway
+
+    def _get_card_generator(self):
+        """获取或创建卡片生成器（懒加载）"""
+        if self._card_generator is None:
+            from ankismart.card_gen.generator import CardGenerator
+            from ankismart.card_gen.llm_client import LLMClient
+            llm_client = LLMClient(
+                provider=self._main.config.card_gen_provider,
+                llm_providers=self._main.config.llm_providers,
+            )
+            self._card_generator = CardGenerator(llm_client)
+        return self._card_generator
 
     def _init_shortcuts(self):
         """Initialize page-specific keyboard shortcuts."""
@@ -734,7 +933,7 @@ class ImportPage(ProgressMixin, QWidget):
         is_zh = self._main.config.language == "zh"
 
         # Split by comma and validate each tag
-        tags = [tag.strip() for tag in tags_str.split(",")]
+        tags = split_tags_text(tags_str)
 
         # Pattern: letters, numbers, Chinese characters, underscores, hyphens
         tag_pattern = re.compile(r'^[\w\u4e00-\u9fff-]+$')
@@ -773,83 +972,153 @@ class ImportPage(ProgressMixin, QWidget):
 
         return (True, None)
 
+    @staticmethod
+    def _is_ocr_file(file_path: Path) -> bool:
+        return file_path.suffix.lower() in _OCR_FILE_SUFFIXES
+
+    def _files_need_ocr(self) -> bool:
+        return any(self._is_ocr_file(path) for path in self._file_paths)
+
+    def _persist_ocr_config_updates(self, **updates) -> None:
+        config = self._main.config.model_copy(update=updates)
+        self._main.config = config
+        save_config(config)
+
+    def _apply_cuda_strategy_once(self) -> None:
+        config = self._main.config
+        if getattr(config, "ocr_cuda_checked_once", False):
+            return
+
+        has_cuda = is_cuda_available()
+        updates: dict[str, object] = {"ocr_cuda_checked_once": True}
+
+        if (
+            has_cuda
+            and getattr(config, "ocr_auto_cuda_upgrade", True)
+            and not getattr(config, "ocr_model_locked_by_user", False)
+            and getattr(config, "ocr_model_tier", "lite") == "lite"
+        ):
+            updates["ocr_model_tier"] = "standard"
+            self._persist_ocr_config_updates(**updates)
+            is_zh = self._main.config.language == "zh"
+            QMessageBox.information(
+                self,
+                "检测到 CUDA" if is_zh else "CUDA Detected",
+                (
+                    "已检测到 CUDA 环境，OCR 模型已自动切换为“标准”档。"
+                    if is_zh
+                    else "CUDA detected. OCR model tier is automatically switched to Standard."
+                ),
+            )
+            return
+
+        self._persist_ocr_config_updates(**updates)
+
+    def _prepare_local_ocr_runtime(self) -> bool:
+        is_zh = self._main.config.language == "zh"
+        if getattr(self._main.config, "ocr_mode", "local") == "cloud":
+            QMessageBox.information(
+                self,
+                "云端 OCR 开发中" if is_zh else "Cloud OCR In Development",
+                (
+                    "云端 OCR 仍在开发中，请切换到本地 OCR 后再处理图片/PDF。"
+                    if is_zh
+                    else "Cloud OCR is still in development. Please switch to local OCR for image/PDF files."
+                ),
+            )
+            return False
+
+        self._apply_cuda_strategy_once()
+        configure_ocr_runtime(
+            model_tier=getattr(self._main.config, "ocr_model_tier", "lite"),
+            model_source=getattr(self._main.config, "ocr_model_source", "official"),
+        )
+        return True
+
     def _start_convert(self):
         """Start batch conversion and generation."""
         is_zh = self._main.config.language == "zh"
 
         # Validation: Files
         if not self._file_paths:
-            MessageBox.warning(
+            QMessageBox.warning(
+                self,
                 get_text("import.warning", is_zh),
                 get_text("import.please_select_files", is_zh),
-                self
             )
             return
 
         # Validation: Target card count
         is_valid, count_value, error_msg = self._validate_card_count(self._total_count_input.text())
         if not is_valid:
-            MessageBox.warning(
+            QMessageBox.warning(
+                self,
                 get_text("import.invalid_card_count", is_zh),
                 error_msg,
-                self
             )
-            self._total_count_input.setFocus()
+            if hasattr(self._total_count_input, "setFocus"):
+                self._total_count_input.setFocus()
             return
 
         # Validation: Tags format
         is_valid, error_msg = self._validate_tags(self._tags_input.text())
         if not is_valid:
-            MessageBox.warning(
+            QMessageBox.warning(
+                self,
                 get_text("import.invalid_tags", is_zh),
                 error_msg,
-                self
             )
-            self._tags_input.setFocus()
+            if hasattr(self._tags_input, "setFocus"):
+                self._tags_input.setFocus()
             return
 
         # Validation: Deck name
         deck_name = self._deck_combo.currentText().strip()
         is_valid, error_msg = self._validate_deck_name(deck_name)
         if not is_valid:
-            MessageBox.warning(
+            QMessageBox.warning(
+                self,
                 get_text("import.invalid_deck_name", is_zh),
                 error_msg,
-                self
             )
-            self._deck_combo.setFocus()
+            if hasattr(self._deck_combo, "setFocus"):
+                self._deck_combo.setFocus()
             return
 
-        # Check if OCR models are ready
-        if not self._ensure_ocr_models_ready():
-            return
+        # Check OCR runtime and model availability only when OCR-required files exist
+        if self._files_need_ocr():
+            if not self._prepare_local_ocr_runtime():
+                return
+
+            if not self._ensure_ocr_models_ready():
+                return
 
         # Validate provider
         provider = self._main.config.active_provider
         if not provider:
-            MessageBox.warning(
+            QMessageBox.warning(
+                self,
                 get_text("import.warning", is_zh),
                 get_text("import.please_configure_provider", is_zh),
-                self
             )
             return
 
         # Check API key (except for Ollama)
         if "Ollama" not in provider.name and not provider.api_key.strip():
-            MessageBox.warning(
+            QMessageBox.warning(
+                self,
                 get_text("import.warning", is_zh),
                 get_text("import.please_configure_api_key", is_zh),
-                self
             )
             return
 
         # Validate strategy mix
         config = self.build_generation_config()
         if not config["strategy_mix"]:
-            MessageBox.warning(
+            QMessageBox.warning(
+                self,
                 get_text("import.warning", is_zh),
                 get_text("import.please_select_strategy", is_zh),
-                self
             )
             return
 
@@ -882,28 +1151,66 @@ class ImportPage(ProgressMixin, QWidget):
         if self._model_check_in_progress:
             return False
 
+        current_tier = getattr(self._main.config, "ocr_model_tier", "lite")
+        current_source = getattr(self._main.config, "ocr_model_source", "official")
+
+        configure_ocr_runtime(model_tier=current_tier, model_source=current_source)
+
         # Check if models are missing
-        missing_models = get_missing_ocr_models()
+        missing_models = get_missing_ocr_models(
+            model_tier=current_tier,
+            model_source=current_source,
+        )
         if not missing_models:
             return True
 
-        # Show confirmation dialog
+        # Show model/source selection dialog
         is_zh = self._main.config.language == "zh"
+        dialog = OCRDownloadConfigDialog(
+            language=self._main.config.language,
+            tier=current_tier,
+            source=current_source,
+            parent=self,
+        )
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+
+        selected_tier = dialog.selected_tier
+        selected_source = dialog.selected_source
+        updates: dict[str, object] = {}
+        if selected_tier != current_tier:
+            updates["ocr_model_tier"] = selected_tier
+            updates["ocr_model_locked_by_user"] = True
+        if selected_source != current_source:
+            updates["ocr_model_source"] = selected_source
+
+        if updates:
+            self._persist_ocr_config_updates(**updates)
+
+        configure_ocr_runtime(
+            model_tier=getattr(self._main.config, "ocr_model_tier", "lite"),
+            model_source=getattr(self._main.config, "ocr_model_source", "official"),
+        )
+
+        missing_models = get_missing_ocr_models(
+            model_tier=getattr(self._main.config, "ocr_model_tier", "lite"),
+            model_source=getattr(self._main.config, "ocr_model_source", "official"),
+        )
         model_list = ", ".join(missing_models)
-        message = (
-            f"检测到缺失的 OCR 模型：{model_list}\n\n是否立即下载？（首次使用需要下载约 20MB 数据）"
+        confirm_message = (
+            f"检测到缺失的 OCR 模型：{model_list}\n\n是否立即下载？"
             if is_zh
-            else f"Missing OCR models detected: {model_list}\n\nDownload now? (First-time use requires ~20MB download)"
+            else f"Missing OCR models detected: {model_list}\n\nDownload now?"
         )
 
         reply = QMessageBox.question(
             self,
             "下载 OCR 模型" if is_zh else "Download OCR Models",
-            message,
+            confirm_message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes
+            QMessageBox.StandardButton.Yes,
         )
-
         if reply != QMessageBox.StandardButton.Yes:
             return False
 
@@ -921,7 +1228,10 @@ class ImportPage(ProgressMixin, QWidget):
         self._state_tooltip.show()
 
         # Create and start worker
-        self._ocr_download_worker = OCRModelDownloadWorker()
+        self._ocr_download_worker = OCRModelDownloadWorker(
+            model_tier=getattr(self._main.config, "ocr_model_tier", "lite"),
+            model_source=getattr(self._main.config, "ocr_model_source", "official"),
+        )
         self._ocr_download_worker.progress.connect(self._on_ocr_download_progress)
         self._ocr_download_worker.finished.connect(self._on_ocr_download_finished)
         self._ocr_download_worker.error.connect(self._on_ocr_download_error)

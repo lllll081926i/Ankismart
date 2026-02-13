@@ -299,9 +299,20 @@ class BatchConvertWorker(QThread):
                 converter = DocumentConverter()
 
                 # Create progress callback that emits page progress
-                def progress_callback(current_page: int, total_pages: int, message: str):
-                    self.page_progress.emit(file_path.name, current_page, total_pages)
-                    self.ocr_progress.emit(message)
+                def progress_callback(*args):
+                    if len(args) == 3:
+                        current_page, total_pages, message = args
+                        self.page_progress.emit(file_path.name, int(current_page), int(total_pages))
+                        self.ocr_progress.emit(str(message))
+                        return
+
+                    if len(args) == 1:
+                        self.ocr_progress.emit(str(args[0]))
+                        return
+
+                    if len(args) >= 2:
+                        current_page, total_pages = args[:2]
+                        self.page_progress.emit(file_path.name, int(current_page), int(total_pages))
 
                 return converter.convert(file_path, progress_callback=progress_callback)
             except Exception as exc:
@@ -477,7 +488,7 @@ class BatchGenerateWorker(QThread):
             normalized.append((strategy, float(ratio)))
 
         if not normalized:
-            return
+            return {}
 
         # Calculate total ratio sum
         ratio_sum = sum(value for _, value in normalized)

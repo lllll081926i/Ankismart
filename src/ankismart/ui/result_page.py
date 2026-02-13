@@ -44,7 +44,14 @@ from ankismart.ui.card_edit_widget import CardEditDialog
 from ankismart.ui.i18n import t
 from ankismart.ui.workers import ExportWorker, PushWorker
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
-from ankismart.ui.styles import SPACING_LARGE, SPACING_MEDIUM, SPACING_SMALL, MARGIN_STANDARD, MARGIN_SMALL
+from ankismart.ui.styles import (
+    SPACING_LARGE,
+    SPACING_MEDIUM,
+    SPACING_SMALL,
+    MARGIN_STANDARD,
+    MARGIN_SMALL,
+    apply_page_title_style,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +63,7 @@ class ResultPage(QWidget):
         super().__init__()
         self.setObjectName("resultPage")
         self._main = main_window
+        self._language = getattr(self._main.config, "language", "zh")
         self._worker = None
         self._push_result: PushResult | None = None
         self._cards: list[CardDraft] = []
@@ -67,6 +75,7 @@ class ResultPage(QWidget):
 
         # Title
         title = TitleLabel(t("result.title"))
+        apply_page_title_style(title)
         layout.addWidget(title)
 
         # Statistics cards row
@@ -87,6 +96,7 @@ class ResultPage(QWidget):
 
         # Unified settings card (merged push and duplicate settings)
         settings_card = self._create_unified_settings_card()
+        settings_card.setMaximumHeight(92)
         layout.addWidget(settings_card)
 
         # Results table
@@ -98,7 +108,7 @@ class ResultPage(QWidget):
         self._table.setBorderRadius(8)
         self._table.setWordWrap(False)
         self._table.setColumnCount(5)
-        self._table.setMinimumHeight(400)  # Set minimum height for better visibility
+        self._table.setMinimumHeight(520)
 
         # Create header with checkbox
         self._header_checkbox = CheckBox()
@@ -116,7 +126,7 @@ class ResultPage(QWidget):
         self._table.setSortingEnabled(False)  # Disable sorting to keep checkbox alignment
         self._table.setEditTriggers(TableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(TableWidget.SelectionBehavior.SelectRows)
-        layout.addWidget(self._table, 3)  # Increased stretch factor from 1 to 3
+        layout.addWidget(self._table, 5)
 
         # All buttons in one row at the bottom, right-aligned
         all_buttons_row = QHBoxLayout()
@@ -135,19 +145,19 @@ class ResultPage(QWidget):
         self._btn_batch_edit_deck.setEnabled(False)
         all_buttons_row.addWidget(self._btn_batch_edit_deck)
 
-        self._btn_retry = PushButton("重试失败卡片" if self._main.config.language == "zh" else "Retry Failed")
+        self._btn_retry = PushButton("重试失败卡片" if self._language == "zh" else "Retry Failed")
         self._btn_retry.setMinimumHeight(40)
         self._btn_retry.clicked.connect(self._retry_failed)
         self._btn_retry.setEnabled(False)
         all_buttons_row.addWidget(self._btn_retry)
 
-        self._btn_repush_all = PushButton("推送所有卡片" if self._main.config.language == "zh" else "Push All Cards")
+        self._btn_repush_all = PushButton("推送所有卡片" if self._language == "zh" else "Push All Cards")
         self._btn_repush_all.setMinimumHeight(40)
         self._btn_repush_all.clicked.connect(self._repush_all_cards)
         self._btn_repush_all.setEnabled(False)
         all_buttons_row.addWidget(self._btn_repush_all)
 
-        self._btn_export_apkg = PushButton("导出为 APKG" if self._main.config.language == "zh" else "Export as APKG")
+        self._btn_export_apkg = PushButton("导出为 APKG" if self._language == "zh" else "Export as APKG")
         self._btn_export_apkg.setMinimumHeight(40)
         self._btn_export_apkg.clicked.connect(self._export_apkg)
         self._btn_export_apkg.setEnabled(False)
@@ -178,21 +188,18 @@ class ResultPage(QWidget):
         card.setBorderRadius(8)
 
         card_layout = QHBoxLayout(card)
-        card_layout.setSpacing(SPACING_LARGE)
-        card_layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
-
-        # Left column: Push settings
-        left_col = QVBoxLayout()
-        left_col.setSpacing(SPACING_MEDIUM)
+        card_layout.setSpacing(SPACING_MEDIUM)
+        card_layout.setContentsMargins(MARGIN_STANDARD, MARGIN_SMALL, MARGIN_STANDARD, MARGIN_SMALL)
 
         # Update strategy
         update_row = QHBoxLayout()
-        update_label = BodyLabel("更新策略")
-        update_label.setFixedWidth(100)
+        update_row.setSpacing(SPACING_SMALL)
+        update_label = BodyLabel(t("result.update_strategy"))
         self._update_combo = ComboBox()
-        self._update_combo.addItem("仅新增", userData="create_only")
-        self._update_combo.addItem("仅更新", userData="update_only")
-        self._update_combo.addItem("新增或更新", userData="create_or_update")
+        self._update_combo.addItem(t("result.create_only"), userData="create_only")
+        self._update_combo.addItem(t("result.update_only"), userData="update_only")
+        self._update_combo.addItem(t("result.create_or_update"), userData="create_or_update")
+        self._update_combo.setFixedWidth(170)
 
         default_mode = getattr(self._main.config, "last_update_mode", None) or "create_only"
         for idx in range(self._update_combo.count()):
@@ -202,60 +209,51 @@ class ResultPage(QWidget):
         self._update_combo.currentIndexChanged.connect(self._on_update_mode_changed)
         update_row.addWidget(update_label)
         update_row.addWidget(self._update_combo)
-        update_row.addStretch()
-        left_col.addLayout(update_row)
+        update_row.addStretch(1)
 
         # Duplicate scope
         scope_row = QHBoxLayout()
+        scope_row.setSpacing(SPACING_SMALL)
         scope_label = BodyLabel(t("result.duplicate_scope"))
-        scope_label.setFixedWidth(100)
         self._duplicate_scope_combo = ComboBox()
         self._duplicate_scope_combo.addItem(t("result.duplicate_scope_deck"), userData="deck")
         self._duplicate_scope_combo.addItem(t("result.duplicate_scope_collection"), userData="collection")
+        self._duplicate_scope_combo.setFixedWidth(170)
+        duplicate_scope = getattr(self._main.config, "duplicate_scope", "deck")
         self._duplicate_scope_combo.setCurrentIndex(
-            0 if self._main.config.duplicate_scope == "deck" else 1
+            0 if duplicate_scope == "deck" else 1
         )
         self._duplicate_scope_combo.currentIndexChanged.connect(self._on_duplicate_scope_changed)
         scope_row.addWidget(scope_label)
         scope_row.addWidget(self._duplicate_scope_combo)
-        scope_row.addStretch()
-        left_col.addLayout(scope_row)
-
-        card_layout.addLayout(left_col, 1)
-
-        # Vertical separator
-        separator = QWidget()
-        separator.setFixedWidth(1)
-        separator.setStyleSheet("background-color: rgba(0, 0, 0, 0.1);")
-        card_layout.addWidget(separator)
-
-        # Right column: Duplicate check switches
-        right_col = QVBoxLayout()
-        right_col.setSpacing(SPACING_MEDIUM)
+        scope_row.addStretch(1)
 
         # Check model switch
         model_row = QHBoxLayout()
+        model_row.setSpacing(SPACING_SMALL)
         model_label = BodyLabel(t("result.duplicate_check_model"))
         self._check_model_switch = SwitchButton()
-        self._check_model_switch.setChecked(self._main.config.duplicate_check_model)
+        self._check_model_switch.setChecked(getattr(self._main.config, "duplicate_check_model", True))
         self._check_model_switch.checkedChanged.connect(self._on_check_model_changed)
         model_row.addWidget(model_label)
-        model_row.addStretch()
+        model_row.addStretch(1)
         model_row.addWidget(self._check_model_switch)
-        right_col.addLayout(model_row)
 
         # Allow duplicate switch
         allow_row = QHBoxLayout()
+        allow_row.setSpacing(SPACING_SMALL)
         allow_label = BodyLabel(t("result.allow_duplicate"))
         self._allow_duplicate_switch = SwitchButton()
-        self._allow_duplicate_switch.setChecked(self._main.config.allow_duplicate)
+        self._allow_duplicate_switch.setChecked(getattr(self._main.config, "allow_duplicate", False))
         self._allow_duplicate_switch.checkedChanged.connect(self._on_allow_duplicate_changed)
         allow_row.addWidget(allow_label)
-        allow_row.addStretch()
+        allow_row.addStretch(1)
         allow_row.addWidget(self._allow_duplicate_switch)
-        right_col.addLayout(allow_row)
 
-        card_layout.addLayout(right_col, 1)
+        card_layout.addLayout(update_row, 1)
+        card_layout.addLayout(scope_row, 1)
+        card_layout.addLayout(model_row, 1)
+        card_layout.addLayout(allow_row, 1)
 
         return card
 
@@ -283,8 +281,9 @@ class ResultPage(QWidget):
         self._duplicate_scope_combo = ComboBox()
         self._duplicate_scope_combo.addItem(t("result.duplicate_scope_deck"), userData="deck")
         self._duplicate_scope_combo.addItem(t("result.duplicate_scope_collection"), userData="collection")
+        duplicate_scope = getattr(self._main.config, "duplicate_scope", "deck")
         self._duplicate_scope_combo.setCurrentIndex(
-            0 if self._main.config.duplicate_scope == "deck" else 1
+            0 if duplicate_scope == "deck" else 1
         )
         self._duplicate_scope_combo.currentIndexChanged.connect(self._on_duplicate_scope_changed)
         self._duplicate_scope_combo.setFixedWidth(150)
@@ -305,7 +304,7 @@ class ResultPage(QWidget):
         model_row.addWidget(model_label)
 
         self._check_model_switch = SwitchButton()
-        self._check_model_switch.setChecked(self._main.config.duplicate_check_model)
+        self._check_model_switch.setChecked(getattr(self._main.config, "duplicate_check_model", True))
         self._check_model_switch.checkedChanged.connect(self._on_check_model_changed)
         model_row.addWidget(self._check_model_switch)
 
@@ -324,7 +323,7 @@ class ResultPage(QWidget):
         allow_row.addWidget(allow_label)
 
         self._allow_duplicate_switch = SwitchButton()
-        self._allow_duplicate_switch.setChecked(self._main.config.allow_duplicate)
+        self._allow_duplicate_switch.setChecked(getattr(self._main.config, "allow_duplicate", False))
         self._allow_duplicate_switch.checkedChanged.connect(self._on_allow_duplicate_changed)
         allow_row.addWidget(self._allow_duplicate_switch)
 
@@ -365,7 +364,7 @@ class ResultPage(QWidget):
             return
 
         # Show save dialog
-        is_zh = self._main.config.language == "zh"
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
         path, _ = QFileDialog.getSaveFileName(
             self,
             "导出为 APKG" if is_zh else "Export as APKG",
@@ -1075,11 +1074,14 @@ class ResultPage(QWidget):
 
     def retranslate_ui(self):
         """Retranslate UI elements when language changes."""
-        is_zh = self._main.config.language == "zh"
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
 
         # Update button text and tooltips
         export_text = "导出失败卡片" if is_zh else "Export Failed Cards"
-        export_shortcut = get_shortcut_text(ShortcutKeys.EXPORT_CARDS, self._main.config.language)
+        export_shortcut = get_shortcut_text(
+            ShortcutKeys.EXPORT_CARDS,
+            getattr(self._main.config, "language", "zh"),
+        )
         self._btn_export_failed.setText(export_text)
         self._btn_export_failed.setToolTip(f"{export_text} ({export_shortcut})")
 

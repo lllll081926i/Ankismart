@@ -162,6 +162,123 @@ def test_temperature_load_and_save_uses_slider(_qapp, monkeypatch) -> None:
     assert captured["cfg"].llm_temperature == 1.5
 
 
+def test_load_config_populates_ocr_controls(_qapp) -> None:
+    provider = LLMProviderConfig(
+        id="p1",
+        name="OpenAI",
+        api_key="test-key",
+        base_url="https://api.openai.com/v1",
+        model="gpt-4o",
+    )
+    cfg = AppConfig(
+        llm_providers=[provider],
+        active_provider_id="p1",
+        ocr_mode="cloud",
+        ocr_model_tier="accuracy",
+        ocr_model_source="cn_mirror",
+        ocr_auto_cuda_upgrade=False,
+    )
+    main, _ = _make_main(cfg)
+    page = SettingsPage(main)
+
+    assert page._ocr_mode_combo.currentData() == "cloud"
+    assert page._ocr_model_tier_combo.currentData() == "accuracy"
+    assert page._ocr_source_combo.currentData() == "cn_mirror"
+    assert page._ocr_cuda_auto_card.isChecked() is False
+
+
+def test_save_config_persists_ocr_settings(_qapp, monkeypatch) -> None:
+    main, _ = _make_main()
+    page = SettingsPage(main)
+
+    captured: dict[str, AppConfig] = {}
+    monkeypatch.setattr("ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c))
+    monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+
+    for index in range(page._ocr_mode_combo.count()):
+        if page._ocr_mode_combo.itemData(index) == "cloud":
+            page._ocr_mode_combo.setCurrentIndex(index)
+            break
+    for index in range(page._ocr_model_tier_combo.count()):
+        if page._ocr_model_tier_combo.itemData(index) == "standard":
+            page._ocr_model_tier_combo.setCurrentIndex(index)
+            break
+    for index in range(page._ocr_source_combo.count()):
+        if page._ocr_source_combo.itemData(index) == "cn_mirror":
+            page._ocr_source_combo.setCurrentIndex(index)
+            break
+    page._ocr_cuda_auto_card.setChecked(False)
+
+    page._save_config()
+
+    assert "cfg" in captured
+    assert captured["cfg"].ocr_mode == "cloud"
+    assert captured["cfg"].ocr_model_tier == "standard"
+    assert captured["cfg"].ocr_model_source == "cn_mirror"
+    assert captured["cfg"].ocr_auto_cuda_upgrade is False
+    assert captured["cfg"].ocr_model_locked_by_user is True
+
+
+def test_save_config_calls_switch_theme_when_theme_changed(_qapp, monkeypatch) -> None:
+    main, _ = _make_main()
+    theme_calls: list[str] = []
+    main.switch_theme = lambda theme: theme_calls.append(theme)
+    main.switch_language = lambda language: None
+
+    page = SettingsPage(main)
+
+    captured: dict[str, AppConfig] = {}
+    monkeypatch.setattr("ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c))
+    monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+
+    page._theme_combo.blockSignals(True)
+    page._theme_combo.setCurrentIndex(1)
+    page._theme_combo.blockSignals(False)
+
+    page._save_config()
+
+    assert "cfg" in captured
+    assert captured["cfg"].theme == "dark"
+    assert theme_calls == ["dark"]
+
+
+def test_ocr_connectivity_cloud_mode_shows_developing_message(_qapp, monkeypatch) -> None:
+    main, _ = _make_main()
+    page = SettingsPage(main)
+
+    for index in range(page._ocr_mode_combo.count()):
+        if page._ocr_mode_combo.itemData(index) == "cloud":
+            page._ocr_mode_combo.setCurrentIndex(index)
+            break
+
+    calls = []
+    monkeypatch.setattr(page, "_show_info_bar", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    page._test_ocr_connectivity()
+
+    assert len(calls) == 1
+    assert calls[0][0][0] == "info"
+
+
+def test_ocr_connectivity_local_reports_missing_models(_qapp, monkeypatch) -> None:
+    main, _ = _make_main()
+    page = SettingsPage(main)
+
+    calls = []
+    monkeypatch.setattr(page, "_show_info_bar", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
+    monkeypatch.setattr("ankismart.ui.settings_page.get_missing_ocr_models", lambda **kwargs: ["PP-OCRv5_mobile_det"])
+
+    page._test_ocr_connectivity()
+
+    assert len(calls) == 1
+    assert calls[0][0][0] == "warning"
+
+
 def test_on_test_result_shows_infobar_and_dialog(_qapp, monkeypatch) -> None:
     main, status_calls = _make_main()
     page = SettingsPage(main)

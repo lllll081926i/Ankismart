@@ -24,12 +24,19 @@ from qfluentwidgets import (
     PrimaryPushButton,
     PushButton,
     TitleLabel,
+    isDarkTheme,
 )
 from PyQt6.QtWidgets import QTextBrowser
 
 from ankismart.core.models import CardDraft
 from ankismart.ui.i18n import t
-from ankismart.ui.styles import MARGIN_SMALL, MARGIN_STANDARD, SPACING_LARGE, SPACING_MEDIUM
+from ankismart.ui.styles import (
+    MARGIN_SMALL,
+    MARGIN_STANDARD,
+    SPACING_LARGE,
+    SPACING_MEDIUM,
+    apply_page_title_style,
+)
 
 if TYPE_CHECKING:
     from ankismart.ui.main_window import MainWindow
@@ -101,6 +108,8 @@ class CardRenderer:
         """Wrap content with CSS and card structure."""
         from ankismart.anki_gateway.styling import MODERN_CARD_CSS
 
+        body_class = "night_mode" if isDarkTheme() else ""
+
         return f"""
         <!DOCTYPE html>
         <html>
@@ -117,7 +126,7 @@ class CardRenderer:
             }}
             </style>
         </head>
-        <body>
+        <body class="{body_class}">
             <div class="card">{content}</div>
         </body>
         </html>
@@ -172,6 +181,7 @@ class CardPreviewPage(QWidget):
 
         # Title
         title = TitleLabel("卡片预览" if self._main.config.language == "zh" else "Card Preview")
+        apply_page_title_style(title)
         layout.addWidget(title)
 
         layout.addStretch()
@@ -244,6 +254,7 @@ class CardPreviewPage(QWidget):
         self._card_browser = QTextBrowser()
         self._card_browser.setOpenExternalLinks(False)
         self._card_browser.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._apply_browser_theme()
         layout.addWidget(self._card_browser, 1)
 
         return panel
@@ -373,3 +384,31 @@ class CardPreviewPage(QWidget):
         """Close preview and return to previous page."""
         # Navigate back to result page
         self._main.switchTo(self._main.result_page)
+
+    def _apply_browser_theme(self) -> None:
+        """Apply theme-aware stylesheet to embedded HTML preview browser."""
+        if isDarkTheme():
+            self._card_browser.setStyleSheet(
+                "QTextBrowser {"
+                "background-color: #1F2937;"
+                "color: #E5E7EB;"
+                "border: 1px solid rgba(255, 255, 255, 0.12);"
+                "border-radius: 8px;"
+                "}"
+            )
+            return
+
+        self._card_browser.setStyleSheet(
+            "QTextBrowser {"
+            "background-color: #FFFFFF;"
+            "color: #111827;"
+            "border: 1px solid rgba(0, 0, 0, 0.10);"
+            "border-radius: 8px;"
+            "}"
+        )
+
+    def update_theme(self) -> None:
+        """Update card preview when global theme changes."""
+        self._apply_browser_theme()
+        if 0 <= self._current_index < len(self._filtered_cards):
+            self._show_card(self._current_index)

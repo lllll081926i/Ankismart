@@ -35,6 +35,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "nav.import": {"zh": "导入", "en": "Import"},
     "nav.preview": {"zh": "预览", "en": "Preview"},
     "nav.result": {"zh": "结果", "en": "Result"},
+    "nav.performance": {"zh": "性能统计", "en": "Performance"},
     "nav.settings": {"zh": "设置", "en": "Settings"},
 
     # Import page - File selection
@@ -305,7 +306,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "settings.theme_desc": {"zh": "应用程序主题", "en": "Application theme"},
     "settings.theme_light": {"zh": "浅色", "en": "Light"},
     "settings.theme_dark": {"zh": "深色", "en": "Dark"},
-    "settings.theme_auto": {"zh": "自动", "en": "Auto"},
+    "settings.theme_auto": {"zh": "跟随系统", "en": "Follow System"},
     "settings.language": {"zh": "语言", "en": "Language"},
     "settings.language_desc": {"zh": "应用程序语言", "en": "Application language"},
     "settings.language_zh": {"zh": "中文", "en": "Chinese"},

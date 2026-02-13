@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (
 )
 from qfluentwidgets import (
     BodyLabel,
-    CaptionLabel,
     ComboBox,
     ComboBoxSettingCard,
     ExpandLayout,
@@ -44,11 +43,41 @@ from qfluentwidgets import (
 )
 
 from ankismart.core.config import KNOWN_PROVIDERS, LLMProviderConfig, save_config
+from ankismart.converter.ocr_converter import (
+    configure_ocr_runtime,
+    get_missing_ocr_models,
+    is_cuda_available,
+)
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
-from ankismart.ui.styles import PROVIDER_ITEM_HEIGHT, MAX_VISIBLE_PROVIDERS, SPACING_MEDIUM, SPACING_LARGE, MARGIN_STANDARD, MARGIN_SMALL
+from ankismart.ui.styles import (
+    PROVIDER_ITEM_HEIGHT,
+    MAX_VISIBLE_PROVIDERS,
+    SPACING_MEDIUM,
+    SPACING_LARGE,
+    SPACING_SMALL,
+    MARGIN_STANDARD,
+    MARGIN_SMALL,
+)
 
 if TYPE_CHECKING:
     from ankismart.ui.main_window import MainWindow
+
+
+_OCR_MODE_CHOICES = (
+    ("local", "本地模型", "Local Model"),
+    ("cloud", "云端模型（开发中）", "Cloud Model (In Development)"),
+)
+
+_OCR_MODEL_TIER_CHOICES = (
+    ("lite", "轻量", "Lite"),
+    ("standard", "标准", "Standard"),
+    ("accuracy", "高精度", "High Accuracy"),
+)
+
+_OCR_SOURCE_CHOICES = (
+    ("official", "官方地址（HuggingFace）", "Official (HuggingFace)"),
+    ("cn_mirror", "国内镜像（ModelScope）", "China Mirror (ModelScope)"),
+)
 
 
 class LLMProviderDialog(QDialog):
@@ -182,17 +211,19 @@ class ProviderListItemWidget(QWidget):
 
         model_text_inline = self._provider.model.strip() if self._provider.model else "未设置"
         base_url_text_inline = self._provider.base_url.strip() if self._provider.base_url else "未设置"
-        detail_parts_inline = [
-            f"模型：{model_text_inline}",
-            f"地址：{base_url_text_inline}",
-        ]
-        if self._provider.rpm_limit > 0:
-            detail_parts_inline.append(f"RPM：{self._provider.rpm_limit}")
-        detail_text_inline = " ｜ ".join(detail_parts_inline)
-        self._detail_label = CaptionLabel(detail_text_inline)
-        self._detail_label.setWordWrap(False)
-        self._detail_label.setToolTip(detail_text_inline)
-        info_layout.addWidget(self._detail_label)
+
+        self._model_label = BodyLabel(f"模型：{model_text_inline}")
+        self._model_label.setObjectName("providerModelLabel")
+        info_layout.addWidget(self._model_label)
+
+        self._url_label = BodyLabel(f"地址：{base_url_text_inline}")
+        self._url_label.setObjectName("providerUrlLabel")
+        info_layout.addWidget(self._url_label)
+
+        rpm_text_inline = f"RPM：{self._provider.rpm_limit}" if self._provider.rpm_limit > 0 else "RPM：未设置"
+        self._rpm_label = BodyLabel(rpm_text_inline)
+        self._rpm_label.setObjectName("providerRpmLabel")
+        info_layout.addWidget(self._rpm_label)
 
         layout.addLayout(info_layout, 1)
         layout.addStretch()
@@ -267,39 +298,19 @@ class ProviderListWidget(QWidget):
         super().__init__(parent)
         self.setObjectName("providerListPanel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._init_panel_ui()
         self._update_panel_style()
         self.setAutoFillBackground(True)
 
-    def _update_panel_style(self):
-        """Update panel style based on current theme - using QFluentWidgets theme system."""
-        is_dark = isDarkTheme()
-        if is_dark:
-            self.setStyleSheet("""
-                QWidget#providerListPanel {
-                    background-color: rgba(45, 45, 45, 1);
-                    border: 1px solid rgba(255, 255, 255, 0.08);
-                    border-radius: 10px;
-                }
-            """)
-        else:
-            self.setStyleSheet("""
-                QWidget#providerListPanel {
-                    background-color: rgba(255, 255, 255, 1);
-                    border: 1px solid rgba(0, 0, 0, 0.08);
-                    border-radius: 10px;
-                }
-            """)
-
-        # Main layout
+    def _init_panel_ui(self) -> None:
+        """Initialize static UI structure for provider panel."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(1, 1, 1, 1)
         layout.setSpacing(0)
 
-        # Create list widget
         self._list_widget = ListWidget()
-        # Set minimum and maximum height (auto-adjust based on content)
-        self._list_widget.setMinimumHeight(PROVIDER_ITEM_HEIGHT)  # At least 1 row
-        self._list_widget.setMaximumHeight(PROVIDER_ITEM_HEIGHT * MAX_VISIBLE_PROVIDERS)  # Maximum 4 rows
+        self._list_widget.setMinimumHeight(PROVIDER_ITEM_HEIGHT)
+        self._list_widget.setMaximumHeight(PROVIDER_ITEM_HEIGHT * MAX_VISIBLE_PROVIDERS)
         self._list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._list_widget.setSpacing(0)
@@ -317,6 +328,26 @@ class ProviderListWidget(QWidget):
         self._list_widget.viewport().installEventFilter(self)
 
         layout.addWidget(self._list_widget)
+
+    def _update_panel_style(self):
+        """Update panel style based on current theme - using QFluentWidgets theme system."""
+        is_dark = isDarkTheme()
+        if is_dark:
+            self.setStyleSheet("""
+                QWidget#providerListPanel {
+                    background-color: rgba(45, 45, 45, 1);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 10px;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                QWidget#providerListPanel {
+                    background-color: #FFFFFF;
+                    border: 1px solid rgba(0, 0, 0, 0.08);
+                    border-radius: 10px;
+                }
+            """)
 
     def _forward_wheel_to_parent(self, event: QWheelEvent) -> None:
         parent = self.parentWidget()
@@ -627,7 +658,7 @@ class SettingsPage(ScrollArea):
             self.scrollWidget,
         )
         self._theme_combo = ComboBox(self._theme_card)
-        self._theme_combo.addItems(["浅色", "深色", "自动"])
+        self._theme_combo.addItems(["浅色", "深色", "跟随系统"])
         self._theme_combo.setMinimumWidth(200)
         self._theme_card.hBoxLayout.addWidget(self._theme_combo)
         self._theme_card.hBoxLayout.addSpacing(16)
@@ -718,6 +749,83 @@ class SettingsPage(ScrollArea):
 
         self.expandLayout.addWidget(self._other_group)
 
+        # ── OCR Settings Group ──
+        self._ocr_group = SettingCardGroup("OCR 设置", self.scrollWidget)
+
+        self._ocr_mode_card = SettingCard(
+            FIF.ROBOT,
+            "OCR 模式",
+            "切换使用本地模型或云端模型（云端功能开发中）",
+            self.scrollWidget,
+        )
+        self._ocr_mode_combo = ComboBox(self._ocr_mode_card)
+        for key, zh_text, en_text in _OCR_MODE_CHOICES:
+            self._ocr_mode_combo.addItem(zh_text if is_zh else en_text, userData=key)
+        self._ocr_mode_card.hBoxLayout.addWidget(self._ocr_mode_combo)
+        self._ocr_mode_card.hBoxLayout.addSpacing(16)
+        self._ocr_group.addSettingCard(self._ocr_mode_card)
+
+        self._ocr_cuda_auto_card = SwitchSettingCard(
+            FIF.POWER_BUTTON,
+            "CUDA 自动升档",
+            "首次 OCR 前检测到 CUDA 时，自动将模型从轻量档升至标准档",
+            parent=self._ocr_group,
+        )
+        self._ocr_group.addSettingCard(self._ocr_cuda_auto_card)
+
+        self._ocr_connectivity_card = PushSettingCard(
+            "测试",
+            FIF.HELP,
+            "OCR 模型连通性测试",
+            "本地模式检查模型完整性，云端模式显示开发中状态",
+        )
+        self._ocr_connectivity_card.clicked.connect(self._test_ocr_connectivity)
+        self._ocr_group.addSettingCard(self._ocr_connectivity_card)
+
+        self._ocr_model_tier_card = SettingCard(
+            FIF.GLOBE,
+            "OCR 模型",
+            "切换 OCR 模型档位",
+            self.scrollWidget,
+        )
+        self._ocr_model_tier_combo = ComboBox(self._ocr_model_tier_card)
+        for key, zh_text, en_text in _OCR_MODEL_TIER_CHOICES:
+            self._ocr_model_tier_combo.addItem(zh_text if is_zh else en_text, userData=key)
+        self._ocr_model_tier_combo.currentIndexChanged.connect(lambda _: self._refresh_ocr_recommendation())
+
+        self._ocr_model_recommend_label = BodyLabel(self._ocr_model_tier_card)
+        self._ocr_model_recommend_label.setWordWrap(False)
+        self._ocr_model_recommend_label.setMinimumWidth(260)
+        self._ocr_model_tier_card.hBoxLayout.addWidget(self._ocr_model_recommend_label)
+        self._ocr_model_tier_card.hBoxLayout.addStretch(1)
+        self._ocr_model_tier_card.hBoxLayout.addWidget(self._ocr_model_tier_combo)
+        self._ocr_model_tier_card.hBoxLayout.addSpacing(16)
+        self._ocr_group.addSettingCard(self._ocr_model_tier_card)
+
+        self._ocr_source_card = SettingCard(
+            FIF.CLOUD_DOWNLOAD,
+            "模型下载源",
+            "首次下载和切换模型时可选择官方地址或国内镜像",
+            self.scrollWidget,
+        )
+        self._ocr_source_combo = ComboBox(self._ocr_source_card)
+        for key, zh_text, en_text in _OCR_SOURCE_CHOICES:
+            self._ocr_source_combo.addItem(zh_text if is_zh else en_text, userData=key)
+        self._ocr_source_card.hBoxLayout.addWidget(self._ocr_source_combo)
+        self._ocr_source_card.hBoxLayout.addSpacing(16)
+        self._ocr_group.addSettingCard(self._ocr_source_card)
+
+        self._ocr_cuda_detect_card = PushSettingCard(
+            "检测",
+            FIF.VPN,
+            "检测 CUDA 环境",
+            "检测是否可使用 GPU，并给出 OCR 模型建议",
+        )
+        self._ocr_cuda_detect_card.clicked.connect(self._manual_detect_cuda)
+        self._ocr_group.addSettingCard(self._ocr_cuda_detect_card)
+
+        self.expandLayout.addWidget(self._ocr_group)
+
         # ── Cache Management Group ──
         self._cache_group = SettingCardGroup("缓存管理", self.scrollWidget)
 
@@ -742,77 +850,6 @@ class SettingsPage(ScrollArea):
         self._cache_group.addSettingCard(self._cache_count_card)
 
         self.expandLayout.addWidget(self._cache_group)
-
-        # ── Performance Statistics Group ──
-        self._stats_group = SettingCardGroup("性能统计", self.scrollWidget)
-
-        # Total files processed
-        self._total_files_card = SettingCard(
-            FIF.DOCUMENT,
-            "总处理文件数",
-            "已成功处理的文件总数",
-            self.scrollWidget,
-        )
-        self._total_files_label = BodyLabel()
-        self._total_files_label.setText("0 个文件")
-        self._total_files_label.setFixedWidth(150)
-        self._total_files_card.hBoxLayout.addWidget(self._total_files_label)
-        self._total_files_card.hBoxLayout.addSpacing(16)
-        self._stats_group.addSettingCard(self._total_files_card)
-
-        # Average conversion time
-        self._avg_conversion_card = SettingCard(
-            FIF.SPEED_OFF,
-            "平均转换时间",
-            "每个文件的平均转换时间（秒）",
-            self.scrollWidget,
-        )
-        self._avg_conversion_label = BodyLabel()
-        self._avg_conversion_label.setText("0.0 秒")
-        self._avg_conversion_label.setFixedWidth(150)
-        self._avg_conversion_card.hBoxLayout.addWidget(self._avg_conversion_label)
-        self._avg_conversion_card.hBoxLayout.addSpacing(16)
-        self._stats_group.addSettingCard(self._avg_conversion_card)
-
-        # Average generation time
-        self._avg_generation_card = SettingCard(
-            FIF.SPEED_HIGH,
-            "平均生成时间",
-            "每张卡片的平均生成时间（秒）",
-            self.scrollWidget,
-        )
-        self._avg_generation_label = BodyLabel()
-        self._avg_generation_label.setText("0.0 秒")
-        self._avg_generation_label.setFixedWidth(150)
-        self._avg_generation_card.hBoxLayout.addWidget(self._avg_generation_label)
-        self._avg_generation_card.hBoxLayout.addSpacing(16)
-        self._stats_group.addSettingCard(self._avg_generation_card)
-
-        # Total cards generated
-        self._total_cards_card = SettingCard(
-            FIF.TILES,
-            "总生成卡片数",
-            "已成功生成的卡片总数",
-            self.scrollWidget,
-        )
-        self._total_cards_label = BodyLabel()
-        self._total_cards_label.setText("0 张卡片")
-        self._total_cards_label.setFixedWidth(150)
-        self._total_cards_card.hBoxLayout.addWidget(self._total_cards_label)
-        self._total_cards_card.hBoxLayout.addSpacing(16)
-        self._stats_group.addSettingCard(self._total_cards_card)
-
-        # Reset statistics button
-        self._reset_stats_card = PushSettingCard(
-            "重置统计",
-            FIF.DELETE,
-            "重置统计数据",
-            "清除所有性能统计数据",
-        )
-        self._reset_stats_card.clicked.connect(self._reset_statistics)
-        self._stats_group.addSettingCard(self._reset_stats_card)
-
-        self.expandLayout.addWidget(self._stats_group)
 
         # ── Experimental Features Group ──
         self._experimental_group = SettingCardGroup("实验性功能", self.scrollWidget)
@@ -923,12 +960,15 @@ class SettingsPage(ScrollArea):
         self._proxy_edit.setText(config.proxy_url)
         self._ocr_correction_switch.setChecked(config.ocr_correction)
 
+        self._set_combo_current_data(self._ocr_mode_combo, getattr(config, "ocr_mode", "local"))
+        self._set_combo_current_data(self._ocr_model_tier_combo, getattr(config, "ocr_model_tier", "lite"))
+        self._set_combo_current_data(self._ocr_source_combo, getattr(config, "ocr_model_source", "official"))
+        self._ocr_cuda_auto_card.setChecked(getattr(config, "ocr_auto_cuda_upgrade", True))
+        self._refresh_ocr_recommendation()
+
         # Experimental features
         self._auto_split_switch.setChecked(config.enable_auto_split)
-        self._split_threshold_card.setValue(config.split_threshold)
-
-        # Performance statistics
-        self._update_statistics_display()
+        self._split_threshold_spinbox.setValue(config.split_threshold)
 
         # Cache statistics
         self._refresh_cache_stats()
@@ -941,6 +981,109 @@ class SettingsPage(ScrollArea):
         """Update provider list display."""
         if self._provider_list_widget:
             self._provider_list_widget.update_providers(self._providers, self._active_provider_id)
+
+    @staticmethod
+    def _set_combo_current_data(combo: ComboBox, target_value: str) -> None:
+        for index in range(combo.count()):
+            if combo.itemData(index) == target_value:
+                combo.setCurrentIndex(index)
+                return
+        combo.setCurrentIndex(0)
+
+    @staticmethod
+    def _get_combo_current_data(combo: ComboBox, fallback: str) -> str:
+        current = combo.currentData()
+        if current is None:
+            return fallback
+        return str(current)
+
+    def _refresh_ocr_recommendation(self) -> None:
+        tier = self._get_combo_current_data(self._ocr_model_tier_combo, "lite")
+        is_zh = self._main.config.language == "zh"
+        short_recommendations = {
+            "lite": (
+                "推荐：8G / 无独显",
+                "Rec: 8G / iGPU",
+            ),
+            "standard": (
+                "推荐：16G / 4核+",
+                "Rec: 16G / 4+ cores",
+            ),
+            "accuracy": (
+                "推荐：16G+ / 独显",
+                "Rec: 16G+ / dGPU",
+            ),
+        }
+        zh_text, en_text = short_recommendations.get(tier, short_recommendations["lite"])
+        text = zh_text if is_zh else en_text
+        self._ocr_model_recommend_label.setText(text)
+
+    def _test_ocr_connectivity(self) -> None:
+        is_zh = self._main.config.language == "zh"
+        mode = self._get_combo_current_data(self._ocr_mode_combo, "local")
+
+        if mode == "cloud":
+            self._show_info_bar(
+                "info",
+                "云端 OCR 开发中" if is_zh else "Cloud OCR In Development",
+                "云端 OCR 连通性测试暂未开放。" if is_zh else "Cloud OCR connectivity test is not available yet.",
+                duration=3500,
+            )
+            return
+
+        tier = self._get_combo_current_data(self._ocr_model_tier_combo, "lite")
+        source = self._get_combo_current_data(self._ocr_source_combo, "official")
+        configure_ocr_runtime(model_tier=tier, model_source=source)
+        missing = get_missing_ocr_models(model_tier=tier, model_source=source)
+
+        if not missing:
+            self._show_info_bar(
+                "success",
+                "OCR 连通正常" if is_zh else "OCR Connection OK",
+                "本地 OCR 模型已就绪。" if is_zh else "Local OCR models are ready.",
+                duration=3000,
+            )
+            return
+
+        missing_text = ", ".join(missing)
+        self._show_info_bar(
+            "warning",
+            "OCR 模型缺失" if is_zh else "OCR Models Missing",
+            (
+                f"检测到缺失模型：{missing_text}"
+                if is_zh
+                else f"Missing models detected: {missing_text}"
+            ),
+            duration=5000,
+        )
+
+    def _manual_detect_cuda(self) -> None:
+        is_zh = self._main.config.language == "zh"
+        has_cuda = is_cuda_available()
+        tier = self._get_combo_current_data(self._ocr_model_tier_combo, "lite")
+
+        if has_cuda:
+            content = (
+                "检测到 CUDA 环境。建议至少使用“标准”模型档位。"
+                if is_zh
+                else "CUDA detected. Standard model tier or above is recommended."
+            )
+            if tier == "lite":
+                content += "（当前为轻量档）" if is_zh else " (Current: Lite tier)"
+            self._show_info_bar(
+                "success",
+                "CUDA 可用" if is_zh else "CUDA Available",
+                content,
+                duration=4000,
+            )
+            return
+
+        self._show_info_bar(
+            "info",
+            "CUDA 不可用" if is_zh else "CUDA Unavailable",
+            "未检测到可用 CUDA，建议使用轻量模型档位。" if is_zh else "No CUDA detected, Lite model tier is recommended.",
+            duration=4000,
+        )
 
     def _add_provider(self) -> None:
         """Open dialog to add a new provider."""
@@ -1190,6 +1333,14 @@ class SettingsPage(ScrollArea):
         log_level_values = ["DEBUG", "INFO", "WARNING", "ERROR"]
         log_level = log_level_values[self._log_level_combobox.currentIndex()]
 
+        ocr_mode = self._get_combo_current_data(self._ocr_mode_combo, "local")
+        ocr_model_tier = self._get_combo_current_data(self._ocr_model_tier_combo, "lite")
+        ocr_model_source = self._get_combo_current_data(self._ocr_source_combo, "official")
+        ocr_model_locked_by_user = (
+            getattr(self._main.config, "ocr_model_locked_by_user", False)
+            or ocr_model_tier != getattr(self._main.config, "ocr_model_tier", "lite")
+        )
+
         # Update config
         config = self._main.config.model_copy(
             update={
@@ -1200,6 +1351,11 @@ class SettingsPage(ScrollArea):
                 "default_deck": self._default_deck_edit.text() or "Default",
                 "default_tags": tags,
                 "ocr_correction": self._ocr_correction_switch.isChecked(),
+                "ocr_mode": ocr_mode,
+                "ocr_model_tier": ocr_model_tier,
+                "ocr_model_source": ocr_model_source,
+                "ocr_auto_cuda_upgrade": self._ocr_cuda_auto_card.isChecked(),
+                "ocr_model_locked_by_user": ocr_model_locked_by_user,
                 "llm_temperature": temperature,
                 "llm_max_tokens": self._max_tokens_spin.value(),
                 "proxy_url": self._proxy_edit.text().strip(),
@@ -1207,21 +1363,28 @@ class SettingsPage(ScrollArea):
                 "language": language,
                 "log_level": log_level,
                 "enable_auto_split": self._auto_split_switch.isChecked(),
-                "split_threshold": self._split_threshold_card.value(),
+                "split_threshold": self._split_threshold_spinbox.value(),
             }
         )
+
+        old_theme = self._main.config.theme
+        old_language = self._main.config.language
 
         try:
             save_config(config)
             self._main.config = config
+            configure_ocr_runtime(
+                model_tier=config.ocr_model_tier,
+                model_source=config.ocr_model_source,
+                reset_ocr_instance=True,
+            )
 
             # Apply theme change immediately
-            old_theme = self._main.config.theme
-            if old_theme != theme:
+            if old_theme != theme and hasattr(self._main, "switch_theme"):
                 self._main.switch_theme(theme)
 
             # Apply language change if needed
-            if self._main.config.language != language:
+            if old_language != language and hasattr(self._main, "switch_language"):
                 self._main.switch_language(language)
 
             QMessageBox.information(self, "成功", "配置保存成功")
@@ -1312,60 +1475,6 @@ class SettingsPage(ScrollArea):
                 t("log.export_failed", self._main.config.language),
                 t("log.export_failed_msg", self._main.config.language, error=str(e)),
                 duration=5000,
-            )
-
-    def _update_statistics_display(self) -> None:
-        """Update performance statistics display."""
-        config = self._main.config
-        is_zh = config.language == "zh"
-
-        # Total files
-        files_text = f"{config.total_files_processed} 个文件" if is_zh else f"{config.total_files_processed} files"
-        self._total_files_label.setText(files_text)
-
-        # Average conversion time
-        if config.total_files_processed > 0:
-            avg_conv = config.total_conversion_time / config.total_files_processed
-            conv_text = f"{avg_conv:.2f} 秒" if is_zh else f"{avg_conv:.2f} s"
-        else:
-            conv_text = "暂无数据" if is_zh else "No data"
-        self._avg_conversion_label.setText(conv_text)
-
-        # Average generation time
-        if config.total_cards_generated > 0:
-            avg_gen = config.total_generation_time / config.total_cards_generated
-            gen_text = f"{avg_gen:.2f} 秒" if is_zh else f"{avg_gen:.2f} s"
-        else:
-            gen_text = "暂无数据" if is_zh else "No data"
-        self._avg_generation_label.setText(gen_text)
-
-        # Total cards
-        cards_text = f"{config.total_cards_generated} 张卡片" if is_zh else f"{config.total_cards_generated} cards"
-        self._total_cards_label.setText(cards_text)
-
-    def _reset_statistics(self) -> None:
-        """Reset performance statistics."""
-        from ankismart.ui.i18n import t
-
-        reply = QMessageBox.question(
-            self,
-            t("settings.confirm_reset_stats", self._main.config.language),
-            t("settings.confirm_reset_stats_msg", self._main.config.language),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            self._main.config.total_files_processed = 0
-            self._main.config.total_conversion_time = 0.0
-            self._main.config.total_generation_time = 0.0
-            self._main.config.total_cards_generated = 0
-            save_config(self._main.config)
-            self._update_statistics_display()
-            self._show_info_bar(
-                "success",
-                t("settings.stats_reset_success", self._main.config.language),
-                t("settings.stats_reset_success_msg", self._main.config.language),
-                duration=3000,
             )
 
     def retranslate_ui(self):

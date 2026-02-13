@@ -186,6 +186,8 @@ def _perform_cuda_detection() -> bool:
 def is_cuda_available() -> bool:
     if _cuda_available():
         return True
+    if _has_nvidia_smi_gpu():
+        return True
     return detect_cuda_environment()
 
 

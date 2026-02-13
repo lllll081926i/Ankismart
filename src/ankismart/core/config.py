@@ -68,7 +68,7 @@ CONFIG_PATH: Path = Path(
     os.getenv("ANKISMART_CONFIG_PATH", str(CONFIG_DIR / "config.yaml"))
 ).expanduser().resolve()
 
-_ENCRYPTED_FIELDS: set[str] = {"anki_connect_key"}
+_ENCRYPTED_FIELDS: set[str] = {"anki_connect_key", "ocr_cloud_api_key"}
 _ENCRYPTED_PREFIX: str = "encrypted:"
 
 KNOWN_PROVIDERS: dict[str, str] = {
@@ -98,6 +98,15 @@ class AppConfig(BaseModel):
     default_deck: str = "Default"
     default_tags: list[str] = ["ankismart"]
     ocr_correction: bool = False
+    ocr_mode: str = "local"  # "local" or "cloud" (cloud mode is frontend-only for now)
+    ocr_model_tier: str = "lite"  # "lite" | "standard" | "accuracy"
+    ocr_model_source: str = "official"  # "official" | "cn_mirror"
+    ocr_auto_cuda_upgrade: bool = True
+    ocr_model_locked_by_user: bool = False
+    ocr_cuda_checked_once: bool = False
+    ocr_cloud_provider: str = ""
+    ocr_cloud_endpoint: str = ""
+    ocr_cloud_api_key: str = ""
     log_level: str = "INFO"
     llm_temperature: float = 0.3
     llm_max_tokens: int = 0  # 0 means use provider default
@@ -194,7 +203,7 @@ def _decrypt_field(value: str, field_name: str) -> str:
         ciphertext = value[len(_ENCRYPTED_PREFIX):]
         try:
             return decrypt(ciphertext)
-        except (ValueError, TypeError) as e:
+        except Exception as e:
             logger.warning(
                 f"Failed to decrypt field, resetting to empty: {e}",
                 extra={"field": field_name},

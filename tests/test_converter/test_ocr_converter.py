@@ -13,8 +13,14 @@ from ankismart.converter.ocr_converter import (
     _pdf_to_images,
     _resolve_model_root,
     _resolve_ocr_device,
+    configure_ocr_runtime,
     convert,
     convert_image,
+    detect_cuda_environment,
+    get_missing_ocr_models,
+    is_cuda_available,
+    resolve_ocr_model_pair,
+    resolve_ocr_model_source,
 )
 from ankismart.core.errors import ConvertError, ErrorCode
 
@@ -97,10 +103,47 @@ class TestPdfToImages:
 # ---------------------------------------------------------------------------
 
 class TestOcrConfigHelpers:
+    def test_resolve_ocr_model_pair_for_all_tiers(self) -> None:
+        assert resolve_ocr_model_pair("lite") == ("PP-OCRv5_mobile_det", "PP-OCRv5_mobile_rec")
+        assert resolve_ocr_model_pair("standard") == ("PP-OCRv5_server_det", "PP-OCRv5_mobile_rec")
+        assert resolve_ocr_model_pair("accuracy") == ("PP-OCRv5_server_det", "PP-OCRv5_server_rec")
+
+    def test_resolve_ocr_model_source_alias(self) -> None:
+        assert resolve_ocr_model_source("official") == "huggingface"
+        assert resolve_ocr_model_source("cn_mirror") == "modelscope"
+
+    def test_configure_ocr_runtime_updates_env(self, tmp_path: Path) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "ANKISMART_OCR_MODEL_DIR": str(tmp_path / "models"),
+                "PADDLE_PDX_CACHE_HOME": str(tmp_path / "models"),
+            },
+            clear=True,
+        ):
+            cfg = configure_ocr_runtime(model_tier="standard", model_source="cn_mirror")
+
+            assert cfg["det_model"] == "PP-OCRv5_server_det"
+            assert cfg["rec_model"] == "PP-OCRv5_mobile_rec"
+            assert cfg["source_alias"] == "modelscope"
+            assert get_missing_ocr_models(model_tier="standard", model_source="cn_mirror") == [
+                "PP-OCRv5_server_det",
+                "PP-OCRv5_mobile_rec",
+            ]
+
     def test_auto_prefers_gpu_when_cuda_available(self) -> None:
         with patch("ankismart.converter.ocr_converter._cuda_available", return_value=True):
             with patch.dict("os.environ", {"ANKISMART_OCR_DEVICE": "auto"}, clear=False):
                 assert _resolve_ocr_device() == "gpu:0"
+
+    def test_detect_cuda_environment_false_when_devices_hidden(self) -> None:
+        with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "-1"}, clear=False):
+            assert detect_cuda_environment() is False
+
+    def test_is_cuda_available_uses_nvidia_smi_fallback(self) -> None:
+        with patch("ankismart.converter.ocr_converter._cuda_available", return_value=False):
+            with patch("ankismart.converter.ocr_converter._has_nvidia_smi_gpu", return_value=True):
+                assert is_cuda_available() is True
 
     def test_auto_fallbacks_to_cpu_when_cuda_unavailable(self) -> None:
         with patch("ankismart.converter.ocr_converter._cuda_available", return_value=False):

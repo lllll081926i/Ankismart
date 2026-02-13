@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QVBoxLayout
-from qfluentwidgets import BodyLabel, CaptionLabel, PrimaryPushButton, ScrollArea
+from qfluentwidgets import BodyLabel, CaptionLabel, PrimaryPushButton, ScrollArea, isDarkTheme
 
 from .i18n import t
 from .shortcuts import get_all_shortcuts
@@ -36,7 +36,8 @@ class ShortcutsHelpDialog(QDialog):
 
         # Description
         desc = CaptionLabel(t("shortcuts.help_desc", self._language))
-        desc.setStyleSheet("color: #666666;")
+        desc_color = "#9CA3AF" if isDarkTheme() else "#666666"
+        desc.setStyleSheet(f"color: {desc_color};")
         layout.addWidget(desc)
 
         # Shortcuts list in scroll area
@@ -78,12 +79,18 @@ class ShortcutsHelpDialog(QDialog):
 
     def _create_shortcut_row(self, shortcut: str, description: str):
         """Create a single shortcut row."""
+        dark = isDarkTheme()
+        border_color = "rgba(255, 255, 255, 0.12)" if dark else "#E0E0E0"
+        key_text_color = "#60A5FA" if dark else "#0078D4"
+        key_bg_color = "rgba(255, 255, 255, 0.08)" if dark else "#F0F0F0"
+        desc_text_color = "#E5E7EB" if dark else "#333333"
+
         row_widget = QLabel()
-        row_widget.setStyleSheet("""
+        row_widget.setStyleSheet(f"""
             QLabel {
                 background: transparent;
                 padding: 8px;
-                border-bottom: 1px solid #E0E0E0;
+                border-bottom: 1px solid {border_color};
             }
         """)
 
@@ -93,11 +100,11 @@ class ShortcutsHelpDialog(QDialog):
 
         # Shortcut key
         key_label = BodyLabel(shortcut)
-        key_label.setStyleSheet("""
+        key_label.setStyleSheet(f"""
             font-family: 'Consolas', 'Monaco', monospace;
             font-weight: bold;
-            color: #0078D4;
-            background: #F0F0F0;
+            color: {key_text_color};
+            background: {key_bg_color};
             padding: 4px 8px;
             border-radius: 4px;
         """)
@@ -106,7 +113,7 @@ class ShortcutsHelpDialog(QDialog):
 
         # Description
         desc_label = BodyLabel(description)
-        desc_label.setStyleSheet("color: #333333;")
+        desc_label.setStyleSheet(f"color: {desc_text_color};")
         row_layout.addWidget(desc_label, 1)
 
         return row_widget

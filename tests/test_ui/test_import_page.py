@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from types import SimpleNamespace
+
+from qfluentwidgets import FluentIcon
+
 from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.core.models import BatchConvertResult, ConvertedDocument, MarkdownResult
 from ankismart.ui.import_page import ImportPage
@@ -115,6 +119,19 @@ def _make_page():
     )()
     page._btn_convert = type(
         "_Btn", (), {"setEnabled": lambda self, v: None}
+    )()
+    page._progress_ring = type("_Ring", (), {"show": lambda self: None, "hide": lambda self: None})()
+    page._progress_bar = type(
+        "_Bar", (), {"show": lambda self: None, "hide": lambda self: None, "setValue": lambda self, value: None}
+    )()
+    page._btn_cancel = type(
+        "_Btn",
+        (),
+        {
+            "show": lambda self: None,
+            "hide": lambda self: None,
+            "setEnabled": lambda self, value: None,
+        },
     )()
     return page
 
@@ -231,6 +248,21 @@ def test_switch_to_preview_loads_documents_when_supported(monkeypatch):
     assert window._preview_page.loaded is window._batch_result
 
 
+def test_sidebar_theme_icon_mapping() -> None:
+    from ankismart.ui.main_window import MainWindow
+
+    window = MainWindow.__new__(MainWindow)
+
+    window.config = SimpleNamespace(theme="light")
+    assert MainWindow._get_theme_button_icon(window) == FluentIcon.BRIGHTNESS
+
+    window.config = SimpleNamespace(theme="dark")
+    assert MainWindow._get_theme_button_icon(window) == FluentIcon.QUIET_HOURS
+
+    window.config = SimpleNamespace(theme="auto")
+    assert MainWindow._get_theme_button_icon(window) == FluentIcon.PROJECTOR
+
+
 def test_batch_convert_done_shows_errors(monkeypatch):
     page = _make_page()
     warnings_shown = []
@@ -299,10 +331,16 @@ def test_start_convert_uses_batch_worker(monkeypatch):
             self.file_progress = type(
                 "_Sig", (), {"connect": lambda self, fn: None}
             )()
+            self.page_progress = type(
+                "_Sig", (), {"connect": lambda self, fn: None}
+            )()
             self.finished = type(
                 "_Sig", (), {"connect": lambda self, fn: None}
             )()
             self.error = type(
+                "_Sig", (), {"connect": lambda self, fn: None}
+            )()
+            self.cancelled = type(
                 "_Sig", (), {"connect": lambda self, fn: None}
             )()
 
@@ -323,6 +361,72 @@ def test_start_convert_uses_batch_worker(monkeypatch):
 
     assert len(captured["file_paths"]) == 2
     assert captured["file_paths"][0] == Path("a.md")
+
+
+def test_start_convert_skips_ocr_checks_for_non_ocr_files(monkeypatch):
+    page = _make_page()
+    page._file_paths = [Path("a.md"), Path("b.docx")]
+
+    prepare_called = {"value": False}
+    ensure_called = {"value": False}
+    started = {"value": False}
+
+    monkeypatch.setattr(ImportPage, "_prepare_local_ocr_runtime", lambda self: prepare_called.update(value=True) or True)
+    monkeypatch.setattr(ImportPage, "_ensure_ocr_models_ready", lambda self: ensure_called.update(value=True) or True)
+    monkeypatch.setattr("ankismart.ui.import_page.save_config", lambda cfg: None)
+
+    class _FakeBatchWorker:
+        def __init__(self, file_paths, config=None):
+            self.file_progress = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.page_progress = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.finished = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.error = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.cancelled = type("_Sig", (), {"connect": lambda self, fn: None})()
+
+        def start(self):
+            started["value"] = True
+
+    monkeypatch.setattr("ankismart.ui.import_page.BatchConvertWorker", _FakeBatchWorker)
+
+    ImportPage._start_convert(page)
+
+    assert prepare_called["value"] is False
+    assert ensure_called["value"] is False
+    assert started["value"] is True
+
+
+def test_start_convert_checks_ocr_for_pdf(monkeypatch):
+    page = _make_page()
+    page._file_paths = [Path("a.pdf")]
+
+    calls = {"prepare": 0, "ensure": 0}
+    monkeypatch.setattr(ImportPage, "_prepare_local_ocr_runtime", lambda self: calls.__setitem__("prepare", calls["prepare"] + 1) or True)
+    monkeypatch.setattr(ImportPage, "_ensure_ocr_models_ready", lambda self: calls.__setitem__("ensure", calls["ensure"] + 1) or False)
+
+    ImportPage._start_convert(page)
+
+    assert calls["prepare"] == 1
+    assert calls["ensure"] == 1
+
+
+def test_apply_cuda_strategy_upgrades_lite_once(monkeypatch):
+    page = _make_page()
+    page._main.config.ocr_model_tier = "lite"
+    page._main.config.ocr_auto_cuda_upgrade = True
+    page._main.config.ocr_model_locked_by_user = False
+    page._main.config.ocr_cuda_checked_once = False
+
+    monkeypatch.setattr("ankismart.ui.import_page.is_cuda_available", lambda: True)
+    monkeypatch.setattr("ankismart.ui.import_page.save_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.QMessageBox",
+        type("_MB", (), {"information": staticmethod(lambda *a, **k: None)}),
+    )
+
+    ImportPage._apply_cuda_strategy_once(page)
+
+    assert page._main.config.ocr_model_tier == "standard"
+    assert page._main.config.ocr_cuda_checked_once is True
 
 
 def test_start_convert_rejects_empty_api_key_for_non_ollama(monkeypatch):
@@ -360,8 +464,10 @@ def test_start_convert_allows_empty_api_key_for_ollama(monkeypatch):
     class _FakeBatchWorker:
         def __init__(self, file_paths, config=None):
             self.file_progress = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.page_progress = type("_Sig", (), {"connect": lambda self, fn: None})()
             self.finished = type("_Sig", (), {"connect": lambda self, fn: None})()
             self.error = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.cancelled = type("_Sig", (), {"connect": lambda self, fn: None})()
 
         def start(self):
             started["value"] = True

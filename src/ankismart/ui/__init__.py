@@ -5,6 +5,7 @@ from .main_window import MainWindow
 from .import_page import ImportPage
 from .preview_page import PreviewPage
 from .result_page import ResultPage
+from .performance_page import PerformancePage
 from .settings_page import SettingsPage
 from .i18n import get_text
 from .workers import ConvertWorker, GenerateWorker, PushWorker, ExportWorker
@@ -16,6 +17,7 @@ __all__ = [
     "ImportPage",
     "PreviewPage",
     "ResultPage",
+    "PerformancePage",
     "SettingsPage",
     "get_text",
     "ConvertWorker",

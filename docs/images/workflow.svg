@@ -1,0 +1,47 @@
+<svg width="1400" height="280" viewBox="0 0 1400 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ankismart workflow">
+  <defs>
+    <linearGradient id="node" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#E2E8F0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1400" height="280" fill="#F1F5F9" rx="18"/>
+
+  <g font-family="Segoe UI, Arial, sans-serif" fill="#0F172A">
+    <rect x="40" y="80" width="220" height="120" rx="14" fill="url(#node)" stroke="#CBD5E1"/>
+    <text x="150" y="128" text-anchor="middle" font-size="24" font-weight="700">导入</text>
+    <text x="150" y="160" text-anchor="middle" font-size="14" fill="#475569">文档 / PDF / 图片</text>
+
+    <rect x="320" y="80" width="220" height="120" rx="14" fill="url(#node)" stroke="#CBD5E1"/>
+    <text x="430" y="128" text-anchor="middle" font-size="24" font-weight="700">OCR 与解析</text>
+    <text x="430" y="160" text-anchor="middle" font-size="14" fill="#475569">按需下载模型</text>
+
+    <rect x="600" y="80" width="220" height="120" rx="14" fill="url(#node)" stroke="#CBD5E1"/>
+    <text x="710" y="128" text-anchor="middle" font-size="24" font-weight="700">生成卡片</text>
+    <text x="710" y="160" text-anchor="middle" font-size="14" fill="#475569">多策略配比</text>
+
+    <rect x="880" y="80" width="220" height="120" rx="14" fill="url(#node)" stroke="#CBD5E1"/>
+    <text x="990" y="128" text-anchor="middle" font-size="24" font-weight="700">预览与编辑</text>
+    <text x="990" y="160" text-anchor="middle" font-size="14" fill="#475569">批量修订标签与牌组</text>
+
+    <rect x="1160" y="80" width="200" height="120" rx="14" fill="url(#node)" stroke="#CBD5E1"/>
+    <text x="1260" y="128" text-anchor="middle" font-size="24" font-weight="700">导出 / 推送</text>
+    <text x="1260" y="160" text-anchor="middle" font-size="14" fill="#475569">AnkiConnect / APKG</text>
+  </g>
+
+  <g stroke="#3B82F6" stroke-width="4" fill="none" stroke-linecap="round">
+    <path d="M260 140 L312 140"/>
+    <path d="M540 140 L592 140"/>
+    <path d="M820 140 L872 140"/>
+    <path d="M1100 140 L1152 140"/>
+  </g>
+
+  <g fill="#3B82F6">
+    <polygon points="310,134 322,140 310,146"/>
+    <polygon points="590,134 602,140 590,146"/>
+    <polygon points="870,134 882,140 870,146"/>
+    <polygon points="1150,134 1162,140 1150,146"/>
+  </g>
+</svg>
+

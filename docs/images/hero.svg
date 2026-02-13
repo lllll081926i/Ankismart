@@ -1,0 +1,37 @@
+<svg width="1600" height="420" viewBox="0 0 1600 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ankismart">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#1D4ED8" />
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E2E8F0" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.88"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="420" fill="url(#bg)" rx="20"/>
+  <circle cx="1420" cy="80" r="170" fill="#93C5FD" opacity="0.16"/>
+  <circle cx="150" cy="360" r="180" fill="#60A5FA" opacity="0.12"/>
+
+  <text x="90" y="150" fill="#FFFFFF" font-size="64" font-family="Segoe UI, Arial, sans-serif" font-weight="700">Ankismart</text>
+  <text x="90" y="205" fill="#DBEAFE" font-size="28" font-family="Segoe UI, Arial, sans-serif">Document to Anki cards, with OCR and review workflow</text>
+
+  <g transform="translate(820,70)">
+    <rect x="0" y="0" width="680" height="280" rx="20" fill="url(#card)"/>
+
+    <rect x="36" y="36" width="160" height="50" rx="10" fill="#2563EB"/>
+    <text x="116" y="68" text-anchor="middle" fill="#FFFFFF" font-size="18" font-family="Segoe UI, Arial, sans-serif">Import</text>
+
+    <rect x="256" y="36" width="160" height="50" rx="10" fill="#1D4ED8"/>
+    <text x="336" y="68" text-anchor="middle" fill="#FFFFFF" font-size="18" font-family="Segoe UI, Arial, sans-serif">OCR</text>
+
+    <rect x="476" y="36" width="160" height="50" rx="10" fill="#1E40AF"/>
+    <text x="556" y="68" text-anchor="middle" fill="#FFFFFF" font-size="18" font-family="Segoe UI, Arial, sans-serif">Generate</text>
+
+    <rect x="36" y="124" width="600" height="120" rx="14" fill="#FFFFFF"/>
+    <text x="66" y="165" fill="#1E293B" font-size="20" font-family="Segoe UI, Arial, sans-serif" font-weight="600">Desktop-first workflow</text>
+    <text x="66" y="198" fill="#475569" font-size="16" font-family="Segoe UI, Arial, sans-serif">Batch convert · Strategy mix · Duplicate checks · APKG export</text>
+  </g>
+</svg>
+

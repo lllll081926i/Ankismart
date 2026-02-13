@@ -125,8 +125,7 @@ class MainWindow(FluentWindow):
             NavigationItemPosition.TOP
         )
 
-        self._theme_nav_button = NavigationToolButton(FluentIcon.BRUSH)
-        self._theme_nav_button.setIcon(self._get_theme_button_icon())
+        self._theme_nav_button = NavigationToolButton(self._get_theme_button_icon())
         self.navigationInterface.addWidget(
             "themeModeButton",
             self._theme_nav_button,
@@ -141,6 +140,7 @@ class MainWindow(FluentWindow):
             labels["settings"],
             NavigationItemPosition.BOTTOM
         )
+        self._update_theme_button_tooltip()
 
     def _get_theme_button_tooltip(self) -> str:
         """Get localized tooltip text for sidebar theme mode button."""
@@ -259,6 +259,8 @@ class MainWindow(FluentWindow):
             self.result_page.update_theme()
         if hasattr(self.performance_page, 'update_theme'):
             self.performance_page.update_theme()
+        if hasattr(self.card_preview_page, 'update_theme'):
+            self.card_preview_page.update_theme()
         if hasattr(self.settings_page, 'update_theme'):
             self.settings_page.update_theme()
         self._update_theme_button_tooltip()

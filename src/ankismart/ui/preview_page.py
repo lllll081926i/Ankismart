@@ -26,8 +26,8 @@ from ankismart.card_gen.llm_client import LLMClient
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
 from ankismart.ui.workers import BatchGenerateWorker, PushWorker
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
-from ankismart.ui.utils import ProgressMixin
-from ankismart.ui.styles import SPACING_MEDIUM, MARGIN_STANDARD, MARGIN_SMALL
+from ankismart.ui.utils import ProgressMixin, split_tags_text
+from ankismart.ui.styles import SPACING_MEDIUM, MARGIN_STANDARD, MARGIN_SMALL, apply_page_title_style
 
 if TYPE_CHECKING:
     from ankismart.ui.main_window import MainWindow
@@ -140,7 +140,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
         title = BodyLabel()
         title.setText("文档预览与编辑")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        apply_page_title_style(title)
         title_bar.addWidget(title)
 
         title_bar.addStretch()
@@ -329,7 +329,7 @@ class PreviewPage(ProgressMixin, QWidget):
         generation_config = self._main.import_page.build_generation_config()
         deck_name = self._main.import_page._deck_combo.currentText().strip()
         tags_text = self._main.import_page._tags_input.text().strip()
-        tags = [t.strip() for t in tags_text.split(",") if t.strip()]
+        tags = split_tags_text(tags_text)
 
         if not deck_name:
             QMessageBox.warning(

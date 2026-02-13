@@ -1,178 +1,276 @@
-"""
-Ankismart 打包脚本
-自动构建安装版和便携版
-"""
-import os
-import sys
+from __future__ import annotations
+
+import argparse
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
-def print_header(text):
-    """打印标题"""
-    print("\n" + "=" * 70)
-    print(f"  {text}")
-    print("=" * 70 + "\n")
 
-def run_command(cmd, description):
-    """运行命令并显示进度"""
-    print(f">>> {description}")
-    print(f"    命令: {' '.join(cmd)}")
+PROJECT_ROOT = Path(__file__).resolve().parent
+DIST_DIR = PROJECT_ROOT / "dist"
+BUILD_DIR = PROJECT_ROOT / "build"
+RELEASE_DIR = DIST_DIR / "release"
 
-    result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+APP_BUILD_DIR = DIST_DIR / "Ankismart"
+STAGED_APP_DIR = RELEASE_DIR / "app"
+PORTABLE_ROOT = RELEASE_DIR / "portable"
+INSTALLER_ROOT = RELEASE_DIR / "installer"
 
-    if result.returncode != 0:
-        print(f"    ❌ 失败!")
-        print(f"    错误输出:\n{result.stderr}")
-        return False
+UNUSED_DEPENDENCY_DIRS = {
+    "matplotlib",
+    "pandas",
+    "scipy",
+    "sklearn",
+    "jupyter",
+    "notebook",
+    "IPython",
+    "PyQt5",
+    "PySide2",
+    "PySide6",
+    "tkinter",
+}
 
-    print(f"    ✓ 完成")
-    return True
+UNUSED_BUILD_TOOL_PREFIXES = ("pip", "setuptools", "wheel")
 
-def clean_build():
-    """清理构建目录"""
-    print_header("清理构建目录")
 
-    dirs_to_clean = ['build', 'dist']
-    for dir_name in dirs_to_clean:
-        dir_path = Path(dir_name)
-        if dir_path.exists():
-            print(f"删除目录: {dir_name}/")
-            shutil.rmtree(dir_path)
+def _print(msg: str) -> None:
+    print(f"[build] {msg}")
 
-    print("✓ 清理完成")
 
-def build_with_pyinstaller():
-    """使用 PyInstaller 构建应用"""
-    print_header("使用 PyInstaller 构建应用")
+def run(cmd: list[str], description: str) -> None:
+    _print(f"{description}: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True, cwd=PROJECT_ROOT)
 
-    if not Path('ankismart.spec').exists():
-        print("❌ 错误: 找不到 ankismart.spec 文件")
-        return False
 
-    cmd = ['pyinstaller', '--clean', 'ankismart.spec']
-    return run_command(cmd, "运行 PyInstaller")
+def clean() -> None:
+    for path in (BUILD_DIR, DIST_DIR):
+        if path.exists():
+            _print(f"清理目录: {path}")
+            shutil.rmtree(path)
 
-def create_portable_version():
-    """创建便携版"""
-    print_header("创建便携版")
 
-    dist_dir = Path('dist/Ankismart')
-    if not dist_dir.exists():
-        print("❌ 错误: 找不到构建输出目录")
-        return False
+def pyinstaller_build(spec_file: Path) -> None:
+    if not spec_file.exists():
+        raise FileNotFoundError(f"未找到 spec 文件: {spec_file}")
 
-    # 运行便携版打包脚本
-    cmd = [sys.executable, 'build_portable.py']
-    return run_command(cmd, "配置便携版")
+    run(
+        [sys.executable, "-m", "PyInstaller", "--clean", "-y", str(spec_file)],
+        "执行 PyInstaller",
+    )
 
-def create_installer():
-    """创建安装程序"""
-    print_header("创建安装程序")
+    if not APP_BUILD_DIR.exists():
+        raise FileNotFoundError(f"PyInstaller 输出不存在: {APP_BUILD_DIR}")
 
-    # 检查 Inno Setup 是否安装
-    inno_setup_paths = [
-        r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
-        r"C:\Program Files\Inno Setup 6\ISCC.exe",
+
+def ensure_runtime_dirs(target_dir: Path) -> None:
+    for name in ("config", "data", "logs", "cache"):
+        (target_dir / name).mkdir(parents=True, exist_ok=True)
+
+
+def remove_ocr_models(target_dir: Path) -> None:
+    candidates = [
+        target_dir / "model",
+        target_dir / "models",
+        target_dir / ".paddleocr",
+        target_dir / "paddleocr_models",
     ]
 
-    iscc_path = None
-    for path in inno_setup_paths:
-        if Path(path).exists():
-            iscc_path = path
-            break
+    for path in candidates:
+        if path.exists():
+            _print(f"移除 OCR 模型目录: {path}")
+            shutil.rmtree(path, ignore_errors=True)
 
-    if not iscc_path:
-        print("⚠ 警告: 未找到 Inno Setup")
-        print("   请从 https://jrsoftware.org/isdl.php 下载并安装 Inno Setup")
-        print("   安装后可以手动运行: ISCC.exe ankismart.iss")
-        return False
 
-    if not Path('ankismart.iss').exists():
-        print("❌ 错误: 找不到 ankismart.iss 文件")
-        return False
+def prune_unused_dependencies(target_dir: Path) -> None:
+    for dep_name in UNUSED_DEPENDENCY_DIRS:
+        for path in target_dir.rglob(dep_name):
+            if path.is_dir():
+                _print(f"移除非必要依赖目录: {path}")
+                shutil.rmtree(path, ignore_errors=True)
 
-    # 创建安装程序输出目录
-    Path('dist/installer').mkdir(parents=True, exist_ok=True)
+    for path in target_dir.rglob("__pycache__"):
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
 
-    cmd = [iscc_path, 'ankismart.iss']
-    return run_command(cmd, "编译安装程序")
+    for extension in ("*.pyc", "*.pyo", "*.pyd.debug"):
+        for path in target_dir.rglob(extension):
+            if path.is_file():
+                path.unlink(missing_ok=True)
 
-def show_results():
-    """显示构建结果"""
-    print_header("构建结果")
+    for path in sorted(target_dir.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        name = path.name.lower()
+        if not any(name == prefix or name.startswith(f"{prefix}-") for prefix in UNUSED_BUILD_TOOL_PREFIXES):
+            continue
 
-    results = []
+        if path.is_dir():
+            _print(f"移除构建工具目录: {path}")
+            shutil.rmtree(path, ignore_errors=True)
+        elif path.is_file():
+            _print(f"移除构建工具文件: {path}")
+            path.unlink(missing_ok=True)
 
-    # 检查便携版
-    portable_dir = Path('dist/Ankismart')
-    portable_zip = Path('dist/Ankismart-Portable.zip')
+
+def stage_app_files() -> None:
+    if STAGED_APP_DIR.exists():
+        shutil.rmtree(STAGED_APP_DIR)
+
+    STAGED_APP_DIR.mkdir(parents=True, exist_ok=True)
+    _print(f"整理应用文件到: {STAGED_APP_DIR}")
+
+    for item in APP_BUILD_DIR.iterdir():
+        destination = STAGED_APP_DIR / item.name
+        if item.is_dir():
+            shutil.copytree(item, destination)
+        else:
+            shutil.copy2(item, destination)
+
+    remove_ocr_models(STAGED_APP_DIR)
+    prune_unused_dependencies(STAGED_APP_DIR)
+    ensure_runtime_dirs(STAGED_APP_DIR)
+
+
+def create_portable_package(version: str) -> Path:
+    portable_dir = PORTABLE_ROOT / f"Ankismart-Portable-{version}"
 
     if portable_dir.exists():
-        results.append(f"✓ 便携版目录: {portable_dir}")
+        shutil.rmtree(portable_dir)
 
-    if portable_zip.exists():
-        size_mb = portable_zip.stat().st_size / (1024 * 1024)
-        results.append(f"✓ 便携版压缩包: {portable_zip} ({size_mb:.1f} MB)")
+    portable_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(STAGED_APP_DIR, portable_dir)
 
-    # 检查安装程序
-    installer_dir = Path('dist/installer')
-    if installer_dir.exists():
-        installers = list(installer_dir.glob('*.exe'))
-        for installer in installers:
-            size_mb = installer.stat().st_size / (1024 * 1024)
-            results.append(f"✓ 安装程序: {installer} ({size_mb:.1f} MB)")
+    (portable_dir / ".portable").write_text(
+        "portable_mode: true\nconfig_dir: ./config\ndata_dir: ./data\nlogs_dir: ./logs\ncache_dir: ./cache\n",
+        encoding="utf-8",
+    )
 
-    if results:
-        for result in results:
-            print(result)
-    else:
-        print("❌ 未找到构建输出文件")
+    ensure_runtime_dirs(portable_dir)
+    remove_ocr_models(portable_dir)
 
-    print()
+    readme = portable_dir / "README-Portable.txt"
+    readme.write_text(
+        "Ankismart 便携版\n\n"
+        "目录说明:\n"
+        "- Ankismart.exe: 主程序\n"
+        "- config/: 配置文件\n"
+        "- data/: 业务数据\n"
+        "- logs/: 日志\n"
+        "- cache/: 缓存\n"
+        "\n"
+        "说明:\n"
+        "- 未内置 OCR 模型，首次使用 OCR 时按需下载。\n"
+        "- 所有运行数据都保存在当前目录。\n",
+        encoding="utf-8",
+    )
 
-def main():
-    """主函数"""
-    print_header("Ankismart 打包工具")
+    archive_base = portable_dir.parent / portable_dir.name
+    archive_file = shutil.make_archive(str(archive_base), "zip", portable_dir.parent, portable_dir.name)
+    _print(f"便携版压缩包: {archive_file}")
+    return portable_dir
 
-    # 检查是否在项目根目录
-    if not Path('pyproject.toml').exists():
-        print("❌ 错误: 请在项目根目录运行此脚本")
-        sys.exit(1)
 
-    # 询问是否清理
-    response = input("是否清理之前的构建? (y/N): ").strip().lower()
-    if response == 'y':
-        clean_build()
+def resolve_iscc() -> Path | None:
+    env_path = Path((
+        Path(sys.executable).parent / "ISCC.exe"
+    ))
+    if env_path.exists():
+        return env_path
 
-    # 构建应用
-    if not build_with_pyinstaller():
-        print("\n❌ PyInstaller 构建失败")
-        sys.exit(1)
+    candidates = [
+        Path("C:/Program Files (x86)/Inno Setup 6/ISCC.exe"),
+        Path("C:/Program Files/Inno Setup 6/ISCC.exe"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
-    # 创建便携版
-    if not create_portable_version():
-        print("\n❌ 便携版创建失败")
-        sys.exit(1)
 
-    # 创建安装程序
-    create_installer()  # 即使失败也继续，因为可能没有安装 Inno Setup
+def create_installer(version: str) -> Path | None:
+    iss_path = PROJECT_ROOT / "ankismart.iss"
+    if not iss_path.exists():
+        raise FileNotFoundError(f"未找到安装脚本: {iss_path}")
 
-    # 显示结果
-    show_results()
+    iscc = resolve_iscc()
+    if iscc is None:
+        _print("未找到 Inno Setup，跳过安装版构建。")
+        return None
 
-    print_header("打包完成!")
-    print("提示: 如果需要创建安装程序，请确保已安装 Inno Setup")
-    print("      下载地址: https://jrsoftware.org/isdl.php")
+    INSTALLER_ROOT.mkdir(parents=True, exist_ok=True)
 
-if __name__ == '__main__':
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\n用户取消操作")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ 发生错误: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    run(
+        [
+            str(iscc),
+            f"/DMyAppVersion={version}",
+            f"/DSourceDir={STAGED_APP_DIR}",
+            f"/DOutputDir={INSTALLER_ROOT}",
+            str(iss_path),
+        ],
+        "构建安装版",
+    )
+
+    installers = sorted(INSTALLER_ROOT.glob("*.exe"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return installers[0] if installers else None
+
+
+def read_version(pyproject_path: Path) -> str:
+    for line in pyproject_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("version ="):
+            return stripped.split("=", 1)[1].strip().strip('"')
+    return "0.1.0"
+
+
+def verify_layout() -> None:
+    required = [
+        STAGED_APP_DIR,
+        PORTABLE_ROOT,
+    ]
+    for path in required:
+        if not path.exists():
+            raise RuntimeError(f"发布目录缺失: {path}")
+
+    model_paths = [
+        STAGED_APP_DIR / "model",
+        STAGED_APP_DIR / "models",
+        STAGED_APP_DIR / ".paddleocr",
+    ]
+    for path in model_paths:
+        if path.exists():
+            raise RuntimeError(f"检测到被打包的 OCR 模型目录: {path}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="构建 Ankismart 安装版 + 便携版")
+    parser.add_argument("--clean", action="store_true", help="构建前清理 build/dist")
+    parser.add_argument("--skip-installer", action="store_true", help="跳过安装版构建")
+    parser.add_argument("--spec", default="ankismart.spec", help="PyInstaller spec 文件")
+    args = parser.parse_args()
+
+    if args.clean:
+        clean()
+
+    version = read_version(PROJECT_ROOT / "pyproject.toml")
+    _print(f"版本: {version}")
+
+    pyinstaller_build(PROJECT_ROOT / args.spec)
+    stage_app_files()
+
+    portable_dir = create_portable_package(version)
+    installer_file = None if args.skip_installer else create_installer(version)
+
+    verify_layout()
+
+    _print("构建完成")
+    _print(f"应用分发目录: {STAGED_APP_DIR}")
+    _print(f"便携版目录: {portable_dir}")
+    if installer_file is not None:
+        _print(f"安装版文件: {installer_file}")
+    elif not args.skip_installer:
+        _print("安装版未生成（通常是本机未安装 Inno Setup）")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

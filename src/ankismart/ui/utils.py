@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from PyQt6.QtWidgets import QWidget
@@ -54,7 +55,6 @@ def format_card_title(card_fields: dict[str, str], max_length: int = 50) -> str:
     title = card_fields.get("Front") or card_fields.get("Text") or "未命名卡片"
 
     # Strip HTML tags for display
-    import re
     title = re.sub(r"<[^>]+>", "", title)
 
     # Truncate if too long
@@ -62,6 +62,13 @@ def format_card_title(card_fields: dict[str, str], max_length: int = 50) -> str:
         title = title[:max_length] + "..."
 
     return title.strip()
+
+
+def split_tags_text(tags_text: str) -> list[str]:
+    """Split tags by both English and Chinese commas and trim blanks."""
+    if not tags_text.strip():
+        return []
+    return [part.strip() for part in re.split(r"[，,]", tags_text) if part.strip()]
 
 
 def validate_config(config: AppConfig) -> tuple[bool, str]:
