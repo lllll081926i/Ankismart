@@ -39,7 +39,7 @@ Ankismart 是一个桌面端智能制卡工具：导入文档 → 提取内容�
 #### 1) 环境准备
 
 - Python `3.11+`
-- 建议使用虚拟环境（Windows / Linux / macOS 均可）
+- 建议使用虚拟环境
 
 #### 2) 安装依赖
 
@@ -59,7 +59,6 @@ python -m ankismart.ui.app
 
 - 安装版（Inno Setup，可选）
 - 便携版（ZIP）
-- 且**不打包 OCR 模型**（首次 OCR 时按需下载）
 
 ```bash
 # 完整构建（若本机安装了 Inno Setup，会同时产出安装包）
@@ -80,13 +79,6 @@ dist/release/
 └─ installer/
    └─ Ankismart-Setup-x.y.z.exe
 ```
-
-### 文档
-
-- 使用指南：`docs/user-guide.md`
-- 常见问题：`docs/faq.md`
-- 架构说明：`docs/architecture.md`
-- 变更日志：`docs/changelog.md`
 
 ### 技术栈
 
@@ -139,12 +131,6 @@ dist/release/
 ├─ portable/
 └─ installer/
 ```
-
-### Docs
-
-- User Guide: `docs/user-guide-en.md`
-- FAQ: `docs/faq.md`
-- Architecture: `docs/architecture.md`
 
 </details>
 
