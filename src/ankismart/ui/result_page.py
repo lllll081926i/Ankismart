@@ -614,7 +614,7 @@ class ResultPage(QWidget):
         config = self._main.config
         client = AnkiConnectClient(
             url=config.anki_connect_url,
-            api_key=config.anki_connect_key,
+            key=config.anki_connect_key,
             proxy_url=config.proxy_url,
         )
         gateway = AnkiGateway(client)
@@ -982,7 +982,7 @@ class ResultPage(QWidget):
         config = self._main.config
         client = AnkiConnectClient(
             url=config.anki_connect_url,
-            api_key=config.anki_connect_key,
+            key=config.anki_connect_key,
             proxy_url=config.proxy_url,
         )
         gateway = AnkiGateway(client)

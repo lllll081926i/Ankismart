@@ -52,7 +52,7 @@ english.CreateDesktopShortcutOnFinish=Create desktop shortcut
 
 [Files]
 Source: "{#SourceDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "model\*;models\*;.paddleocr\*;paddleocr_models\*"
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "model\*,models\*,.paddleocr\*,paddleocr_models\*,ocr_models\*,paddle\*,paddleocr\*,paddlex\*,cv2\*,*paddle*.dist-info\*"
 
 [Dirs]
 Name: "{app}\config"

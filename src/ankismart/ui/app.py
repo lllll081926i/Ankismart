@@ -7,8 +7,12 @@ settings, and launches the main window.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
+
+# Set environment variables as early as possible to avoid startup delays
+os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "1")
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+import threading
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -235,6 +236,7 @@ class BatchConvertWorker(QThread):
     page_progress = pyqtSignal(str, int, int)  # file_name, current_page, total_pages
     ocr_progress = pyqtSignal(str)
     file_error = pyqtSignal(str)
+    file_completed = pyqtSignal(str, object)  # file_name, ConvertedDocument
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
     cancelled = pyqtSignal()
@@ -254,6 +256,7 @@ class BatchConvertWorker(QThread):
     def run(self) -> None:
         import time
         from ankismart.core.config import save_config
+        from ankismart.converter.detector import detect_file_type
 
         try:
             self._start_time = time.time()
@@ -261,7 +264,28 @@ class BatchConvertWorker(QThread):
             errors: list[str] = []
             total = len(self._file_paths)
 
-            for index, file_path in enumerate(self._file_paths, 1):
+            # Separate files by type
+            text_files: list[Path] = []
+            pdf_files: list[Path] = []
+            image_files: list[Path] = []
+            other_files: list[Path] = []
+
+            for file_path in self._file_paths:
+                try:
+                    file_type = detect_file_type(file_path)
+                    if file_type == "image":
+                        image_files.append(file_path)
+                    elif file_type == "pdf":
+                        pdf_files.append(file_path)
+                    elif file_type in {"markdown", "text", "docx", "pptx"}:
+                        text_files.append(file_path)
+                    else:
+                        other_files.append(file_path)
+                except Exception:
+                    other_files.append(file_path)
+
+            # Process text files first (fast, direct to MD)
+            for index, file_path in enumerate(text_files, 1):
                 if self._cancelled:
                     self.cancelled.emit()
                     return
@@ -272,9 +296,56 @@ class BatchConvertWorker(QThread):
                 if converted is None:
                     continue
 
-                documents.append(
-                    ConvertedDocument(result=converted, file_name=file_path.name)
-                )
+                doc = ConvertedDocument(result=converted, file_name=file_path.name)
+                documents.append(doc)
+                self.file_completed.emit(file_path.name, doc)
+
+            # Process PDF files (check text layer first)
+            for index, file_path in enumerate(pdf_files, len(text_files) + 1):
+                if self._cancelled:
+                    self.cancelled.emit()
+                    return
+
+                self.file_progress.emit(file_path.name, index, total)
+
+                converted = self._convert_with_retry(file_path)
+                if converted is None:
+                    continue
+
+                doc = ConvertedDocument(result=converted, file_name=file_path.name)
+                documents.append(doc)
+                self.file_completed.emit(file_path.name, doc)
+
+            # Merge all images into one PDF and OCR
+            if image_files:
+                if self._cancelled:
+                    self.cancelled.emit()
+                    return
+
+                index = len(text_files) + len(pdf_files) + 1
+                self.file_progress.emit("图片合集", index, total)
+
+                merged_result = self._merge_and_convert_images(image_files)
+                if merged_result is not None:
+                    doc = ConvertedDocument(result=merged_result, file_name="图片合集")
+                    documents.append(doc)
+                    self.file_completed.emit("图片合集", doc)
+
+            # Process other files (convert to PDF then OCR)
+            for index, file_path in enumerate(other_files, len(text_files) + len(pdf_files) + (1 if image_files else 0) + 1):
+                if self._cancelled:
+                    self.cancelled.emit()
+                    return
+
+                self.file_progress.emit(file_path.name, index, total)
+
+                converted = self._convert_with_retry(file_path)
+                if converted is None:
+                    continue
+
+                doc = ConvertedDocument(result=converted, file_name=file_path.name)
+                documents.append(doc)
+                self.file_completed.emit(file_path.name, doc)
 
             if self._cancelled:
                 self.cancelled.emit()
@@ -292,6 +363,98 @@ class BatchConvertWorker(QThread):
         except Exception as exc:
             if not self._cancelled:
                 self.error.emit(str(exc))
+
+    def _merge_and_convert_images(self, image_files: list[Path]) -> MarkdownResult | None:
+        """Merge multiple images into one PDF and convert via OCR."""
+        try:
+            from PIL import Image
+            import pypdfium2 as pdfium
+            import tempfile
+            import os
+
+            self.ocr_progress.emit(f"正在合并 {len(image_files)} 张图片...")
+
+            # Create temporary PDF
+            temp_pdf = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+            temp_pdf_path = Path(temp_pdf.name)
+            temp_pdf.close()
+
+            try:
+                # Load all images
+                images = []
+                for img_path in image_files:
+                    try:
+                        img = Image.open(img_path)
+                        # Convert to RGB if necessary
+                        if img.mode != 'RGB':
+                            img = img.convert('RGB')
+                        images.append(img)
+                    except Exception as e:
+                        self.ocr_progress.emit(f"无法加载图片 {img_path.name}: {e}")
+                        continue
+
+                if not images:
+                    self.file_error.emit("图片合集: 没有可用的图片")
+                    return None
+
+                # Save as PDF
+                if len(images) == 1:
+                    images[0].save(temp_pdf_path, "PDF", resolution=100.0)
+                else:
+                    images[0].save(
+                        temp_pdf_path,
+                        "PDF",
+                        resolution=100.0,
+                        save_all=True,
+                        append_images=images[1:]
+                    )
+
+                # Close images
+                for img in images:
+                    img.close()
+
+                self.ocr_progress.emit("图片合并完成，开始 OCR 识别...")
+
+                # Convert PDF via OCR
+                converter_cls = DocumentConverter
+                if converter_cls is None:
+                    from ankismart.converter.converter import DocumentConverter as converter_cls
+
+                converter = converter_cls()
+
+                def progress_callback(*args):
+                    if len(args) == 3:
+                        current_page, total_pages, message = args
+                        self.page_progress.emit("图片合集", int(current_page), int(total_pages))
+                        self.ocr_progress.emit(str(message))
+                        return
+
+                    if len(args) == 1:
+                        self.ocr_progress.emit(str(args[0]))
+                        return
+
+                    if len(args) >= 2:
+                        current_page, total_pages = args[:2]
+                        self.page_progress.emit("图片合集", int(current_page), int(total_pages))
+
+                result = converter.convert(temp_pdf_path, progress_callback=progress_callback)
+
+                # Update source path to indicate it's from merged images
+                result.source_path = "图片合集"
+
+                return result
+
+            finally:
+                # Clean up temporary PDF
+                try:
+                    if temp_pdf_path.exists():
+                        os.unlink(temp_pdf_path)
+                except Exception:
+                    pass
+
+        except Exception as exc:
+            self.file_error.emit(f"图片合集: {exc}")
+            return None
 
     def _convert_with_retry(self, file_path: Path) -> MarkdownResult | None:
         last_error: Exception | None = None
@@ -333,10 +496,11 @@ class BatchConvertWorker(QThread):
 
 
 class BatchGenerateWorker(QThread):
-    """Worker thread for batch card generation with strategy mix support."""
+    """Worker thread for batch card generation with concurrent document processing."""
 
     progress = pyqtSignal(str)
     card_progress = pyqtSignal(int, int)  # current, total
+    document_completed = pyqtSignal(str, int)  # document_name, cards_count
     finished = pyqtSignal(list)  # list[CardDraft]
     error = pyqtSignal(str)
     cancelled = pyqtSignal()
@@ -370,6 +534,7 @@ class BatchGenerateWorker(QThread):
 
     def run(self) -> None:
         import time
+        import concurrent.futures
         from ankismart.core.config import save_config
 
         try:
@@ -378,6 +543,11 @@ class BatchGenerateWorker(QThread):
             # Extract configuration
             target_total = self._generation_config.get("target_total", 20)
             strategy_mix = self._generation_config.get("strategy_mix", [])
+            max_workers = getattr(self._config, "llm_concurrency", 2) if self._config else 2
+
+            # 0 means unlimited
+            if max_workers == 0:
+                max_workers = None
 
             if not strategy_mix:
                 self.error.emit("No strategy mix configured")
@@ -398,37 +568,40 @@ class BatchGenerateWorker(QThread):
                 len(self._documents), strategy_counts
             )
 
-            # Step 3: Generate cards for each document with allocated strategies
+            # Step 3: Generate cards concurrently for each document
             all_cards: list[CardDraft] = []
             total_cards_to_generate = sum(strategy_counts.values())
             cards_generated = 0
+            cards_lock = threading.Lock()
 
-            generator = CardGenerator(self._llm_client)
+            def generate_for_document(doc_idx: int, document: ConvertedDocument) -> list[CardDraft]:
+                """Generate cards for a single document."""
+                nonlocal cards_generated
 
-            for doc_idx, document in enumerate(self._documents):
                 if self._cancelled:
-                    self.cancelled.emit()
-                    return
+                    return []
 
                 allocation = per_doc_allocations[doc_idx]
                 if not allocation:
-                    continue
+                    return []
 
                 self.progress.emit(
-                    f"Generating cards for {document.file_name} ({doc_idx + 1}/{len(self._documents)})"
+                    f"正在为 {document.file_name} 生成卡片 ({doc_idx + 1}/{len(self._documents)})"
                 )
+
+                doc_cards: list[CardDraft] = []
+                generator = CardGenerator(self._llm_client)
 
                 # Generate cards for each strategy in this document's allocation
                 for strategy, count in allocation.items():
                     if self._cancelled:
-                        self.cancelled.emit()
-                        return
+                        return doc_cards
 
                     if count <= 0:
                         continue
 
                     self.progress.emit(
-                        f"Generating {count} {strategy} cards from {document.file_name}"
+                        f"正在从 {document.file_name} 生成 {count} 张 {strategy} 卡片"
                     )
 
                     try:
@@ -445,17 +618,48 @@ class BatchGenerateWorker(QThread):
                         )
 
                         cards = generator.generate(request)
-                        all_cards.extend(cards)
-                        cards_generated += len(cards)
+                        doc_cards.extend(cards)
 
-                        # Emit progress
-                        self.card_progress.emit(cards_generated, total_cards_to_generate)
+                        # Update progress with lock
+                        with cards_lock:
+                            cards_generated += len(cards)
+                            self.card_progress.emit(cards_generated, total_cards_to_generate)
 
                     except Exception as e:
                         # Log error but continue with other strategies
                         self.progress.emit(
-                            f"Error generating {strategy} cards from {document.file_name}: {str(e)}"
+                            f"生成 {strategy} 卡片时出错 ({document.file_name}): {str(e)}"
                         )
+
+                # Emit document completion signal
+                if doc_cards:
+                    self.document_completed.emit(document.file_name, len(doc_cards))
+
+                return doc_cards
+
+            # Use ThreadPoolExecutor for concurrent generation
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all document generation tasks
+                future_to_doc = {
+                    executor.submit(generate_for_document, idx, doc): (idx, doc)
+                    for idx, doc in enumerate(self._documents)
+                }
+
+                # Collect results as they complete
+                for future in concurrent.futures.as_completed(future_to_doc):
+                    if self._cancelled:
+                        # Cancel all pending futures
+                        for f in future_to_doc:
+                            f.cancel()
+                        self.cancelled.emit()
+                        return
+
+                    try:
+                        cards = future.result()
+                        all_cards.extend(cards)
+                    except Exception as e:
+                        idx, doc = future_to_doc[future]
+                        self.progress.emit(f"处理 {doc.file_name} 时出错: {str(e)}")
 
             if self._cancelled:
                 self.cancelled.emit()

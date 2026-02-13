@@ -355,12 +355,17 @@ class MainWindow(FluentWindow):
 
     def _switch_page(self, index: int) -> None:
         """Switch page by index for backward compatibility."""
-        pages = [self.import_page, self.preview_page, self.result_page, self.performance_page, self.settings_page]
+        pages = [self.import_page, self.preview_page, self.card_preview_page, self.result_page, self.performance_page, self.settings_page]
         if 0 <= index < len(pages):
             self.switchTo(pages[index])
 
-    def switch_to_preview(self) -> None:
-        """Switch to preview page and load batch result when available."""
+    def switch_to_preview(self, pending_files_count: int = 0, total_expected: int = 0) -> None:
+        """Switch to preview page and load batch result when available.
+
+        Args:
+            pending_files_count: Number of files still being converted
+            total_expected: Total expected number of documents
+        """
         preview_page = getattr(self, "_preview_page", None)
         if preview_page is None:
             preview_page = getattr(self, "preview_page", None)
@@ -368,7 +373,7 @@ class MainWindow(FluentWindow):
         if preview_page is not None and batch_result is not None:
             load_documents = getattr(preview_page, "load_documents", None)
             if callable(load_documents):
-                load_documents(batch_result)
+                load_documents(batch_result, pending_files_count, total_expected)
         self._switch_page(1)
 
     def switch_to_result(self) -> None:

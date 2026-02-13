@@ -19,7 +19,6 @@ STAGED_APP_DIR = RELEASE_DIR / "app"
 PORTABLE_ROOT = RELEASE_DIR / "portable"
 INSTALLER_ROOT = RELEASE_DIR / "installer"
 
-# 仅排除 OCR 模型/权重，不排除 OCR 运行时依赖
 OCR_MODEL_DIR_NAMES = {
     "model",
     "models",
@@ -47,9 +46,13 @@ UNUSED_DEPENDENCY_DIRS = {
     "PySide2",
     "PySide6",
     "tkinter",
+    "paddle",
+    "paddleocr",
+    "paddlex",
+    "cv2",
 }
 
-UNUSED_BUILD_TOOL_PREFIXES = ("pip", "setuptools", "wheel")
+PADDLE_RELATED_KEYWORDS = ("paddle", "paddlex", "paddleocr", "cv2")
 
 
 def _print(msg: str) -> None:
@@ -84,60 +87,53 @@ def ensure_runtime_dirs(target_dir: Path) -> None:
 
 
 def remove_ocr_model_artifacts(target_dir: Path) -> tuple[int, int]:
-    """删除 OCR 模型目录和模型权重文件。
-
-    注意：保留 OCR 运行时依赖（paddle/paddleocr），仅删除模型文件。
-    """
     removed_dirs = 0
     removed_files = 0
 
-    dir_candidates: set[Path] = set()
-    for path in target_dir.rglob("*"):
-        if path.is_dir() and path.name.lower() in OCR_MODEL_DIR_NAMES:
-            dir_candidates.add(path)
-
+    dir_candidates = [
+        p for p in target_dir.rglob("*") if p.is_dir() and p.name.lower() in OCR_MODEL_DIR_NAMES
+    ]
     for path in sorted(dir_candidates, key=lambda p: len(p.parts), reverse=True):
         if path.exists():
             shutil.rmtree(path, ignore_errors=True)
             removed_dirs += 1
 
-    for file_path in target_dir.rglob("*"):
-        if not file_path.is_file():
-            continue
-        if file_path.suffix.lower() in OCR_MODEL_EXTENSIONS:
-            file_path.unlink(missing_ok=True)
-            removed_files += 1
+    file_candidates = [
+        p for p in target_dir.rglob("*") if p.is_file() and p.suffix.lower() in OCR_MODEL_EXTENSIONS
+    ]
+    for path in file_candidates:
+        path.unlink(missing_ok=True)
+        removed_files += 1
 
     return removed_dirs, removed_files
 
 
 def prune_unused_dependencies(target_dir: Path) -> None:
+    # 清理未使用的依赖目录
     for dep_name in UNUSED_DEPENDENCY_DIRS:
         for path in target_dir.rglob(dep_name):
             if path.is_dir():
-                _print(f"移除非必要依赖目录: {path}")
+                _print(f"移除未使用依赖: {path.relative_to(target_dir)}")
                 shutil.rmtree(path, ignore_errors=True)
 
+    # 清理所有 paddle 相关的 dist-info 目录
+    for path in target_dir.rglob("*.dist-info"):
+        if path.is_dir():
+            name_lower = path.name.lower()
+            if any(keyword in name_lower for keyword in PADDLE_RELATED_KEYWORDS):
+                _print(f"移除 paddle dist-info: {path.relative_to(target_dir)}")
+                shutil.rmtree(path, ignore_errors=True)
+
+    # 清理 __pycache__
     for path in target_dir.rglob("__pycache__"):
         if path.is_dir():
             shutil.rmtree(path, ignore_errors=True)
 
+    # 清理编译文件
     for extension in ("*.pyc", "*.pyo", "*.pyd.debug"):
         for path in target_dir.rglob(extension):
             if path.is_file():
                 path.unlink(missing_ok=True)
-
-    for path in sorted(target_dir.rglob("*"), key=lambda p: len(p.parts), reverse=True):
-        name = path.name.lower()
-        if not any(name == prefix or name.startswith(f"{prefix}-") for prefix in UNUSED_BUILD_TOOL_PREFIXES):
-            continue
-
-        if path.is_dir():
-            _print(f"移除构建工具目录: {path}")
-            shutil.rmtree(path, ignore_errors=True)
-        elif path.is_file():
-            _print(f"移除构建工具文件: {path}")
-            path.unlink(missing_ok=True)
 
 
 def stage_app_files() -> None:
@@ -145,7 +141,6 @@ def stage_app_files() -> None:
         shutil.rmtree(STAGED_APP_DIR)
 
     STAGED_APP_DIR.mkdir(parents=True, exist_ok=True)
-    _print(f"整理应用文件到: {STAGED_APP_DIR}")
 
     for item in APP_BUILD_DIR.iterdir():
         destination = STAGED_APP_DIR / item.name
@@ -168,28 +163,8 @@ def create_portable_package(version: str) -> Path:
     portable_dir.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(STAGED_APP_DIR, portable_dir)
 
-    (portable_dir / ".portable").write_text(
-        "portable_mode: true\nconfig_dir: ./config\ndata_dir: ./data\nlogs_dir: ./logs\ncache_dir: ./cache\n",
-        encoding="utf-8",
-    )
-
     ensure_runtime_dirs(portable_dir)
     remove_ocr_model_artifacts(portable_dir)
-
-    readme = portable_dir / "README-Portable.txt"
-    readme.write_text(
-        "Ankismart 便携版\n\n"
-        "目录说明:\n"
-        "- Ankismart.exe: 主程序\n"
-        "- config/: 配置文件\n"
-        "- data/: 业务数据\n"
-        "- logs/: 日志\n"
-        "- cache/: 缓存\n\n"
-        "说明:\n"
-        "- 不内置 OCR 模型，首次处理图片/PDF 时会自动提示下载。\n"
-        "- 所有运行数据都保存在当前目录。\n",
-        encoding="utf-8",
-    )
 
     archive_base = portable_dir.parent / portable_dir.name
     archive_file = shutil.make_archive(str(archive_base), "zip", portable_dir.parent, portable_dir.name)
@@ -254,44 +229,47 @@ def read_version(pyproject_path: Path) -> str:
 
 def verify_no_ocr_models(target_dir: Path) -> None:
     bad_dirs = [
-        p for p in target_dir.rglob("*")
-        if p.is_dir() and p.name.lower() in OCR_MODEL_DIR_NAMES
+        p for p in target_dir.rglob("*") if p.is_dir() and p.name.lower() in OCR_MODEL_DIR_NAMES
     ]
     bad_files = [
-        p for p in target_dir.rglob("*")
-        if p.is_file() and p.suffix.lower() in OCR_MODEL_EXTENSIONS
+        p for p in target_dir.rglob("*") if p.is_file() and p.suffix.lower() in OCR_MODEL_EXTENSIONS
     ]
 
     if bad_dirs or bad_files:
-        details = []
-        if bad_dirs:
-            details.append(f"目录: {[str(p) for p in bad_dirs[:5]]}")
-        if bad_files:
-            details.append(f"文件: {[str(p) for p in bad_files[:5]]}")
-        raise RuntimeError("检测到 OCR 模型残留: " + "; ".join(details))
+        raise RuntimeError(
+            f"检测到 OCR 模型残留: dirs={len(bad_dirs)}, files={len(bad_files)}"
+        )
+
+
+def verify_no_portable_helper_files(target_dir: Path) -> None:
+    helper_files = [target_dir / ".portable", target_dir / "README-Portable.txt"]
+    exists = [str(p) for p in helper_files if p.exists()]
+    if exists:
+        raise RuntimeError(f"检测到不应打包的便携辅助文件: {exists}")
+
+
+def verify_no_paddle_related(target_dir: Path) -> None:
+    bad_dirs = [
+        p for p in target_dir.rglob("*")
+        if p.is_dir() and any(keyword in p.name.lower() for keyword in PADDLE_RELATED_KEYWORDS)
+    ]
+    if bad_dirs:
+        raise RuntimeError(f"检测到不应存在的 paddle 相关目录: {bad_dirs[:5]}")
 
 
 def verify_layout(version: str) -> None:
-    required = [
-        STAGED_APP_DIR,
-        PORTABLE_ROOT / f"Ankismart-Portable-{version}",
-    ]
+    portable_dir = PORTABLE_ROOT / f"Ankismart-Portable-{version}"
+    required = [STAGED_APP_DIR, portable_dir]
     for path in required:
         if not path.exists():
             raise RuntimeError(f"发布目录缺失: {path}")
 
     verify_no_ocr_models(STAGED_APP_DIR)
-    verify_no_ocr_models(PORTABLE_ROOT / f"Ankismart-Portable-{version}")
-
-
-def print_dependency_summary(target_dir: Path, top_n: int = 20) -> None:
-    files = [p for p in target_dir.rglob("*") if p.is_file()]
-    top_files = sorted(files, key=lambda p: p.stat().st_size, reverse=True)[:top_n]
-    _print("体积最大的文件（前20）:")
-    for file_path in top_files:
-        size_mb = file_path.stat().st_size / (1024 * 1024)
-        rel = file_path.relative_to(target_dir)
-        _print(f"  - {rel} ({size_mb:.2f} MB)")
+    verify_no_ocr_models(portable_dir)
+    verify_no_paddle_related(STAGED_APP_DIR)
+    verify_no_paddle_related(portable_dir)
+    verify_no_portable_helper_files(STAGED_APP_DIR)
+    verify_no_portable_helper_files(portable_dir)
 
 
 def main() -> int:
@@ -313,24 +291,19 @@ def main() -> int:
 
     pyinstaller_build(spec_path)
     stage_app_files()
-
     portable_dir = create_portable_package(version)
     installer_file = None if args.skip_installer else create_installer(version)
 
     verify_layout(version)
-    print_dependency_summary(STAGED_APP_DIR)
 
     _print("构建完成")
     _print(f"应用分发目录: {STAGED_APP_DIR}")
     _print(f"便携版目录: {portable_dir}")
-    if installer_file is not None:
+    if installer_file:
         _print(f"安装版文件: {installer_file}")
-    elif not args.skip_installer:
-        _print("安装版未生成（通常是本机未安装 Inno Setup）")
 
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

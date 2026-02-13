@@ -22,7 +22,7 @@ ANIMATION_DURATION_LONG = 500
 
 # Window constants
 DEFAULT_WINDOW_WIDTH = 1200
-DEFAULT_WINDOW_HEIGHT = 800
+DEFAULT_WINDOW_HEIGHT = 900
 MIN_WINDOW_WIDTH = 800
 MIN_WINDOW_HEIGHT = 600
 
@@ -54,7 +54,7 @@ ICON_SIZE_LARGE = 32
 
 # Spacing constants (following QFluentWidgets official standards)
 SPACING_SMALL = 8      # 小间距，用于紧密排列的元素
-SPACING_MEDIUM = 16    # 中等间距，用于一般元素之间
+SPACING_MEDIUM = 12    # 中等间距，用于一般元素之间（从16减小到12）
 SPACING_LARGE = 20     # 大间距，用于主要区块之间
 SPACING_XLARGE = 24    # 超大间距，用于页面级别的分隔
 
@@ -64,8 +64,8 @@ MARGIN_SMALL = 10      # 小边距，用于紧凑布局
 MARGIN_LARGE = 30      # 大边距，用于需要更多空白的区域
 
 # Component-specific constants
-PROVIDER_ITEM_HEIGHT = 72        # 提供商列表项高度
-MAX_VISIBLE_PROVIDERS = 4        # 最大可见提供商数量（超过则显示滚动条）
+PROVIDER_ITEM_HEIGHT = 36        # 提供商列表项高度（横向表格布局）
+MAX_VISIBLE_PROVIDERS = 2        # 默认可见提供商数量（超过则显示滚动条）
 
 # Font sizes
 FONT_SIZE_SMALL = 12

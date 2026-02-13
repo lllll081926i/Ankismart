@@ -7,10 +7,13 @@ from PyQt6.QtCore import QEvent, Qt, pyqtSignal, QUrl
 from PyQt6.QtGui import QWheelEvent, QDesktopServices
 from PyQt6.QtWidgets import (
     QDialog,
+    QFileDialog,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QListWidgetItem,
     QMessageBox,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -39,6 +42,7 @@ from qfluentwidgets import (
     SubtitleLabel,
     SwitchButton,
     SwitchSettingCard,
+    TableWidget,
     isDarkTheme,
 )
 
@@ -196,261 +200,6 @@ class LLMProviderDialog(QDialog):
         self.close()
 
 
-class ProviderListItemWidget(QWidget):
-    """Custom widget for provider list item."""
-
-    editClicked = pyqtSignal(LLMProviderConfig)
-    testClicked = pyqtSignal(LLMProviderConfig)
-    deleteClicked = pyqtSignal(LLMProviderConfig)
-    activateClicked = pyqtSignal(LLMProviderConfig)
-
-    def __init__(self, provider: LLMProviderConfig, is_active: bool, can_delete: bool, parent=None):
-        super().__init__(parent)
-        self._provider = provider
-        self._is_active = is_active
-        self.setObjectName("providerListItem")
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self._update_style()
-        self.setAutoFillBackground(False)
-        self._init_ui(is_active, can_delete)
-
-    def _init_ui(self, is_active: bool, can_delete: bool):
-        """Initialize UI components."""
-        # Main layout
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 12, 12, 12)
-        layout.setSpacing(4)
-
-        # Active indicator placeholder (always reserve space for green dot at the front)
-        indicator_container = QWidget()
-        indicator_container.setFixedWidth(16)
-        indicator_layout = QHBoxLayout(indicator_container)
-        indicator_layout.setContentsMargins(0, 0, 0, 0)
-        indicator_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-
-        if is_active:
-            self._active_label = SubtitleLabel("●")
-            self._active_label.setStyleSheet("color: #10b981;")
-            indicator_layout.addWidget(self._active_label)
-        else:
-            self._active_label = None
-
-        layout.addWidget(indicator_container)
-
-        # Provider info
-        info_layout = QVBoxLayout()
-        info_layout.setSpacing(3)
-
-        self._name_label = SubtitleLabel(self._provider.name)
-        self._name_label.setToolTip(self._provider.name)
-        info_layout.addWidget(self._name_label)
-
-        model_text_inline = self._provider.model.strip() if self._provider.model else "未设置"
-        base_url_text_inline = self._provider.base_url.strip() if self._provider.base_url else "未设置"
-
-        self._model_label = BodyLabel(f"模型：{model_text_inline}")
-        self._model_label.setObjectName("providerModelLabel")
-        info_layout.addWidget(self._model_label)
-
-        self._url_label = BodyLabel(f"地址：{base_url_text_inline}")
-        self._url_label.setObjectName("providerUrlLabel")
-        info_layout.addWidget(self._url_label)
-
-        rpm_text_inline = f"RPM：{self._provider.rpm_limit}" if self._provider.rpm_limit > 0 else "RPM：未设置"
-        self._rpm_label = BodyLabel(rpm_text_inline)
-        self._rpm_label.setObjectName("providerRpmLabel")
-        info_layout.addWidget(self._rpm_label)
-
-        layout.addLayout(info_layout, 1)
-        layout.addStretch()
-
-        # Action buttons
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(SPACING_SMALL)
-
-        self._activate_btn = PrimaryPushButton("激活", self) if not is_active else PushButton("当前使用", self)
-        self._activate_btn.setFixedWidth(80)
-        self._activate_btn.setEnabled(not is_active)
-        self._activate_btn.clicked.connect(lambda: self.activateClicked.emit(self._provider))
-        button_layout.addWidget(self._activate_btn)
-
-        self._edit_btn = PushButton("修改", self)
-        self._edit_btn.setFixedWidth(70)
-        self._edit_btn.clicked.connect(lambda: self.editClicked.emit(self._provider))
-        button_layout.addWidget(self._edit_btn)
-
-        self._test_btn = PushButton("测试", self)
-        self._test_btn.setFixedWidth(70)
-        self._test_btn.clicked.connect(lambda: self.testClicked.emit(self._provider))
-        button_layout.addWidget(self._test_btn)
-
-        self._delete_btn = PushButton("删除", self)
-        self._delete_btn.setFixedWidth(70)
-        self._delete_btn.setEnabled(can_delete)
-        self._delete_btn.clicked.connect(lambda: self.deleteClicked.emit(self._provider))
-        button_layout.addWidget(self._delete_btn)
-
-        layout.addLayout(button_layout)
-
-    def _update_style(self):
-        """Update style based on current theme - using QFluentWidgets theme system."""
-        border_color = "rgba(255, 255, 255, 0.10)" if isDarkTheme() else "rgba(0, 0, 0, 0.08)"
-        hover_color = "rgba(255, 255, 255, 0.05)" if isDarkTheme() else "rgba(0, 0, 0, 0.04)"
-        self.setStyleSheet(
-            "QWidget#providerListItem {"
-            "background-color: transparent;"
-            f"border-bottom: 1px solid {border_color};"
-            "}"
-            f"QWidget#providerListItem:hover {{background-color: {hover_color};}}"
-        )
-
-    def update_theme(self):
-        """Update theme-dependent styles when theme changes."""
-        self._update_style()
-
-
-class ProviderListWidget(QWidget):
-    """Standalone widget for displaying provider list."""
-
-    editClicked = pyqtSignal(LLMProviderConfig)
-    testClicked = pyqtSignal(LLMProviderConfig)
-    deleteClicked = pyqtSignal(LLMProviderConfig)
-    activateClicked = pyqtSignal(LLMProviderConfig)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("providerListPanel")
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self._init_panel_ui()
-        self._update_panel_style()
-        self.setAutoFillBackground(False)
-
-    def _init_panel_ui(self) -> None:
-        """Initialize static UI structure for provider panel."""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(1, 1, 1, 1)
-        layout.setSpacing(0)
-
-        self._list_widget = ListWidget()
-        self._list_widget.setMinimumHeight(PROVIDER_ITEM_HEIGHT)
-        self._list_widget.setMaximumHeight(PROVIDER_ITEM_HEIGHT * MAX_VISIBLE_PROVIDERS)
-        self._list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self._list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._list_widget.setSpacing(0)
-        self._list_widget.setStyleSheet("""
-            ListWidget {
-                background-color: transparent;
-                border: none;
-            }
-            QListView {
-                background-color: transparent;
-                border: none;
-            }
-        """)
-        self._list_widget.installEventFilter(self)
-        self._list_widget.viewport().installEventFilter(self)
-
-        layout.addWidget(self._list_widget)
-
-    def _update_panel_style(self):
-        """Update panel style based on current theme - using QFluentWidgets theme system."""
-        border_color = "rgba(255, 255, 255, 0.10)" if isDarkTheme() else "rgba(0, 0, 0, 0.08)"
-        self.setStyleSheet(
-            "QWidget#providerListPanel {"
-            "background-color: transparent;"
-            f"border: 1px solid {border_color};"
-            "border-radius: 10px;"
-            "}"
-        )
-
-    def _forward_wheel_to_parent(self, event: QWheelEvent) -> None:
-        parent = self.parentWidget()
-        while parent is not None:
-            if isinstance(parent, ScrollArea):
-                parent.wheelEvent(event)
-                return
-            parent = parent.parentWidget()
-
-    def _should_forward_from_list(self, event: QWheelEvent) -> bool:
-        bar = self._list_widget.verticalScrollBar()
-        if not bar.isVisible():
-            return True
-
-        delta = event.angleDelta().y()
-        if delta > 0 and bar.value() <= bar.minimum():
-            return True
-        if delta < 0 and bar.value() >= bar.maximum():
-            return True
-        return False
-
-    def eventFilter(self, watched, event):
-        if watched in {self._list_widget, self._list_widget.viewport()} and event.type() == QEvent.Type.Wheel:
-            if self._should_forward_from_list(event):
-                self._forward_wheel_to_parent(event)
-                return True
-        return super().eventFilter(watched, event)
-
-    def wheelEvent(self, event: QWheelEvent) -> None:
-        """Forward wheel events to parent settings scroll area when needed."""
-        if not isinstance(event, QWheelEvent):
-            self._forward_wheel_to_parent(event)
-            return
-
-        if self._list_widget.verticalScrollBar().isVisible():
-            super().wheelEvent(event)
-            if event.isAccepted():
-                return
-
-        self._forward_wheel_to_parent(event)
-
-    def update_providers(self, providers: list[LLMProviderConfig], active_provider_id: str):
-        """Update the provider list display."""
-        self._list_widget.clear()
-
-        can_delete = len(providers) > 1
-        for provider in providers:
-            is_active = provider.id == active_provider_id
-
-            # Create list item
-            item = QListWidgetItem(self._list_widget)
-
-            # Create custom widget
-            widget = ProviderListItemWidget(provider, is_active, can_delete)
-            widget.editClicked.connect(self.editClicked.emit)
-            widget.testClicked.connect(self.testClicked.emit)
-            widget.deleteClicked.connect(self.deleteClicked.emit)
-            widget.activateClicked.connect(self.activateClicked.emit)
-
-            # Set item size hint (height 72px per item)
-            item.setSizeHint(widget.sizeHint())
-
-            # Add item and widget
-            self._list_widget.addItem(item)
-            self._list_widget.setItemWidget(item, widget)
-
-        # Auto-adjust height based on number of providers
-        num_providers = len(providers)
-        if num_providers <= MAX_VISIBLE_PROVIDERS:
-            # Show exact height for 1-4 providers
-            target_height = num_providers * PROVIDER_ITEM_HEIGHT
-            self._list_widget.setFixedHeight(target_height)
-            self.setFixedHeight(target_height + 2)  # +2 for borders
-        else:
-            # Show maximum 4 rows with scrollbar
-            self._list_widget.setFixedHeight(PROVIDER_ITEM_HEIGHT * MAX_VISIBLE_PROVIDERS)
-            self.setFixedHeight(PROVIDER_ITEM_HEIGHT * MAX_VISIBLE_PROVIDERS + 2)  # +2 for borders
-
-    def update_theme(self):
-        """Update theme-dependent styles when theme changes."""
-        self._update_panel_style()
-        # Update all item widgets
-        for i in range(self._list_widget.count()):
-            item = self._list_widget.item(i)
-            widget = self._list_widget.itemWidget(item)
-            if widget and hasattr(widget, 'update_theme'):
-                widget.update_theme()
-
-
 class SettingsPage(ScrollArea):
     """Application settings page using QFluentWidgets components."""
 
@@ -495,10 +244,43 @@ class SettingsPage(ScrollArea):
         # Initialize shortcuts
         self._init_shortcuts()
 
+        # Connect auto-save signals
+        self._connect_auto_save_signals()
+
     def _init_shortcuts(self):
         """Initialize page-specific keyboard shortcuts."""
         # Ctrl+S: Save configuration
         create_shortcut(self, ShortcutKeys.SAVE_EDIT, self._save_config)
+
+    def _connect_auto_save_signals(self):
+        """Connect all control signals to auto-save configuration."""
+        # LLM settings
+        self._temperature_slider.valueChanged.connect(self._save_config_silent)
+        self._max_tokens_spin.valueChanged.connect(self._save_config_silent)
+        self._concurrency_spin.valueChanged.connect(self._save_config_silent)
+
+        # Anki settings
+        self._anki_url_edit.textChanged.connect(self._save_config_silent)
+        self._anki_key_edit.textChanged.connect(self._save_config_silent)
+        self._default_deck_edit.textChanged.connect(self._save_config_silent)
+        self._default_tags_edit.textChanged.connect(self._save_config_silent)
+
+        # Other settings
+        self._theme_combo.currentIndexChanged.connect(self._save_config_silent)
+        self._language_combo.currentIndexChanged.connect(self._save_config_silent)
+        self._proxy_mode_combo.currentIndexChanged.connect(self._save_config_silent)
+        self._proxy_edit.textChanged.connect(self._save_config_silent)
+        self._ocr_correction_switch.checkedChanged.connect(self._save_config_silent)
+
+        # OCR settings
+        self._ocr_mode_combo.currentIndexChanged.connect(self._save_config_silent)
+        self._ocr_model_tier_combo.currentIndexChanged.connect(self._save_config_silent)
+        self._ocr_source_combo.currentIndexChanged.connect(self._save_config_silent)
+        self._ocr_cuda_auto_card.checkedChanged.connect(self._save_config_silent)
+
+        # Experimental features
+        self._auto_split_switch.checkedChanged.connect(self._save_config_silent)
+        self._split_threshold_spinbox.valueChanged.connect(self._save_config_silent)
 
     def _show_info_bar(self, level: str, title: str, content: str, duration: int = 3000) -> None:
         """Show fluent InfoBar notifications consistently."""
@@ -545,30 +327,52 @@ class SettingsPage(ScrollArea):
         # ── LLM Configuration Group ──
         self._llm_group = SettingCardGroup("LLM 配置", self.scrollWidget)
 
-        # Add provider button
-        self._add_provider_card = PushSettingCard(
+        # Provider management card with add button
+        self._provider_mgmt_card = PushSettingCard(
             "添加提供商",
             FIF.ADD,
-            "添加 LLM 提供商",
-            "添加新的 LLM 提供商配置",
+            "LLM 提供商",
+            "管理 LLM 服务提供商配置",
         )
-        self._add_provider_card.clicked.connect(self._add_provider)
-        self._llm_group.addSettingCard(self._add_provider_card)
+        self._provider_mgmt_card.clicked.connect(self._add_provider)
+        self._llm_group.addSettingCard(self._provider_mgmt_card)
 
         self.expandLayout.addWidget(self._llm_group)
 
-        # ── Provider List (Standalone Widget) ──
-        self._provider_list_widget = ProviderListWidget(self.scrollWidget)
-        self._provider_list_widget.editClicked.connect(self._edit_provider)
-        self._provider_list_widget.testClicked.connect(self._test_provider_connection)
-        self._provider_list_widget.deleteClicked.connect(self._delete_provider)
-        self._provider_list_widget.activateClicked.connect(self._activate_provider)
-        self.expandLayout.addWidget(self._provider_list_widget)
+        # Provider table (standalone widget below the group, reduced spacing)
+        self._provider_table = TableWidget(self.scrollWidget)
+        self._provider_table.setBorderVisible(True)
+        self._provider_table.setBorderRadius(8)
+        self._provider_table.setWordWrap(False)
+        self._provider_table.setColumnCount(6)
+        self._provider_table.setHorizontalHeaderLabels(['状态', '名称', '模型', '地址', 'RPM', '操作'])
+        self._provider_table.verticalHeader().hide()
+        self._provider_table.setEditTriggers(TableWidget.EditTrigger.NoEditTriggers)
+        self._provider_table.setSelectionBehavior(TableWidget.SelectionBehavior.SelectRows)
+        self._provider_table.setSelectionMode(TableWidget.SelectionMode.SingleSelection)
 
-        # ── LLM Parameters Group ──
-        self._llm_params_group = SettingCardGroup("LLM 参数", self.scrollWidget)
+        # Set fixed row height (36px per row)
+        self._provider_table.verticalHeader().setDefaultSectionSize(36)
 
-        # Temperature - using custom card with Slider
+        # Set fixed height for 2 rows + header
+        header_height = self._provider_table.horizontalHeader().height()
+        self._provider_table.setFixedHeight(header_height + 36 * 2 + 2)  # 2 rows + border
+
+        # Set column widths - compress action column, expand others
+        self._provider_table.setColumnWidth(0, 60)   # Status
+        self._provider_table.setColumnWidth(1, 150)  # Name (increased from 120)
+        self._provider_table.setColumnWidth(2, 180)  # Model (increased from 150)
+        self._provider_table.setColumnWidth(3, 350)  # URL (increased from 300)
+        self._provider_table.setColumnWidth(4, 100)  # RPM (increased from 80)
+        self._provider_table.setColumnWidth(5, 280)  # Actions (fixed, no stretch)
+        self._provider_table.horizontalHeader().setStretchLastSection(False)
+
+        # Reduce top margin for table
+        self.expandLayout.setSpacing(8)  # Reduce spacing between widgets
+        self.expandLayout.addWidget(self._provider_table)
+        self.expandLayout.setSpacing(SPACING_SMALL)  # Restore normal spacing for rest
+
+        # Temperature
         self._temperature_card = SettingCard(
             FIF.FRIGID,
             "温度",
@@ -578,7 +382,7 @@ class SettingsPage(ScrollArea):
         self._temperature_slider = Slider(Qt.Orientation.Horizontal, self._temperature_card)
         self._temperature_slider.setRange(0, 20)
         self._temperature_slider.setSingleStep(1)
-        self._temperature_slider.setValue(3)  # Default 0.3
+        self._temperature_slider.setValue(3)
         self._temperature_slider.setMinimumWidth(200)
 
         self._temperature_label = BodyLabel()
@@ -592,9 +396,9 @@ class SettingsPage(ScrollArea):
         self._temperature_card.hBoxLayout.addWidget(self._temperature_slider)
         self._temperature_card.hBoxLayout.addWidget(self._temperature_label)
         self._temperature_card.hBoxLayout.addSpacing(16)
-        self._llm_params_group.addSettingCard(self._temperature_card)
+        self._llm_group.addSettingCard(self._temperature_card)
 
-        # Max Tokens - using custom card with SpinBox
+        # Max Tokens
         self._max_tokens_card = SettingCard(
             FIF.FONT,
             "最大令牌数",
@@ -608,9 +412,24 @@ class SettingsPage(ScrollArea):
         self._max_tokens_spin.setMinimumWidth(200)
         self._max_tokens_card.hBoxLayout.addWidget(self._max_tokens_spin)
         self._max_tokens_card.hBoxLayout.addSpacing(16)
-        self._llm_params_group.addSettingCard(self._max_tokens_card)
+        self._llm_group.addSettingCard(self._max_tokens_card)
 
-        self.expandLayout.addWidget(self._llm_params_group)
+        # LLM Concurrency
+        self._concurrency_card = SettingCard(
+            FIF.SPEED_HIGH,
+            "并发限制",
+            "同时处理的最大文件数（0 = 不限制）",
+            self.scrollWidget,
+        )
+        self._concurrency_spin = SpinBox(self._concurrency_card)
+        self._concurrency_spin.setRange(0, 10)
+        self._concurrency_spin.setSingleStep(1)
+        self._concurrency_spin.setValue(2)
+        self._concurrency_spin.setSpecialValueText("不限制")
+        self._concurrency_spin.setMinimumWidth(200)
+        self._concurrency_card.hBoxLayout.addWidget(self._concurrency_spin)
+        self._concurrency_card.hBoxLayout.addSpacing(16)
+        self._llm_group.addSettingCard(self._concurrency_card)
 
         # ── Anki Configuration Group ──
         self._anki_group = SettingCardGroup("Anki 配置", self.scrollWidget)
@@ -714,17 +533,38 @@ class SettingsPage(ScrollArea):
         self._language_card.hBoxLayout.addSpacing(16)
         self._other_group.addSettingCard(self._language_card)
 
-        # Proxy
+        # Proxy Settings
         self._proxy_card = SettingCard(
             FIF.GLOBE,
             "代理设置",
-            "HTTP/HTTPS 代理 URL（可选）",
+            "配置网络代理（默认使用系统代理）",
             self.scrollWidget,
         )
-        self._proxy_edit = LineEdit(self._proxy_card)
+
+        # Proxy container with mode selector and manual input
+        proxy_container = QWidget(self._proxy_card)
+        proxy_layout = QVBoxLayout(proxy_container)
+        proxy_layout.setContentsMargins(0, 0, 0, 0)
+        proxy_layout.setSpacing(8)
+
+        # Proxy mode selector
+        proxy_mode_layout = QHBoxLayout()
+        self._proxy_mode_combo = ComboBox(proxy_container)
+        self._proxy_mode_combo.addItems(["系统代理", "手动配置", "不使用代理"])
+        self._proxy_mode_combo.setMinimumWidth(150)
+        self._proxy_mode_combo.currentIndexChanged.connect(self._on_proxy_mode_changed)
+        proxy_mode_layout.addWidget(self._proxy_mode_combo)
+        proxy_mode_layout.addStretch()
+        proxy_layout.addLayout(proxy_mode_layout)
+
+        # Manual proxy input (hidden by default)
+        self._proxy_edit = LineEdit(proxy_container)
         self._proxy_edit.setPlaceholderText("http://proxy.example.com:8080")
         self._proxy_edit.setMinimumWidth(300)
-        self._proxy_card.hBoxLayout.addWidget(self._proxy_edit)
+        self._proxy_edit.setVisible(False)
+        proxy_layout.addWidget(self._proxy_edit)
+
+        self._proxy_card.hBoxLayout.addWidget(proxy_container)
         self._proxy_card.hBoxLayout.addSpacing(16)
         self._other_group.addSettingCard(self._proxy_card)
 
@@ -952,18 +792,6 @@ class SettingsPage(ScrollArea):
         self._reset_card.clicked.connect(self._reset_to_default)
         self._action_group.addSettingCard(self._reset_card)
 
-        save_text = "保存配置" if is_zh else "Save Configuration"
-        save_shortcut = get_shortcut_text(ShortcutKeys.SAVE_EDIT, self._main.config.language)
-
-        self._save_card = PrimaryPushSettingCard(
-            save_text,
-            FIF.SAVE,
-            "保存设置" if is_zh else "Save Settings",
-            f"保存所有配置更改 ({save_shortcut})" if is_zh else f"Save all configuration changes ({save_shortcut})",
-        )
-        self._save_card.clicked.connect(self._save_config)
-        self._action_group.addSettingCard(self._save_card)
-
         self.expandLayout.addWidget(self._action_group)
 
     def _load_config(self) -> None:
@@ -979,6 +807,7 @@ class SettingsPage(ScrollArea):
         temp_value = int(config.llm_temperature * 10)
         self._temperature_slider.setValue(temp_value)
         self._max_tokens_spin.setValue(config.llm_max_tokens)
+        self._concurrency_spin.setValue(getattr(config, "llm_concurrency", 2))
 
         # Anki settings
         self._anki_url_edit.setText(config.anki_connect_url)
@@ -993,7 +822,14 @@ class SettingsPage(ScrollArea):
         lang_map = {"zh": 0, "en": 1}
         self._language_combo.setCurrentIndex(lang_map.get(config.language, 0))
 
+        # Proxy settings - load mode and manual URL
+        proxy_mode = getattr(config, "proxy_mode", "system")
+        proxy_mode_map = {"system": 0, "manual": 1, "none": 2}
+        self._proxy_mode_combo.setCurrentIndex(proxy_mode_map.get(proxy_mode, 0))
         self._proxy_edit.setText(config.proxy_url)
+        # Show/hide manual input based on mode
+        self._proxy_edit.setVisible(proxy_mode == "manual")
+
         self._ocr_correction_switch.setChecked(config.ocr_correction)
 
         self._set_combo_current_data(self._ocr_mode_combo, getattr(config, "ocr_mode", "local"))
@@ -1014,9 +850,79 @@ class SettingsPage(ScrollArea):
         self._log_level_combobox.setCurrentIndex(log_level_map.get(config.log_level, 1))
 
     def _update_provider_list(self) -> None:
-        """Update provider list display."""
-        if self._provider_list_widget:
-            self._provider_list_widget.update_providers(self._providers, self._active_provider_id)
+        """Update provider table display."""
+        self._provider_table.setRowCount(len(self._providers))
+
+        can_delete = len(self._providers) > 1
+
+        for row, provider in enumerate(self._providers):
+            is_active = provider.id == self._active_provider_id
+
+            # Column 0: Status (green dot for active)
+            status_item = QTableWidgetItem("●" if is_active else "")
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if is_active:
+                status_item.setForeground(Qt.GlobalColor.green)
+            self._provider_table.setItem(row, 0, status_item)
+
+            # Column 1: Name
+            name_item = QTableWidgetItem(provider.name)
+            self._provider_table.setItem(row, 1, name_item)
+
+            # Column 2: Model
+            model_text = provider.model.strip() if provider.model else "未设置"
+            model_item = QTableWidgetItem(model_text)
+            self._provider_table.setItem(row, 2, model_item)
+
+            # Column 3: Base URL
+            url_text = provider.base_url.strip() if provider.base_url else "未设置"
+            url_item = QTableWidgetItem(url_text)
+            self._provider_table.setItem(row, 3, url_item)
+
+            # Column 4: RPM
+            rpm_text = str(provider.rpm_limit) if provider.rpm_limit > 0 else "无限制"
+            rpm_item = QTableWidgetItem(rpm_text)
+            rpm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._provider_table.setItem(row, 4, rpm_item)
+
+            # Column 5: Action buttons
+            action_widget = QWidget()
+            action_layout = QHBoxLayout(action_widget)
+            action_layout.setContentsMargins(4, 2, 4, 2)
+            action_layout.setSpacing(4)
+
+            # Activate button
+            if is_active:
+                activate_btn = PushButton("当前使用")
+                activate_btn.setEnabled(False)
+                activate_btn.setFixedSize(80, 28)
+            else:
+                activate_btn = PrimaryPushButton("激活")
+                activate_btn.setFixedSize(60, 28)
+                activate_btn.clicked.connect(lambda checked, p=provider: self._activate_provider(p))
+            action_layout.addWidget(activate_btn)
+
+            # Edit button
+            edit_btn = PushButton("修改")
+            edit_btn.setFixedSize(60, 28)
+            edit_btn.clicked.connect(lambda checked, p=provider: self._edit_provider(p))
+            action_layout.addWidget(edit_btn)
+
+            # Test button
+            test_btn = PushButton("测试")
+            test_btn.setFixedSize(60, 28)
+            test_btn.clicked.connect(lambda checked, p=provider: self._test_provider_connection(p))
+            action_layout.addWidget(test_btn)
+
+            # Delete button
+            delete_btn = PushButton("删除")
+            delete_btn.setFixedSize(60, 28)
+            delete_btn.setEnabled(can_delete)
+            delete_btn.clicked.connect(lambda checked, p=provider: self._delete_provider(p))
+            action_layout.addWidget(delete_btn)
+
+            action_layout.addStretch()
+            self._provider_table.setCellWidget(row, 5, action_widget)
 
     @staticmethod
     def _set_combo_current_data(combo: ComboBox, target_value: str) -> None:
@@ -1340,6 +1246,20 @@ class SettingsPage(ScrollArea):
             duration=2000,
         )
 
+    def _on_proxy_mode_changed(self, index: int) -> None:
+        """Handle proxy mode change - show/hide manual input."""
+        # 0: System, 1: Manual, 2: None
+        is_manual = (index == 1)
+        self._proxy_edit.setVisible(is_manual)
+
+        # Show notification
+        self._show_info_bar(
+            "success",
+            t("log.level_changed", self._main.config.language),
+            t("log.level_changed_msg", self._main.config.language, level=log_level),
+            duration=2000,
+        )
+
     def _open_log_directory(self) -> None:
         """Open the log directory in file explorer."""
         from ankismart.core.logging import get_log_directory
@@ -1363,6 +1283,14 @@ class SettingsPage(ScrollArea):
             QMessageBox.warning(self, "错误", "至少需要配置一个 LLM 提供商")
             return
 
+        self._save_config_silent()
+
+    def _save_config_silent(self) -> None:
+        """Save configuration without showing success message (for auto-save)."""
+        # Validate active provider
+        if not self._providers:
+            return
+
         # Parse tags
         tags = [tag.strip() for tag in self._default_tags_edit.text().split(",") if tag.strip()]
         if not tags:
@@ -1381,6 +1309,11 @@ class SettingsPage(ScrollArea):
         # Get log level
         log_level_values = ["DEBUG", "INFO", "WARNING", "ERROR"]
         log_level = log_level_values[self._log_level_combobox.currentIndex()]
+
+        # Get proxy settings
+        proxy_mode_values = ["system", "manual", "none"]
+        proxy_mode = proxy_mode_values[self._proxy_mode_combo.currentIndex()]
+        proxy_url = self._proxy_edit.text().strip() if proxy_mode == "manual" else ""
 
         ocr_mode = self._get_combo_current_data(self._ocr_mode_combo, "local")
         ocr_model_tier = self._get_combo_current_data(self._ocr_model_tier_combo, "lite")
@@ -1407,7 +1340,9 @@ class SettingsPage(ScrollArea):
                 "ocr_model_locked_by_user": ocr_model_locked_by_user,
                 "llm_temperature": temperature,
                 "llm_max_tokens": self._max_tokens_spin.value(),
-                "proxy_url": self._proxy_edit.text().strip(),
+                "llm_concurrency": self._concurrency_spin.value(),
+                "proxy_mode": proxy_mode,
+                "proxy_url": proxy_url,
                 "theme": theme,
                 "language": language,
                 "log_level": log_level,

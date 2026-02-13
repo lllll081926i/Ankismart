@@ -17,6 +17,10 @@ OCR_MODEL_DIR_NAMES = {
     ".paddleocr",
     "paddleocr_models",
     "ocr_models",
+    "paddle",
+    "paddleocr",
+    "paddlex",
+    "cv2",
 }
 
 OCR_MODEL_EXTENSIONS = {
@@ -25,6 +29,8 @@ OCR_MODEL_EXTENSIONS = {
     ".onnx",
     ".nb",
 }
+
+PADDLE_RELATED_KEYWORDS = ("paddle", "paddlex", "paddleocr", "cv2")
 
 
 def read_version(pyproject_path: Path) -> str:
@@ -40,26 +46,34 @@ def ensure_runtime_dirs(target_dir: Path) -> None:
         (target_dir / name).mkdir(parents=True, exist_ok=True)
 
 
-def remove_ocr_models(target_dir: Path) -> tuple[int, int]:
-    removed_dirs = 0
-    removed_files = 0
-
+def remove_ocr_models(target_dir: Path) -> None:
+    """删除所有 OCR 和 paddle 相关的文件和目录"""
+    # 收集所有需要删除的目录
     dir_candidates = []
     for path in target_dir.rglob("*"):
-        if path.is_dir() and path.name.lower() in OCR_MODEL_DIR_NAMES:
+        if not path.is_dir():
+            continue
+
+        name_lower = path.name.lower()
+
+        # 匹配 OCR 目录名
+        if name_lower in OCR_MODEL_DIR_NAMES:
+            dir_candidates.append(path)
+            continue
+
+        # 匹配 paddle 相关的任何目录（包括 dist-info）
+        if any(keyword in name_lower for keyword in PADDLE_RELATED_KEYWORDS):
             dir_candidates.append(path)
 
+    # 按深度倒序删除（先删除子目录）
     for path in sorted(dir_candidates, key=lambda p: len(p.parts), reverse=True):
         if path.exists():
             shutil.rmtree(path, ignore_errors=True)
-            removed_dirs += 1
 
+    # 删除 OCR 模型文件
     for path in target_dir.rglob("*"):
         if path.is_file() and path.suffix.lower() in OCR_MODEL_EXTENSIONS:
             path.unlink(missing_ok=True)
-            removed_files += 1
-
-    return removed_dirs, removed_files
 
 
 def build_portable(source_dir: Path, output_root: Path, version: str) -> Path:
@@ -73,22 +87,8 @@ def build_portable(source_dir: Path, output_root: Path, version: str) -> Path:
     output_root.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source_dir, output_dir)
 
-    (output_dir / ".portable").write_text(
-        "portable_mode: true\nconfig_dir: ./config\ndata_dir: ./data\nlogs_dir: ./logs\ncache_dir: ./cache\n",
-        encoding="utf-8",
-    )
-
     ensure_runtime_dirs(output_dir)
-    removed_dirs, removed_files = remove_ocr_models(output_dir)
-
-    (output_dir / "README-Portable.txt").write_text(
-        "Ankismart 便携版\n"
-        "- 不包含 OCR 模型\n"
-        "- 首次 OCR 时按需下载模型（自动弹窗提示）\n"
-        "- 运行数据位于当前目录的 config/data/logs/cache\n"
-        f"- 已清理 OCR 模型目录: {removed_dirs}，模型文件: {removed_files}\n",
-        encoding="utf-8",
-    )
+    remove_ocr_models(output_dir)
 
     archive_base = output_root / output_dir.name
     shutil.make_archive(str(archive_base), "zip", output_root, output_dir.name)
@@ -110,4 +110,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

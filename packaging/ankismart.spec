@@ -14,8 +14,6 @@ hiddenimports = [
     *collect_submodules("ankismart"),
     "qfluentwidgets",
     "openai",
-    "paddle",
-    "paddleocr",
     "genanki",
     "pypdfium2",
 ]
@@ -34,6 +32,10 @@ excludes = [
     "tkinter",
     "torch",
     "tensorflow",
+    "paddle",
+    "paddleocr",
+    "paddlex",
+    "cv2",
 ]
 
 

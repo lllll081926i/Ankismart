@@ -5,12 +5,14 @@ from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
-from PyQt6.QtWidgets import QHBoxLayout, QListWidget, QMessageBox, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QListWidget, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
     FluentIcon as FIF,
     InfoBar,
     InfoBarPosition,
+    IndeterminateProgressBar,
+    MessageBox,
     PlainTextEdit,
     PrimaryPushButton,
     ProgressBar,
@@ -121,9 +123,14 @@ class PreviewPage(ProgressMixin, QWidget):
         self._documents: list[ConvertedDocument] = []
         self._edited_content: dict[int, str] = {}
         self._current_index = -1
+        self._suspend_auto_save = False
         self._generate_worker = None
         self._push_worker = None
         self._state_tooltip = None
+        self._converting_info_bar = None  # InfoBar for conversion status
+        self._pending_files_count = 0  # Track pending files
+        self._ready_documents: set[str] = set()  # Track ready document names
+        self._total_expected_docs = 0  # Total expected documents
 
         self._setup_ui()
         self._init_shortcuts()
@@ -149,19 +156,15 @@ class PreviewPage(ProgressMixin, QWidget):
 
         save_text = "保存编辑" if is_zh else "Save Edit"
         self._btn_save = PushButton(save_text)
+        self._btn_save.setEnabled(True)  # Explicitly enable
         self._btn_save.clicked.connect(self._save_current_edit)
         title_bar.addWidget(self._btn_save)
 
-        generate_text = "生成卡片" if is_zh else "Generate Cards"
+        generate_text = "开始制作卡片" if is_zh else "Generate Cards"
         self._btn_generate = PrimaryPushButton(generate_text)
+        self._btn_generate.setEnabled(True)  # Explicitly enable
         self._btn_generate.clicked.connect(self._on_generate_cards)
         title_bar.addWidget(self._btn_generate)
-
-        self._btn_cancel = PushButton("取消")
-        self._btn_cancel.setIcon(FIF.CLOSE)
-        self._btn_cancel.clicked.connect(self._cancel_generation)
-        self._btn_cancel.hide()
-        title_bar.addWidget(self._btn_cancel)
 
         layout.addLayout(title_bar)
 
@@ -172,64 +175,103 @@ class PreviewPage(ProgressMixin, QWidget):
         # Left: File list
         self._file_list = QListWidget()
         self._file_list.setMaximumWidth(250)
+        self._file_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._file_list.setWordWrap(False)
         self._file_list.currentRowChanged.connect(self._on_file_switched)
         content_layout.addWidget(self._file_list)
 
         # Right: Editor
         self._editor = PlainTextEdit()
         self._editor.setPlaceholderText("在此编辑 Markdown 内容...")
+        self._editor.textChanged.connect(self._on_editor_text_changed)
         self._highlighter = MarkdownHighlighter(self._editor.document())
         content_layout.addWidget(self._editor, 1)  # Add stretch factor to fill space
 
         layout.addLayout(content_layout, 1)  # Main content takes all available space
 
-        # Progress display
-        progress_layout = QVBoxLayout()
-        progress_layout.setSpacing(MARGIN_SMALL)
-
-        progress_row = QHBoxLayout()
-        progress_row.setSpacing(MARGIN_SMALL)
-
-        self._progress_ring = ProgressRing()
-        self._progress_ring.setFixedSize(40, 40)
-        self._progress_ring.hide()
-
-        self._progress_bar = ProgressBar()
-        self._progress_bar.setMinimum(0)
-        self._progress_bar.setMaximum(100)
-        self._progress_bar.setValue(0)
+        # Indeterminate progress bar for card generation
+        self._progress_bar = IndeterminateProgressBar()
+        self._progress_bar.setFixedHeight(6)
         self._progress_bar.hide()
+        layout.addWidget(self._progress_bar)
 
-        progress_row.addWidget(self._progress_ring)
-        progress_row.addWidget(self._progress_bar, 1)
-        progress_layout.addLayout(progress_row)
-
-        self._status_label = BodyLabel()
-        self._status_label.setText("")
-        self._status_label.setWordWrap(True)
-        progress_layout.addWidget(self._status_label)
-
-        layout.addLayout(progress_layout)
         self._apply_theme_styles()
 
     def _apply_theme_styles(self) -> None:
         """Apply theme-aware styles for Qt widgets in preview page."""
-        border_color = "rgba(255, 255, 255, 0.12)" if isDarkTheme() else "rgba(0, 0, 0, 0.08)"
-        hover_color = "rgba(255, 255, 255, 0.06)" if isDarkTheme() else "rgba(0, 0, 0, 0.04)"
-        selected_color = "rgba(59, 130, 246, 0.26)" if isDarkTheme() else "rgba(37, 99, 235, 0.14)"
+        is_dark = isDarkTheme()
+
+        # QFluentWidgets official style colors
+        if is_dark:
+            bg_color = "rgba(39, 39, 39, 1)"
+            border_color = "rgba(255, 255, 255, 0.08)"
+            text_color = "rgba(255, 255, 255, 0.9)"
+            text_color_disabled = "rgba(255, 255, 255, 0.3)"
+            hover_bg = "rgba(255, 255, 255, 0.06)"
+            selected_bg = "rgba(0, 120, 212, 0.4)"
+            selected_text = "rgba(255, 255, 255, 1)"
+        else:
+            bg_color = "rgba(249, 249, 249, 1)"
+            border_color = "rgba(0, 0, 0, 0.08)"
+            text_color = "rgba(0, 0, 0, 0.9)"
+            text_color_disabled = "rgba(0, 0, 0, 0.3)"
+            hover_bg = "rgba(0, 0, 0, 0.04)"
+            selected_bg = "rgba(0, 120, 212, 0.15)"
+            selected_text = "rgba(0, 0, 0, 1)"
+
         self._file_list.setStyleSheet(
             "QListWidget {"
-            "background-color: transparent;"
+            f"background-color: {bg_color};"
             f"border: 1px solid {border_color};"
             "border-radius: 8px;"
+            "padding: 8px;"
+            "outline: none;"
             "}"
             "QListWidget::item {"
-            "padding: 8px 10px;"
+            f"color: {text_color};"
+            "font-size: 15px;"
+            "padding: 8px 14px;"
             "border-radius: 6px;"
+            "border: none;"
+            "margin: 2px 0px;"
             "}"
-            f"QListWidget::item:selected {{background-color: {selected_color};}}"
-            f"QListWidget::item:hover {{background-color: {hover_color};}}"
+            "QListWidget::item:hover {"
+            f"background-color: {hover_bg};"
+            "}"
+            "QListWidget::item:selected {"
+            f"background-color: {selected_bg};"
+            f"color: {selected_text};"
+            "font-weight: 500;"
+            "}"
+            "QListWidget::item:selected:hover {"
+            f"background-color: {selected_bg};"
+            "}"
+            "QListWidget::item:disabled {"
+            f"color: {text_color_disabled};"
+            "}"
         )
+
+    def showEvent(self, event):
+        """Handle show event to ensure buttons are enabled when page is displayed."""
+        super().showEvent(event)
+        # Ensure buttons are enabled when page is shown (unless actively processing)
+        if not (self._generate_worker and self._generate_worker.isRunning()) and \
+           not (self._push_worker and self._push_worker.isRunning()):
+            if self._documents:  # Only enable if we have documents
+                self._btn_save.setEnabled(True)
+                self._btn_generate.setEnabled(True)
+
+    def _hide_progress(self) -> None:
+        """Hide all progress indicators (override from ProgressMixin)."""
+        if self._progress_bar.isStarted():
+            self._progress_bar.stop()
+        self._progress_bar.hide()
+
+    def _show_progress(self, message: str = "") -> None:
+        """Show progress indicators (override from ProgressMixin)."""
+        self._progress_bar.show()
+        if not self._progress_bar.isStarted():
+            self._progress_bar.start()
 
     def _init_shortcuts(self):
         """Initialize page-specific keyboard shortcuts."""
@@ -247,32 +289,59 @@ class PreviewPage(ProgressMixin, QWidget):
         save_shortcut = get_shortcut_text(ShortcutKeys.SAVE_EDIT, self._main.config.language)
         self._btn_save.setToolTip(f"{save_text} ({save_shortcut})")
 
-        generate_text = "生成卡片" if is_zh else "Generate Cards"
-        generate_shortcut = get_shortcut_text(ShortcutKeys.START_GENERATION, self._main.config.language)
-        self._btn_generate.setToolTip(f"{generate_text} ({generate_shortcut})")
+    def load_documents(self, batch_result: BatchConvertResult, pending_files_count: int = 0, total_expected: int = 0):
+        """Load documents from batch conversion result.
 
-    def load_documents(self, batch_result: BatchConvertResult):
-        """Load documents from batch conversion result."""
+        Args:
+            batch_result: Batch conversion result with documents
+            pending_files_count: Number of files still being converted
+            total_expected: Total expected number of documents
+        """
         self._documents = list(batch_result.documents)
         self._edited_content.clear()
         self._current_index = -1
+        self._pending_files_count = pending_files_count
+        self._total_expected_docs = total_expected if total_expected > 0 else len(self._documents)
+        self._ready_documents.clear()
+
+        # Mark all loaded documents as ready
+        for doc in self._documents:
+            self._ready_documents.add(doc.file_name)
 
         # Clear and populate file list
         self._file_list.clear()
         for doc in self._documents:
-            self._file_list.addItem(doc.file_name)
+            item = self._file_list.addItem(doc.file_name)
 
-        # Show/hide file list based on document count
-        if len(self._documents) == 1:
-            self._file_list.setVisible(False)
-        else:
-            self._file_list.setVisible(True)
+        # Add placeholder items for pending documents
+        for i in range(pending_files_count):
+            item = self._file_list.addItem(f"转换中... ({i+1})")
+            # Disable placeholder items
+            item_widget = self._file_list.item(len(self._documents) + i)
+            if item_widget:
+                item_widget.setFlags(item_widget.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+
+        # Always show file list
+        self._file_list.setVisible(True)
+
+        # Update UI state
+        self._update_ui_state()
 
         # Load first document
         if self._documents:
             self._file_list.setCurrentRow(0)
         else:
-            self._editor.clear()
+            self._suspend_auto_save = True
+            try:
+                self._editor.clear()
+            finally:
+                self._suspend_auto_save = False
+
+    def _on_editor_text_changed(self):
+        """Auto-save current document edits while typing."""
+        if self._suspend_auto_save:
+            return
+        self._save_current_edit()
 
     def _on_file_switched(self, index: int):
         """Handle file selection change."""
@@ -292,7 +361,11 @@ class PreviewPage(ProgressMixin, QWidget):
         else:
             content = doc.result.content
 
-        self._editor.setPlainText(content)
+        self._suspend_auto_save = True
+        try:
+            self._editor.setPlainText(content)
+        finally:
+            self._suspend_auto_save = False
 
     def _save_current_edit(self):
         """Save current editor content to edited content dict."""
@@ -301,6 +374,19 @@ class PreviewPage(ProgressMixin, QWidget):
 
         current_text = self._editor.toPlainText()
         self._edited_content[self._current_index] = current_text
+
+        # Keep in-memory documents and main batch result synchronized.
+        original_doc = self._documents[self._current_index]
+        if original_doc.result.content != current_text:
+            updated_doc = ConvertedDocument(
+                result=original_doc.result.model_copy(update={"content": current_text}),
+                file_name=original_doc.file_name,
+            )
+            self._documents[self._current_index] = updated_doc
+
+            batch_result = getattr(self._main, "batch_result", None)
+            if batch_result and self._current_index < len(batch_result.documents):
+                batch_result.documents[self._current_index] = updated_doc
 
     def _build_documents(self) -> list[ConvertedDocument]:
         """Build document list with edited content applied."""
@@ -323,25 +409,133 @@ class PreviewPage(ProgressMixin, QWidget):
 
         return result
 
+    def _show_converting_info_bar(self, pending_count: int):
+        """Show info bar indicating files are still being converted."""
+        if self._converting_info_bar is not None:
+            # Update existing info bar
+            is_zh = self._main.config.language == "zh"
+            content = (
+                f"还有 {pending_count} 个文件正在转换中，请稍候..."
+                if is_zh
+                else f"{pending_count} file(s) still converting, please wait..."
+            )
+            # InfoBar doesn't have update method, so we need to close and recreate
+            self._converting_info_bar.close()
+            self._converting_info_bar = None
+
+        is_zh = self._main.config.language == "zh"
+        title = "文件转换中" if is_zh else "Converting Files"
+        content = (
+            f"还有 {pending_count} 个文件正在转换中，转换完成后才能开始制作卡片"
+            if is_zh
+            else f"{pending_count} file(s) still converting. Card generation will be available after conversion completes."
+        )
+
+        self._converting_info_bar = InfoBar.warning(
+            title=title,
+            content=content,
+            orient=Qt.Orientation.Horizontal,
+            isClosable=False,
+            position=InfoBarPosition.TOP,
+            duration=-1,  # Don't auto-hide
+            parent=self
+        )
+
+    def _hide_converting_info_bar(self):
+        """Hide the converting info bar."""
+        if self._converting_info_bar is not None:
+            self._converting_info_bar.close()
+            self._converting_info_bar = None
+
+    def _update_ui_state(self):
+        """Update UI state based on document readiness."""
+        all_ready = len(self._ready_documents) >= self._total_expected_docs
+
+        if all_ready:
+            self._hide_converting_info_bar()
+            self._btn_generate.setEnabled(True)
+        else:
+            pending = self._total_expected_docs - len(self._ready_documents)
+            self._show_converting_info_bar(pending)
+            self._btn_generate.setEnabled(False)
+
+        self._btn_save.setEnabled(True)
+
+    def update_converting_status(self, pending_count: int):
+        """Update converting status and enable/disable generate button.
+
+        Args:
+            pending_count: Number of files still being converted
+        """
+        self._pending_files_count = pending_count
+        self._update_ui_state()
+
+    def add_converted_document(self, document: ConvertedDocument):
+        """Add a newly converted document to the list.
+
+        Args:
+            document: The converted document to add
+        """
+        self._documents.append(document)
+        self._ready_documents.add(document.file_name)
+
+        # Find and replace placeholder item
+        for i in range(self._file_list.count()):
+            item = self._file_list.item(i)
+            if item and item.text().startswith("转换中..."):
+                item.setText(document.file_name)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEnabled)
+                break
+        else:
+            # No placeholder found, just add new item
+            self._file_list.addItem(document.file_name)
+
+        # Update main batch result
+        if hasattr(self._main, 'batch_result') and self._main.batch_result:
+            self._main.batch_result.documents.append(document)
+
+        # Update UI state
+        self._update_ui_state()
+
+        # Show completion notification
+        is_zh = self._main.config.language == "zh"
+        InfoBar.success(
+            title="文档就绪" if is_zh else "Document Ready",
+            content=f"{document.file_name} 已转换完成" if is_zh else f"{document.file_name} converted",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2000,
+            parent=self,
+        )
+
     def _on_generate_cards(self):
         """Handle generate cards button click."""
         # Validate configuration
         provider = self._main.config.active_provider
         if not provider:
-            QMessageBox.warning(
-                self,
-                "警告" if self._main.config.language == "zh" else "Warning",
-                "请先配置 LLM 提供商" if self._main.config.language == "zh" else "Please configure LLM provider first"
+            InfoBar.warning(
+                title="警告" if self._main.config.language == "zh" else "Warning",
+                content="请先配置 LLM 提供商" if self._main.config.language == "zh" else "Please configure LLM provider first",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
             )
             return
 
         # Build documents with edits
         documents = self._build_documents()
         if not documents:
-            QMessageBox.warning(
-                self,
-                "警告" if self._main.config.language == "zh" else "Warning",
-                "没有可用的文档" if self._main.config.language == "zh" else "No documents available"
+            InfoBar.warning(
+                title="警告" if self._main.config.language == "zh" else "Warning",
+                content="没有可用的文档" if self._main.config.language == "zh" else "No documents available",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
             )
             return
 
@@ -352,23 +546,21 @@ class PreviewPage(ProgressMixin, QWidget):
         tags = split_tags_text(tags_text)
 
         if not deck_name:
-            QMessageBox.warning(
-                self,
-                "警告" if self._main.config.language == "zh" else "Warning",
-                "请输入牌组名称" if self._main.config.language == "zh" else "Please enter deck name"
+            InfoBar.warning(
+                title="警告" if self._main.config.language == "zh" else "Warning",
+                content="请输入牌组名称" if self._main.config.language == "zh" else "Please enter deck name",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
             )
             return
 
         # Show progress
         self._btn_generate.setEnabled(False)
         self._btn_save.setEnabled(False)
-        self._btn_cancel.show()
-        self._progress_ring.show()
         self._progress_bar.show()
-        self._progress_bar.setValue(0)
-        self._status_label.setText(
-            "正在生成卡片..." if self._main.config.language == "zh" else "Generating cards..."
-        )
 
         # Create LLM client
         llm_client = LLMClient(
@@ -392,6 +584,7 @@ class PreviewPage(ProgressMixin, QWidget):
         )
         self._generate_worker.progress.connect(self._on_generation_progress)
         self._generate_worker.card_progress.connect(self._on_card_progress)
+        self._generate_worker.document_completed.connect(self._on_document_completed)
         self._generate_worker.finished.connect(self._on_generation_finished)
         self._generate_worker.error.connect(self._on_generation_error)
         self._generate_worker.cancelled.connect(self._on_generation_cancelled)
@@ -399,16 +592,23 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_generation_progress(self, message: str):
         """Handle generation progress message."""
-        self._status_label.setText(message)
+        pass
 
     def _on_card_progress(self, current: int, total: int):
         """Handle card generation progress."""
-        percentage = int((current / total) * 100) if total > 0 else 0
-        self._progress_bar.setValue(percentage)
-        self._status_label.setText(
-            f"正在生成卡片: {current}/{total} ({percentage}%)"
-            if self._main.config.language == "zh"
-            else f"Generating cards: {current}/{total} ({percentage}%)"
+        pass
+
+    def _on_document_completed(self, document_name: str, cards_count: int):
+        """Handle document generation completion."""
+        is_zh = self._main.config.language == "zh"
+        InfoBar.success(
+            title="文档完成" if is_zh else "Document Complete",
+            content=f"{document_name} 生成了 {cards_count} 张卡片" if is_zh else f"{document_name}: {cards_count} cards generated",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2500,
+            parent=self,
         )
 
     def _on_generation_finished(self, cards):
@@ -418,35 +618,47 @@ class PreviewPage(ProgressMixin, QWidget):
         self._btn_save.setEnabled(True)
 
         if not cards:
-            QMessageBox.warning(
-                self,
-                "警告" if self._main.config.language == "zh" else "Warning",
-                "没有生成任何卡片" if self._main.config.language == "zh" else "No cards generated"
+            InfoBar.warning(
+                title="警告" if self._main.config.language == "zh" else "Warning",
+                content="没有生成任何卡片" if self._main.config.language == "zh" else "No cards generated",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
             )
             return
 
-        self._status_label.setText(
-            f"生成完成: {len(cards)} 张卡片"
-            if self._main.config.language == "zh"
-            else f"Generation completed: {len(cards)} cards"
+        # Show completion notification
+        is_zh = self._main.config.language == "zh"
+        InfoBar.success(
+            title="制卡完成" if is_zh else "Generation Complete",
+            content=f"成功生成 {len(cards)} 张卡片" if is_zh else f"Generated {len(cards)} cards",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=3000,
+            parent=self,
         )
 
-        # Store cards and start push
+        # Store cards and switch to card preview page
         self._main.cards = cards
-        self._start_push(cards)
+        self._main.card_preview_page.load_cards(cards)
+        self._main._switch_page(2)  # Switch to card preview page (index 2)
 
     def _on_generation_error(self, error: str):
         """Handle generation error."""
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
-        self._status_label.setText(
-            f"生成失败: {error}" if self._main.config.language == "zh" else f"Generation failed: {error}"
-        )
-        QMessageBox.critical(
-            self,
-            "错误" if self._main.config.language == "zh" else "Error",
-            error
+        InfoBar.error(
+            title="错误" if self._main.config.language == "zh" else "Error",
+            content=error,
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=5000,
+            parent=self,
         )
 
     def _on_generation_cancelled(self):
@@ -454,9 +666,6 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
-        self._status_label.setText(
-            "生成已取消" if self._main.config.language == "zh" else "Generation cancelled"
-        )
 
         InfoBar.warning(
             title="已取消" if self._main.config.language == "zh" else "Cancelled",
@@ -471,49 +680,27 @@ class PreviewPage(ProgressMixin, QWidget):
     def _cancel_generation(self):
         """Cancel the current generation operation."""
         if self._generate_worker and self._generate_worker.isRunning():
-            reply = QMessageBox.question(
-                self,
+            w = MessageBox(
                 "确认取消" if self._main.config.language == "zh" else "Confirm Cancel",
                 "确定要取消卡片生成吗？" if self._main.config.language == "zh" else "Are you sure you want to cancel card generation?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
+                self
             )
-
-            if reply == QMessageBox.StandardButton.Yes:
+            if w.exec():
                 self._generate_worker.cancel()
-                self._btn_cancel.setEnabled(False)
-                self._status_label.setText(
-                    "正在取消..." if self._main.config.language == "zh" else "Cancelling..."
-                )
         elif self._push_worker and self._push_worker.isRunning():
-            reply = QMessageBox.question(
-                self,
+            w = MessageBox(
                 "确认取消" if self._main.config.language == "zh" else "Confirm Cancel",
                 "确定要取消推送操作吗？" if self._main.config.language == "zh" else "Are you sure you want to cancel push operation?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
+                self
             )
-
-            if reply == QMessageBox.StandardButton.Yes:
+            if w.exec():
                 self._push_worker.cancel()
-                self._btn_cancel.setEnabled(False)
-                self._status_label.setText(
-                    "正在取消..." if self._main.config.language == "zh" else "Cancelling..."
-                )
 
     def _start_push(self, cards):
         """Start pushing cards to Anki."""
         self._btn_generate.setEnabled(False)
         self._btn_save.setEnabled(False)
-        self._btn_cancel.show()
-        self._progress_ring.show()
         self._progress_bar.show()
-        self._progress_bar.setValue(0)
-        self._status_label.setText(
-            f"正在推送 {len(cards)} 张卡片到 Anki..."
-            if self._main.config.language == "zh"
-            else f"Pushing {len(cards)} cards to Anki..."
-        )
 
         # Apply duplicate check settings to cards
         config = self._main.config
@@ -530,7 +717,7 @@ class PreviewPage(ProgressMixin, QWidget):
         # Create gateway
         client = AnkiConnectClient(
             url=config.anki_connect_url,
-            api_key=config.anki_connect_key,
+            key=config.anki_connect_key,
             proxy_url=config.proxy_url,
         )
         gateway = AnkiGateway(client)
@@ -549,7 +736,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_push_progress(self, message: str):
         """Handle push progress message."""
-        self._status_label.setText(message)
+        pass
 
     def _on_push_finished(self, result):
         """Handle push completion."""
@@ -557,28 +744,30 @@ class PreviewPage(ProgressMixin, QWidget):
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
 
-        self._status_label.setText(
-            f"推送完成: 成功 {result.succeeded} 张，失败 {result.failed} 张"
-            if self._main.config.language == "zh"
-            else f"Push completed: {result.succeeded} succeeded, {result.failed} failed"
-        )
-
-        # Load result page
+        # Load result page and switch to it
         self._main.result_page.load_result(result, self._main.cards)
         self._main.switch_to_result()
+
+        # Also load cards to card preview page for later viewing
+        self._main.card_preview_page.load_cards(self._main.cards)
+
+        # After a short delay, switch to card preview page
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(500, lambda: self._main._switch_page(2))
 
     def _on_push_error(self, error: str):
         """Handle push error."""
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
-        self._status_label.setText(
-            f"推送失败: {error}" if self._main.config.language == "zh" else f"Push failed: {error}"
-        )
-        QMessageBox.critical(
-            self,
-            "错误" if self._main.config.language == "zh" else "Error",
-            error
+        InfoBar.error(
+            title="错误" if self._main.config.language == "zh" else "Error",
+            content=error,
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=5000,
+            parent=self,
         )
 
     def _on_push_cancelled(self):
@@ -586,9 +775,6 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
-        self._status_label.setText(
-            "推送已取消" if self._main.config.language == "zh" else "Push cancelled"
-        )
 
         InfoBar.warning(
             title="已取消" if self._main.config.language == "zh" else "Cancelled",
@@ -607,8 +793,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
         # Update button text
         self._btn_save.setText("保存编辑" if is_zh else "Save Edit")
-        self._btn_generate.setText("生成卡片" if is_zh else "Generate Cards")
-        self._btn_cancel.setText("取消" if is_zh else "Cancel")
+        self._btn_generate.setText("开始制作卡片" if is_zh else "Generate Cards")
 
         # Update tooltips with shortcuts
         self._update_button_tooltips()

@@ -186,12 +186,17 @@ class CardGenerator:
                 system_prompt, note_type = strategy_info
                 markdown = request.markdown
 
+                # Add target count to system prompt if specified
+                if request.target_count > 0:
+                    system_prompt = system_prompt + f"\n- Generate exactly {request.target_count} cards\n"
+
                 logger.info(
                     "Generating cards",
                     extra={
                         "strategy": request.strategy,
                         "note_type": note_type,
                         "content_length": len(markdown),
+                        "target_count": request.target_count,
                         "trace_id": trace_id,
                     },
                 )

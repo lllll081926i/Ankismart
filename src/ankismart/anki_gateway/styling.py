@@ -8,32 +8,32 @@ Designed with responsiveness, readability, and dark mode support in mind.
 MODERN_CARD_CSS = """
 /* ===== Base Styles ===== */
 .card {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    font-size: clamp(16px, 4vw, 20px);
-    line-height: 1.6;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Microsoft YaHei', sans-serif;
+    font-size: 18px;
+    line-height: 1.8;
     color: #2c3e50;
-    background-color: #ffffff;
-    padding: 20px;
-    max-width: 800px;
-    margin: 0 auto;
+    background-color: transparent;
+    padding: 24px;
+    max-width: 100%;
+    margin: 0;
     text-align: left;
 }
 
 /* ===== Typography ===== */
 h1, h2, h3, h4, h5, h6 {
-    margin-top: 1.5em;
-    margin-bottom: 0.5em;
+    margin-top: 1.2em;
+    margin-bottom: 0.6em;
     font-weight: 600;
-    line-height: 1.3;
+    line-height: 1.4;
     color: #1a252f;
 }
 
-h1 { font-size: 1.8em; }
-h2 { font-size: 1.5em; }
-h3 { font-size: 1.3em; }
-h4 { font-size: 1.1em; }
-h5 { font-size: 1em; }
-h6 { font-size: 0.9em; }
+h1 { font-size: 2em; }
+h2 { font-size: 1.7em; }
+h3 { font-size: 1.5em; }
+h4 { font-size: 1.3em; }
+h5 { font-size: 1.1em; }
+h6 { font-size: 1em; }
 
 p {
     margin: 0.8em 0;
@@ -61,22 +61,23 @@ a:hover {
 /* ===== Code Blocks ===== */
 code {
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    font-size: 0.9em;
-    background-color: #f5f5f5;
-    padding: 2px 6px;
+    font-size: 0.95em;
+    background-color: transparent;
+    padding: 2px 4px;
     border-radius: 3px;
     color: #d73a49;
+    border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 pre {
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    font-size: 0.85em;
-    background-color: #f6f8fa;
-    padding: 12px 16px;
-    border-radius: 6px;
+    font-size: 0.9em;
+    background-color: transparent;
+    padding: 16px 20px;
+    border-radius: 8px;
     overflow-x: auto;
-    margin: 1em 0;
-    border: 1px solid #e1e4e8;
+    margin: 1.2em 0;
+    border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 pre code {
@@ -84,6 +85,7 @@ pre code {
     padding: 0;
     color: #24292e;
     border-radius: 0;
+    border: none;
 }
 
 /* ===== Lists ===== */
@@ -102,11 +104,12 @@ ul ul, ol ol, ul ol, ol ul {
 
 /* ===== Blockquotes ===== */
 blockquote {
-    margin: 1em 0;
-    padding: 0.5em 1em;
+    margin: 1.2em 0;
+    padding: 0.8em 1.2em;
     border-left: 4px solid #0078d4;
-    background-color: #f8f9fa;
+    background-color: transparent;
     color: #495057;
+    font-style: italic;
 }
 
 blockquote p {
@@ -124,22 +127,23 @@ hr {
 table {
     border-collapse: collapse;
     width: 100%;
-    margin: 1em 0;
+    margin: 1.2em 0;
 }
 
 th, td {
     border: 1px solid #d0d7de;
-    padding: 8px 12px;
+    padding: 10px 14px;
     text-align: left;
 }
 
 th {
-    background-color: #f6f8fa;
+    background-color: transparent;
     font-weight: 600;
+    border-bottom: 2px solid #d0d7de;
 }
 
 tr:nth-child(even) {
-    background-color: #f6f8fa;
+    background-color: transparent;
 }
 
 /* ===== Images ===== */
@@ -169,7 +173,7 @@ img {
 /* ===== Dark Mode ===== */
 .night_mode .card {
     color: #e4e4e4;
-    background-color: #1e1e1e;
+    background-color: transparent;
 }
 
 .night_mode h1,
@@ -191,39 +195,42 @@ img {
 }
 
 .night_mode code {
-    background-color: #2d2d2d;
+    background-color: transparent;
     color: #ff7b72;
+    border-color: rgba(255, 255, 255, 0.15);
 }
 
 .night_mode pre {
-    background-color: #2d2d2d;
-    border-color: #444444;
+    background-color: transparent;
+    border-color: rgba(255, 255, 255, 0.15);
 }
 
 .night_mode pre code {
     color: #e4e4e4;
+    border: none;
 }
 
 .night_mode blockquote {
     border-left-color: #4db8ff;
-    background-color: #2d2d2d;
+    background-color: transparent;
     color: #c9d1d9;
 }
 
 .night_mode hr {
-    border-top-color: #444444;
+    border-top-color: rgba(255, 255, 255, 0.15);
 }
 
 .night_mode th {
-    background-color: #2d2d2d;
+    background-color: transparent;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.15);
 }
 
 .night_mode th, .night_mode td {
-    border-color: #444444;
+    border-color: rgba(255, 255, 255, 0.15);
 }
 
 .night_mode tr:nth-child(even) {
-    background-color: #2d2d2d;
+    background-color: transparent;
 }
 
 .night_mode .cloze {

@@ -119,6 +119,7 @@ class AppConfig(BaseModel):
     log_level: str = "INFO"
     llm_temperature: float = 0.3
     llm_max_tokens: int = 0  # 0 means use provider default
+    llm_concurrency: int = 2  # Max concurrent LLM requests (0 = unlimited)
 
     # Persistence: last-used values
     last_deck: str = ""
@@ -126,6 +127,7 @@ class AppConfig(BaseModel):
     last_strategy: str = ""
     last_update_mode: str = ""
     window_geometry: str = ""  # hex-encoded QByteArray
+    proxy_mode: str = "system"  # "system" | "manual" | "none"
     proxy_url: str = ""
     theme: str = "light"
     language: str = "zh"

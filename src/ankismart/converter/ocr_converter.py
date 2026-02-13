@@ -6,10 +6,10 @@ import sys
 import threading
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pypdfium2 as pdfium
-from paddleocr import PaddleOCR
 from PIL import Image
 
 from ankismart.core.errors import ConvertError, ErrorCode
@@ -17,13 +17,16 @@ from ankismart.core.logging import get_logger
 from ankismart.core.models import MarkdownResult
 from ankismart.core.tracing import get_trace_id, timed
 
+if TYPE_CHECKING:
+    from paddleocr import PaddleOCR
+
 logger = get_logger("ocr_converter")
 
 # Ensure PaddleX hoster check is disabled as early as possible
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "1")
 
 # Lazy-initialized singleton to avoid repeated model loading
-_ocr_instance: PaddleOCR | None = None
+_ocr_instance: "PaddleOCR | None" = None
 _ocr_lock = threading.Lock()
 _mkldnn_fallback_applied = False
 
@@ -488,10 +491,13 @@ def _should_retry_without_mkldnn(exc: Exception) -> bool:
     return _is_onednn_unimplemented_error(exc)
 
 
-def _reload_ocr_without_mkldnn() -> PaddleOCR:
+def _reload_ocr_without_mkldnn() -> "PaddleOCR":
     global _ocr_instance, _mkldnn_fallback_applied
 
     with _ocr_lock:
+        # Lazy import PaddleOCR only when actually needed
+        from paddleocr import PaddleOCR
+
         os.environ["ANKISMART_OCR_CPU_MKLDNN"] = "0"
         kwargs = _build_ocr_kwargs("cpu")
         kwargs["enable_mkldnn"] = False
@@ -507,12 +513,15 @@ def _reload_ocr_without_mkldnn() -> PaddleOCR:
         return _ocr_instance
 
 
-def _get_ocr() -> PaddleOCR:
+def _get_ocr() -> "PaddleOCR":
     global _ocr_instance
     if _ocr_instance is not None:
         return _ocr_instance
     with _ocr_lock:
         if _ocr_instance is None:
+            # Lazy import PaddleOCR only when actually needed
+            from paddleocr import PaddleOCR
+
             device = _resolve_ocr_device()
             kwargs = _build_ocr_kwargs(device)
             logger.info(
@@ -556,7 +565,7 @@ def _pdf_to_images(file_path: Path) -> Iterator[Image.Image]:
         ) from exc
 
 
-def _ocr_image(ocr: PaddleOCR, image: Image.Image) -> str:
+def _ocr_image(ocr: "PaddleOCR", image: Image.Image) -> str:
     """Run OCR on a single image and return extracted text."""
     img_array = np.array(image)
     try:
@@ -597,6 +606,34 @@ def _ocr_image(ocr: PaddleOCR, image: Image.Image) -> str:
     return "\n".join(lines)
 
 
+def _extract_pdf_text(file_path: Path) -> str | None:
+    """Try to extract text from PDF text layer. Returns None if no text found."""
+    try:
+        pdf = pdfium.PdfDocument(str(file_path))
+        sections: list[str] = []
+
+        for i in range(len(pdf)):
+            page = pdf[i]
+            text_page = page.get_textpage()
+            page_text = text_page.get_text_range().strip()
+
+            if page_text:
+                sections.append(f"## Page {i + 1}\n\n{page_text}")
+
+        pdf.close()
+
+        if sections:
+            content = "\n\n---\n\n".join(sections)
+            # Check if extracted text is meaningful (not just whitespace/symbols)
+            if len(content.strip()) > 50:  # Minimum threshold
+                return content
+
+        return None
+    except Exception as e:
+        logger.debug(f"Failed to extract PDF text layer: {e}")
+        return None
+
+
 def convert(
     file_path: Path,
     trace_id: str = "",
@@ -604,7 +641,7 @@ def convert(
     ocr_correction_fn=None,
     progress_callback=None,
 ) -> MarkdownResult:
-    """Convert a PDF file to Markdown via OCR.
+    """Convert a PDF file to Markdown via OCR or text extraction.
 
     Args:
         file_path: Path to PDF file
@@ -620,6 +657,25 @@ def convert(
             code=ErrorCode.E_FILE_NOT_FOUND,
             trace_id=trace_id,
         )
+
+    # Try to extract text from PDF text layer first
+    if progress_callback is not None:
+        progress_callback(0, 1, "检测 PDF 文字层...")
+
+    extracted_text = _extract_pdf_text(file_path)
+    if extracted_text is not None:
+        logger.info("PDF has text layer, using direct extraction", extra={"trace_id": trace_id})
+        if progress_callback is not None:
+            progress_callback(1, 1, "文字提取完成")
+        return MarkdownResult(
+            content=extracted_text,
+            source_path=str(file_path),
+            source_format="pdf",
+            trace_id=trace_id,
+        )
+
+    # Fallback to OCR if no text layer
+    logger.info("PDF has no text layer, using OCR", extra={"trace_id": trace_id})
 
     with timed("ocr_convert"):
         sections: list[str] = []
