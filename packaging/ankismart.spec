@@ -1,7 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
-
 from PyInstaller.utils.hooks import collect_submodules
 
 
@@ -11,7 +10,8 @@ spec_dir = Path(SPECPATH)
 project_root = spec_dir.parent
 src_dir = project_root / "src"
 
-hiddenimports = collect_submodules("ankismart") + [
+hiddenimports = [
+    *collect_submodules("ankismart"),
     "qfluentwidgets",
     "openai",
     "paddle",
@@ -35,6 +35,27 @@ excludes = [
     "torch",
     "tensorflow",
 ]
+
+
+def filter_ocr_models(src, names):
+    """排除 OCR 模型文件和目录"""
+    excluded = set()
+
+    model_dir_names = {
+        "model", "models", "inference", ".paddleocr",
+        "paddleocr_models", "ocr_models"
+    }
+
+    model_extensions = {".pdmodel", ".pdiparams", ".onnx", ".nb"}
+
+    for name in names:
+        name_lower = name.lower()
+        if name_lower in model_dir_names:
+            excluded.add(name)
+        elif any(name.endswith(ext) for ext in model_extensions):
+            excluded.add(name)
+
+    return excluded
 
 
 a = Analysis(
@@ -88,4 +109,3 @@ coll = COLLECT(
     upx_exclude=[],
     name="Ankismart",
 )
-

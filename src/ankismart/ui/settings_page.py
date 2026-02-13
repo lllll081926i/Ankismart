@@ -78,11 +78,18 @@ _OCR_SOURCE_CHOICES = (
 _OCR_CONVERTER_MODULE = None
 
 
+class OCRRuntimeUnavailableError(RuntimeError):
+    """Raised when OCR runtime modules are not bundled."""
+
+
 def _get_ocr_converter_module():
     """Lazy import OCR converter to avoid loading OCR stack at startup."""
     global _OCR_CONVERTER_MODULE
     if _OCR_CONVERTER_MODULE is None:
-        from ankismart.converter import ocr_converter as module
+        try:
+            from ankismart.converter import ocr_converter as module
+        except Exception as exc:
+            raise OCRRuntimeUnavailableError("OCR runtime is not bundled in this package") from exc
 
         _OCR_CONVERTER_MODULE = module
     return _OCR_CONVERTER_MODULE
@@ -103,7 +110,10 @@ def get_missing_ocr_models(*, model_tier: str, model_source: str):
 
 
 def is_cuda_available() -> bool:
-    return bool(_get_ocr_converter_module().is_cuda_available())
+    try:
+        return bool(_get_ocr_converter_module().is_cuda_available())
+    except OCRRuntimeUnavailableError:
+        return False
 
 
 class LLMProviderDialog(QDialog):
@@ -1059,8 +1069,21 @@ class SettingsPage(ScrollArea):
 
         tier = self._get_combo_current_data(self._ocr_model_tier_combo, "lite")
         source = self._get_combo_current_data(self._ocr_source_combo, "official")
-        configure_ocr_runtime(model_tier=tier, model_source=source)
-        missing = get_missing_ocr_models(model_tier=tier, model_source=source)
+        try:
+            configure_ocr_runtime(model_tier=tier, model_source=source)
+            missing = get_missing_ocr_models(model_tier=tier, model_source=source)
+        except OCRRuntimeUnavailableError:
+            self._show_info_bar(
+                "warning",
+                "OCR 不可用" if is_zh else "OCR Unavailable",
+                (
+                    "当前安装包未包含 OCR 运行时。"
+                    if is_zh
+                    else "This package does not include OCR runtime."
+                ),
+                duration=4500,
+            )
+            return
 
         if not missing:
             self._show_info_bar(
@@ -1403,17 +1426,24 @@ class SettingsPage(ScrollArea):
             # Save config to disk
             save_config(config)
 
-            # Configure OCR runtime
-            configure_ocr_runtime(
-                model_tier=config.ocr_model_tier,
-                model_source=config.ocr_model_source,
-                reset_ocr_instance=True,
-            )
+            # Configure OCR runtime (optional in no-OCR package)
+            try:
+                configure_ocr_runtime(
+                    model_tier=config.ocr_model_tier,
+                    model_source=config.ocr_model_source,
+                    reset_ocr_instance=True,
+                )
+            except OCRRuntimeUnavailableError:
+                pass
 
             # Apply theme change immediately (without saving again)
             if old_theme != theme:
-                self._main._apply_theme()
-                self._main._update_theme_button_tooltip()
+                if hasattr(self._main, "switch_theme"):
+                    self._main.switch_theme(theme)
+                else:
+                    self._main._apply_theme()
+                    if hasattr(self._main, "_update_theme_button_tooltip"):
+                        self._main._update_theme_button_tooltip()
 
             # Apply language change if needed
             if old_language != language and hasattr(self._main, "switch_language"):

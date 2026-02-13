@@ -70,14 +70,48 @@ _RIGHT_STRATEGY_GROUP_MAX_HEIGHT = 640
 _OCR_CONVERTER_MODULE = None
 
 
+class OCRRuntimeUnavailableError(RuntimeError):
+    """Raised when OCR runtime modules are not bundled."""
+
+
+_OCR_PRESET_FALLBACK = {
+    "lite": {
+        "label_zh": "轻量模型",
+        "label_en": "Lite",
+        "recommended": "8G 内存 / 无独立显卡",
+    },
+    "standard": {
+        "label_zh": "标准模型",
+        "label_en": "Standard",
+        "recommended": "16G 内存 / 4 核及以上",
+    },
+    "accuracy": {
+        "label_zh": "高精度模型",
+        "label_en": "High Accuracy",
+        "recommended": "16G+ 内存 / 独立显卡",
+    },
+}
+
+
 def _get_ocr_converter_module():
     """Lazy import OCR converter to avoid startup overhead."""
     global _OCR_CONVERTER_MODULE
     if _OCR_CONVERTER_MODULE is None:
-        from ankismart.converter import ocr_converter as module
+        try:
+            from ankismart.converter import ocr_converter as module
+        except Exception as exc:
+            raise OCRRuntimeUnavailableError("OCR runtime is not bundled in this package") from exc
 
         _OCR_CONVERTER_MODULE = module
     return _OCR_CONVERTER_MODULE
+
+
+def is_ocr_runtime_available() -> bool:
+    try:
+        _get_ocr_converter_module()
+        return True
+    except OCRRuntimeUnavailableError:
+        return False
 
 
 def configure_ocr_runtime(*, model_tier: str, model_source: str) -> None:
@@ -102,11 +136,17 @@ def get_missing_ocr_models(*, model_tier: str, model_source: str):
 
 
 def get_ocr_model_presets():
-    return _get_ocr_converter_module().get_ocr_model_presets()
+    try:
+        return _get_ocr_converter_module().get_ocr_model_presets()
+    except OCRRuntimeUnavailableError:
+        return _OCR_PRESET_FALLBACK
 
 
 def is_cuda_available() -> bool:
-    return bool(_get_ocr_converter_module().is_cuda_available())
+    try:
+        return bool(_get_ocr_converter_module().is_cuda_available())
+    except OCRRuntimeUnavailableError:
+        return False
 
 
 class OCRDownloadConfigDialog(QDialog):
@@ -1058,6 +1098,18 @@ class ImportPage(ProgressMixin, QWidget):
                     "云端 OCR 仍在开发中，请切换到本地 OCR 后再处理图片/PDF。"
                     if is_zh
                     else "Cloud OCR is still in development. Please switch to local OCR for image/PDF files."
+                ),
+            )
+            return False
+
+        if not is_ocr_runtime_available():
+            QMessageBox.warning(
+                self,
+                "OCR 不可用" if is_zh else "OCR Unavailable",
+                (
+                    "当前安装包未包含 OCR 运行时，请使用完整版安装包。"
+                    if is_zh
+                    else "This package does not include OCR runtime. Please use the full package."
                 ),
             )
             return False

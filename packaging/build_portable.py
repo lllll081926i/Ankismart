@@ -10,6 +10,22 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 SOURCE_DIR = PROJECT_ROOT / "dist" / "release" / "app"
 OUTPUT_ROOT = PROJECT_ROOT / "dist" / "release" / "portable"
 
+OCR_MODEL_DIR_NAMES = {
+    "model",
+    "models",
+    "inference",
+    ".paddleocr",
+    "paddleocr_models",
+    "ocr_models",
+}
+
+OCR_MODEL_EXTENSIONS = {
+    ".pdmodel",
+    ".pdiparams",
+    ".onnx",
+    ".nb",
+}
+
 
 def read_version(pyproject_path: Path) -> str:
     for line in pyproject_path.read_text(encoding="utf-8").splitlines():
@@ -24,11 +40,26 @@ def ensure_runtime_dirs(target_dir: Path) -> None:
         (target_dir / name).mkdir(parents=True, exist_ok=True)
 
 
-def remove_ocr_models(target_dir: Path) -> None:
-    for name in ("model", "models", ".paddleocr", "paddleocr_models"):
-        path = target_dir / name
+def remove_ocr_models(target_dir: Path) -> tuple[int, int]:
+    removed_dirs = 0
+    removed_files = 0
+
+    dir_candidates = []
+    for path in target_dir.rglob("*"):
+        if path.is_dir() and path.name.lower() in OCR_MODEL_DIR_NAMES:
+            dir_candidates.append(path)
+
+    for path in sorted(dir_candidates, key=lambda p: len(p.parts), reverse=True):
         if path.exists():
             shutil.rmtree(path, ignore_errors=True)
+            removed_dirs += 1
+
+    for path in target_dir.rglob("*"):
+        if path.is_file() and path.suffix.lower() in OCR_MODEL_EXTENSIONS:
+            path.unlink(missing_ok=True)
+            removed_files += 1
+
+    return removed_dirs, removed_files
 
 
 def build_portable(source_dir: Path, output_root: Path, version: str) -> Path:
@@ -48,13 +79,14 @@ def build_portable(source_dir: Path, output_root: Path, version: str) -> Path:
     )
 
     ensure_runtime_dirs(output_dir)
-    remove_ocr_models(output_dir)
+    removed_dirs, removed_files = remove_ocr_models(output_dir)
 
     (output_dir / "README-Portable.txt").write_text(
         "Ankismart 便携版\n"
         "- 不包含 OCR 模型\n"
-        "- 首次 OCR 按需下载模型\n"
-        "- 运行数据位于当前目录的 config/data/logs/cache\n",
+        "- 首次 OCR 时按需下载模型（自动弹窗提示）\n"
+        "- 运行数据位于当前目录的 config/data/logs/cache\n"
+        f"- 已清理 OCR 模型目录: {removed_dirs}，模型文件: {removed_files}\n",
         encoding="utf-8",
     )
 
@@ -64,7 +96,7 @@ def build_portable(source_dir: Path, output_root: Path, version: str) -> Path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="单独构建 Ankismart 便携版")
+    parser = argparse.ArgumentParser(description="单独构建 Ankismart 便携版（不含 OCR 模型）")
     parser.add_argument("--source", default=str(SOURCE_DIR), help="输入应用目录")
     parser.add_argument("--output", default=str(OUTPUT_ROOT), help="输出目录")
     args = parser.parse_args()

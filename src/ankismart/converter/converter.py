@@ -2,12 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from ankismart.converter import (
     docx_converter,
     markdown_converter,
-    ocr_converter,
     pptx_converter,
     text_converter,
 )
@@ -31,8 +29,6 @@ _CONVERTERS: dict[str, Callable[[Path, str], MarkdownResult]] = {
     "text": text_converter.convert,
     "docx": docx_converter.convert,
     "pptx": pptx_converter.convert,
-    "pdf": ocr_converter.convert,
-    "image": ocr_converter.convert_image,
 }
 
 
@@ -41,6 +37,34 @@ class DocumentConverter:
 
     def __init__(self, *, ocr_correction_fn: Callable[[str], str] | None = None) -> None:
         self._ocr_correction_fn = ocr_correction_fn
+
+    @staticmethod
+    def _resolve_converter(file_type: str, trace_id: str) -> Callable:
+        """Resolve converter function lazily.
+
+        OCR converter is imported on demand so packaging can exclude OCR runtime.
+        """
+        converter_fn = _CONVERTERS.get(file_type)
+        if converter_fn is not None:
+            return converter_fn
+
+        if file_type in {"pdf", "image"}:
+            try:
+                from ankismart.converter import ocr_converter
+            except Exception as exc:
+                raise ConvertError(
+                    "OCR runtime is not available in this package",
+                    code=ErrorCode.E_FILE_TYPE_UNSUPPORTED,
+                    trace_id=trace_id,
+                ) from exc
+
+            return ocr_converter.convert if file_type == "pdf" else ocr_converter.convert_image
+
+        raise ConvertError(
+            f"No converter for type: {file_type}",
+            code=ErrorCode.E_FILE_TYPE_UNSUPPORTED,
+            trace_id=trace_id,
+        )
 
     def convert(self, file_path: Path, *, progress_callback: Callable[[str], None] | None = None) -> MarkdownResult:
         with trace_context() as trace_id:
@@ -70,13 +94,7 @@ class DocumentConverter:
                     extra={"file_type": file_type, "path": str(file_path), "trace_id": trace_id},
                 )
 
-                converter_fn = _CONVERTERS.get(file_type)
-                if converter_fn is None:
-                    raise ConvertError(
-                        f"No converter for type: {file_type}",
-                        code=ErrorCode.E_FILE_TYPE_UNSUPPORTED,
-                        trace_id=trace_id,
-                    )
+                converter_fn = self._resolve_converter(file_type, trace_id)
 
                 try:
                     if file_type in ("pdf", "image") and self._ocr_correction_fn is not None:

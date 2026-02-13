@@ -43,7 +43,7 @@ Ankismart 是一款智能 Anki 闪卡生成工具，能够将各种格式的文�
 
 #### 方法一：使用预编译版本（推荐）
 
-1. 从 [Releases](https://github.com/your-repo/ankismart/releases) 页面下载最新版本
+1. 从 [Releases]([项目仓库]/ankismart/releases) 页面下载最新版本
 2. 解压到任意目录
 3. 运行 `Ankismart.exe`（Windows）或对应的可执行文件
 
@@ -51,7 +51,7 @@ Ankismart 是一款智能 Anki 闪卡生成工具，能够将各种格式的文�
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/your-repo/ankismart.git
+git clone [项目仓库]/ankismart.git
 cd ankismart
 
 # 2. 创建虚拟环境
@@ -676,16 +676,16 @@ A: 界面支持中文和英文。卡片内容语言由源文档决定，LLM 会�
 
 **Q: 如何报告 Bug 或提出建议？**
 
-A: 请访问 [GitHub Issues](https://github.com/your-repo/ankismart/issues) 提交问题或建议。
+A: 请访问 [GitHub Issues]([项目仓库]/ankismart/issues) 提交问题或建议。
 
 ---
 
 ## 获取帮助
 
-- **文档**：[完整文档](https://github.com/your-repo/ankismart/docs)
+- **文档**：[完整文档]([项目仓库]/ankismart/docs)
 - **FAQ**：[常见问题解答](./faq.md)
-- **Issues**：[GitHub Issues](https://github.com/your-repo/ankismart/issues)
-- **讨论**：[GitHub Discussions](https://github.com/your-repo/ankismart/discussions)
+- **Issues**：[GitHub Issues]([项目仓库]/ankismart/issues)
+- **讨论**：[GitHub Discussions]([项目仓库]/ankismart/discussions)
 
 ---
 

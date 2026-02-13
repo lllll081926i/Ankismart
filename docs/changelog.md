@@ -368,13 +368,13 @@
 
 - **GitHub Issues**: 报告 Bug 或提出功能请求
 - **GitHub Discussions**: 讨论和提问
-- **Email**: [your-email@example.com]
+- **Email**: [联系我们]
 
 ---
 
 ## 许可证
 
-Ankismart 采用 [MIT License](../LICENSE) 开源。
+Ankismart 采用 [GPLv3 License](../LICENSE) 开源。
 
 ---
 
