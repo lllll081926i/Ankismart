@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import threading
 from collections.abc import Iterator
@@ -25,6 +26,173 @@ os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "1")
 _ocr_instance: PaddleOCR | None = None
 _ocr_lock = threading.Lock()
 _mkldnn_fallback_applied = False
+
+# CUDA detection cache to avoid repeated expensive checks
+_cuda_detection_cache: bool | None = None
+_cuda_detection_lock = threading.Lock()
+
+OCR_MODEL_PRESETS: dict[str, dict[str, str]] = {
+    "lite": {
+        "label": "轻量",
+        "det": "PP-OCRv5_mobile_det",
+        "rec": "PP-OCRv5_mobile_rec",
+        "recommended": "8GB 内存 / CPU / 无独显（轻薄本推荐）",
+    },
+    "standard": {
+        "label": "标准",
+        "det": "PP-OCRv5_server_det",
+        "rec": "PP-OCRv5_mobile_rec",
+        "recommended": "16GB 内存 / 4 核以上 CPU",
+    },
+    "accuracy": {
+        "label": "高精度",
+        "det": "PP-OCRv5_server_det",
+        "rec": "PP-OCRv5_server_rec",
+        "recommended": "16GB+ 内存，建议独显",
+    },
+}
+
+OCR_MODEL_SOURCE_MAP: dict[str, str] = {
+    "official": "huggingface",
+    "cn_mirror": "modelscope",
+}
+
+
+def get_ocr_model_presets() -> dict[str, dict[str, str]]:
+    return {key: value.copy() for key, value in OCR_MODEL_PRESETS.items()}
+
+
+def resolve_ocr_model_pair(model_tier: str | None = None) -> tuple[str, str]:
+    normalized_tier = (model_tier or "lite").strip().lower()
+    preset = OCR_MODEL_PRESETS.get(normalized_tier, OCR_MODEL_PRESETS["lite"])
+    return preset["det"], preset["rec"]
+
+
+def resolve_ocr_model_source(model_source: str | None = None) -> str:
+    normalized_source = (model_source or "official").strip().lower()
+    return OCR_MODEL_SOURCE_MAP.get(normalized_source, OCR_MODEL_SOURCE_MAP["official"])
+
+
+def configure_ocr_runtime(
+    *,
+    model_tier: str | None = None,
+    model_source: str | None = None,
+    reset_ocr_instance: bool = False,
+) -> dict[str, str]:
+    if model_tier is not None:
+        det_model, rec_model = resolve_ocr_model_pair(model_tier)
+        os.environ["ANKISMART_OCR_DET_MODEL"] = det_model
+        os.environ["ANKISMART_OCR_REC_MODEL"] = rec_model
+
+    if model_source is not None:
+        source_alias = resolve_ocr_model_source(model_source)
+        os.environ["PADDLE_PDX_MODEL_SOURCE"] = source_alias
+
+    det_model = os.getenv("ANKISMART_OCR_DET_MODEL", OCR_MODEL_PRESETS["lite"]["det"])
+    rec_model = os.getenv("ANKISMART_OCR_REC_MODEL", OCR_MODEL_PRESETS["lite"]["rec"])
+    source_alias = os.getenv("PADDLE_PDX_MODEL_SOURCE", OCR_MODEL_SOURCE_MAP["official"])
+
+    if reset_ocr_instance:
+        global _ocr_instance, _mkldnn_fallback_applied
+        with _ocr_lock:
+            _ocr_instance = None
+            _mkldnn_fallback_applied = False
+
+    return {
+        "det_model": det_model,
+        "rec_model": rec_model,
+        "source_alias": source_alias,
+    }
+
+
+def _cuda_devices_visible() -> bool:
+    visible_devices = os.getenv("CUDA_VISIBLE_DEVICES")
+    if visible_devices is None:
+        return True
+
+    normalized = visible_devices.strip().lower()
+    return normalized not in {"", "-1", "none", "void"}
+
+
+def _has_nvidia_smi_gpu() -> bool:
+    if not _cuda_devices_visible():
+        return False
+
+    executables = ["nvidia-smi"]
+    system_root = os.getenv("SystemRoot", "C:/Windows")
+    executables.append(str(Path(system_root) / "System32" / "nvidia-smi.exe"))
+    program_files = os.getenv("ProgramW6432") or os.getenv("ProgramFiles")
+    if program_files:
+        executables.append(str(Path(program_files) / "NVIDIA Corporation" / "NVSMI" / "nvidia-smi.exe"))
+
+    commands = []
+    for executable in executables:
+        commands.append([executable, "--query-gpu=index", "--format=csv,noheader"])
+        commands.append([executable, "-L"])
+
+    for command in commands:
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+        except (FileNotFoundError, OSError, subprocess.SubprocessError):
+            continue
+
+        if result.returncode == 0 and result.stdout.strip():
+            return True
+
+    return False
+
+
+def detect_cuda_environment() -> bool:
+    """检测 CUDA 环境（首次调用后缓存结果）"""
+    global _cuda_detection_cache
+
+    if _cuda_detection_cache is not None:
+        return _cuda_detection_cache
+
+    with _cuda_detection_lock:
+        if _cuda_detection_cache is not None:
+            return _cuda_detection_cache
+
+        # 执行实际检测
+        result = _perform_cuda_detection()
+        _cuda_detection_cache = result
+        return result
+
+
+def _perform_cuda_detection() -> bool:
+    """实际的 CUDA 检测逻辑（从 detect_cuda_environment 提取）"""
+    if not _cuda_devices_visible():
+        return False
+
+    if _has_nvidia_smi_gpu():
+        return True
+
+    cuda_path = os.getenv("CUDA_PATH") or os.getenv("CUDA_HOME")
+    if cuda_path:
+        try:
+            return Path(cuda_path).expanduser().exists()
+        except OSError:
+            return False
+
+    return False
+
+
+def is_cuda_available() -> bool:
+    if _cuda_available():
+        return True
+    return detect_cuda_environment()
+
+
+def preload_cuda_detection() -> None:
+    """在后台线程中预热 CUDA 检测（非阻塞）"""
+    thread = threading.Thread(target=detect_cuda_environment, daemon=True)
+    thread.start()
 
 
 def _get_env_bool(name: str, default: bool) -> bool:
@@ -97,10 +265,15 @@ def _find_existing_model_dir(model_name: str, env_var_name: str, model_root: Pat
     return None
 
 
-def get_missing_ocr_models() -> list[str]:
+def get_missing_ocr_models(
+    *,
+    model_tier: str | None = None,
+    model_source: str | None = None,
+) -> list[str]:
+    configure_ocr_runtime(model_tier=model_tier, model_source=model_source)
     model_root = _resolve_model_root()
-    det_model = os.getenv("ANKISMART_OCR_DET_MODEL", "PP-OCRv5_mobile_det")
-    rec_model = os.getenv("ANKISMART_OCR_REC_MODEL", "PP-OCRv5_mobile_rec")
+    det_model = os.getenv("ANKISMART_OCR_DET_MODEL", OCR_MODEL_PRESETS["lite"]["det"])
+    rec_model = os.getenv("ANKISMART_OCR_REC_MODEL", OCR_MODEL_PRESETS["lite"]["rec"])
 
     missing: list[str] = []
     if _find_existing_model_dir(det_model, "ANKISMART_OCR_DET_MODEL_DIR", model_root) is None:
@@ -110,9 +283,14 @@ def get_missing_ocr_models() -> list[str]:
     return missing
 
 
-def download_missing_ocr_models(progress_callback=None) -> list[str]:
-    model_root = _resolve_model_root()
-    missing = get_missing_ocr_models()
+def download_missing_ocr_models(
+    progress_callback=None,
+    *,
+    model_tier: str | None = None,
+    model_source: str | None = None,
+) -> list[str]:
+    configure_ocr_runtime(model_tier=model_tier, model_source=model_source)
+    missing = get_missing_ocr_models(model_tier=model_tier, model_source=model_source)
     if not missing:
         return []
 
@@ -138,7 +316,7 @@ def download_missing_ocr_models(progress_callback=None) -> list[str]:
         if progress_callback is not None:
             progress_callback(idx, total, f"模型下载完成：{model_name}（{idx}/{total}）")
 
-    remain = get_missing_ocr_models()
+    remain = get_missing_ocr_models(model_tier=model_tier, model_source=model_source)
     if remain:
         raise ConvertError(
             f"OCR model download failed: {', '.join(remain)}",
@@ -146,9 +324,10 @@ def download_missing_ocr_models(progress_callback=None) -> list[str]:
         )
 
     # Reset OCR singleton to ensure new local model paths are picked up.
-    global _ocr_instance
+    global _ocr_instance, _mkldnn_fallback_applied
     with _ocr_lock:
         _ocr_instance = None
+        _mkldnn_fallback_applied = False
 
     # Keep returned list deterministic and aligned with input order.
     return list(missing)
@@ -237,8 +416,8 @@ def _resolve_ocr_device() -> str:
 
 
 def _build_ocr_kwargs(device: str) -> dict[str, object]:
-    det_model = os.getenv("ANKISMART_OCR_DET_MODEL", "PP-OCRv5_mobile_det")
-    rec_model = os.getenv("ANKISMART_OCR_REC_MODEL", "PP-OCRv5_mobile_rec")
+    det_model = os.getenv("ANKISMART_OCR_DET_MODEL", OCR_MODEL_PRESETS["lite"]["det"])
+    rec_model = os.getenv("ANKISMART_OCR_REC_MODEL", OCR_MODEL_PRESETS["lite"]["rec"])
     model_root = _resolve_model_root()
     model_root.mkdir(parents=True, exist_ok=True)
 

@@ -5,13 +5,23 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QMessageBox
-from qfluentwidgets import FluentIcon, FluentWindow, NavigationItemPosition, setTheme, Theme, qconfig, isDarkTheme
+from qfluentwidgets import (
+    FluentIcon,
+    FluentWindow,
+    NavigationItemPosition,
+    NavigationToolButton,
+    setTheme,
+    Theme,
+    qconfig,
+    isDarkTheme,
+)
 
 from ankismart.core.config import AppConfig, load_config, save_config
 from .i18n import set_language, t
 from .import_page import ImportPage
 from .preview_page import PreviewPage
 from .result_page import ResultPage
+from .performance_page import PerformancePage
 from .card_preview_page import CardPreviewPage
 from .settings_page import SettingsPage
 from .shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
@@ -23,9 +33,11 @@ class MainWindow(FluentWindow):
     language_changed = pyqtSignal(str)  # Signal emitted when language changes
     theme_changed = pyqtSignal(str)  # Signal emitted when theme changes
 
-    def __init__(self):
+    def __init__(self, config: AppConfig):
         super().__init__()
-        self.config = load_config()
+        self.config = config
+        if self.config.theme not in {"light", "dark", "auto"}:
+            self.config.theme = "light"
         self._cards = []
         self._batch_result = None
         self._connection_status = False
@@ -41,11 +53,13 @@ class MainWindow(FluentWindow):
         self.preview_page = PreviewPage(self)
         self.card_preview_page = CardPreviewPage(self)
         self.result_page = ResultPage(self)
+        self.performance_page = PerformancePage(self)
         self.settings_page = SettingsPage(self)
         self._import_page = self.import_page
         self._preview_page = self.preview_page
         self._card_preview_page = self.card_preview_page
         self._result_page = self.result_page
+        self._performance_page = self.performance_page
         self._settings_page = self.settings_page
 
         self._init_window()
@@ -105,11 +119,70 @@ class MainWindow(FluentWindow):
         )
 
         self.addSubInterface(
+            self.performance_page,
+            FluentIcon.SPEED_HIGH,
+            labels["performance"],
+            NavigationItemPosition.TOP
+        )
+
+        self._theme_nav_button = NavigationToolButton(FluentIcon.BRUSH)
+        self._theme_nav_button.setIcon(self._get_theme_button_icon())
+        self.navigationInterface.addWidget(
+            "themeModeButton",
+            self._theme_nav_button,
+            onClick=self._cycle_theme_mode,
+            position=NavigationItemPosition.BOTTOM,
+            tooltip=self._get_theme_button_tooltip(),
+        )
+
+        self.addSubInterface(
             self.settings_page,
             FluentIcon.SETTING,
             labels["settings"],
             NavigationItemPosition.BOTTOM
         )
+
+    def _get_theme_button_tooltip(self) -> str:
+        """Get localized tooltip text for sidebar theme mode button."""
+        is_zh = self.config.language == "zh"
+        theme_map_zh = {
+            "light": "浅色",
+            "dark": "深色",
+            "auto": "跟随系统",
+        }
+        theme_map_en = {
+            "light": "Light",
+            "dark": "Dark",
+            "auto": "System",
+        }
+        if is_zh:
+            current = theme_map_zh.get(self.config.theme, "浅色")
+            return f"主题：{current}"
+        current = theme_map_en.get(self.config.theme, "Light")
+        return f"Theme: {current}"
+
+    def _get_theme_button_icon(self) -> FluentIcon:
+        """Get icon for current theme mode: light/dark/auto."""
+        icon_map = {
+            "light": FluentIcon.BRIGHTNESS,
+            "dark": FluentIcon.QUIET_HOURS,
+            "auto": FluentIcon.PROJECTOR,
+        }
+        return icon_map.get(self.config.theme, FluentIcon.BRIGHTNESS)
+
+    def _update_theme_button_tooltip(self) -> None:
+        """Refresh sidebar theme mode button tooltip."""
+        button = getattr(self, "_theme_nav_button", None)
+        if button is not None:
+            button.setToolTip(self._get_theme_button_tooltip())
+            button.setIcon(self._get_theme_button_icon())
+
+    def _cycle_theme_mode(self) -> None:
+        """Cycle theme mode: light -> dark -> auto -> light."""
+        modes = ["light", "dark", "auto"]
+        current = self.config.theme if self.config.theme in modes else "light"
+        next_mode = modes[(modes.index(current) + 1) % len(modes)]
+        self.switch_theme(next_mode)
 
     def _init_shortcuts(self):
         """Initialize global keyboard shortcuts."""
@@ -184,8 +257,11 @@ class MainWindow(FluentWindow):
             self.import_page.update_theme()
         if hasattr(self.result_page, 'update_theme'):
             self.result_page.update_theme()
+        if hasattr(self.performance_page, 'update_theme'):
+            self.performance_page.update_theme()
         if hasattr(self.settings_page, 'update_theme'):
             self.settings_page.update_theme()
+        self._update_theme_button_tooltip()
 
     def _get_navigation_labels(self) -> dict[str, str]:
         """Get navigation labels based on current language."""
@@ -194,6 +270,7 @@ class MainWindow(FluentWindow):
             "import": t("nav.import", lang),
             "preview": t("nav.preview", lang),
             "result": t("nav.result", lang),
+            "performance": t("nav.performance", lang),
             "settings": t("nav.settings", lang)
         }
 
@@ -210,6 +287,7 @@ class MainWindow(FluentWindow):
         self.config.theme = theme
         save_config(self.config)
         self._apply_theme()
+        self._update_theme_button_tooltip()
         # Note: _on_theme_changed will be called automatically by qconfig.themeChanged signal
 
     def switch_language(self, language: str):
@@ -238,8 +316,11 @@ class MainWindow(FluentWindow):
             self.preview_page.retranslate_ui()
         if hasattr(self.result_page, 'retranslate_ui'):
             self.result_page.retranslate_ui()
+        if hasattr(self.performance_page, 'retranslate_ui'):
+            self.performance_page.retranslate_ui()
         if hasattr(self.settings_page, 'retranslate_ui'):
             self.settings_page.retranslate_ui()
+        self._update_theme_button_tooltip()
 
     def _refresh_navigation(self):
         """Refresh navigation labels after language change."""
@@ -253,7 +334,7 @@ class MainWindow(FluentWindow):
 
     def _switch_page(self, index: int) -> None:
         """Switch page by index for backward compatibility."""
-        pages = [self.import_page, self.preview_page, self.result_page, self.settings_page]
+        pages = [self.import_page, self.preview_page, self.result_page, self.performance_page, self.settings_page]
         if 0 <= index < len(pages):
             self.switchTo(pages[index])
 

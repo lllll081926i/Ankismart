@@ -108,8 +108,8 @@ def main() -> int:
         # Apply theme
         _apply_theme(config.theme)
 
-        # Create and configure main window
-        window = MainWindow()
+        # Create and configure main window (pass config to avoid duplicate loading)
+        window = MainWindow(config)
         logger.info("Main window created")
 
         # Restore window geometry if available
