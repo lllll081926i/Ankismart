@@ -296,6 +296,8 @@ def load_config() -> AppConfig:
 
     try:
         config = AppConfig(**data)
+        if config.theme not in {"light", "dark", "auto"}:
+            config.theme = "light"
         _update_config_cache(config_path, True, mtime_ns, config)
         return config
     except Exception as exc:

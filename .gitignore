@@ -18,6 +18,8 @@ env/
 .vscode/
 *.swp
 *.swo
+.claude/
+PyQt-Fluent-Widgets-master/
 
 # OS
 .DS_Store

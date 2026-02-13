@@ -173,6 +173,7 @@ class CardPreviewPage(QWidget):
         # Bottom bar
         bottom_bar = self._create_bottom_bar()
         layout.addLayout(bottom_bar)
+        self._apply_theme_styles()
 
     def _create_top_bar(self) -> QHBoxLayout:
         """Create top bar with title and filters."""
@@ -387,28 +388,37 @@ class CardPreviewPage(QWidget):
 
     def _apply_browser_theme(self) -> None:
         """Apply theme-aware stylesheet to embedded HTML preview browser."""
-        if isDarkTheme():
-            self._card_browser.setStyleSheet(
-                "QTextBrowser {"
-                "background-color: #1F2937;"
-                "color: #E5E7EB;"
-                "border: 1px solid rgba(255, 255, 255, 0.12);"
-                "border-radius: 8px;"
-                "}"
-            )
-            return
-
+        border_color = "rgba(255, 255, 255, 0.12)" if isDarkTheme() else "rgba(0, 0, 0, 0.08)"
         self._card_browser.setStyleSheet(
             "QTextBrowser {"
-            "background-color: #FFFFFF;"
-            "color: #111827;"
-            "border: 1px solid rgba(0, 0, 0, 0.10);"
+            "background-color: transparent;"
+            f"border: 1px solid {border_color};"
             "border-radius: 8px;"
             "}"
         )
 
+    def _apply_theme_styles(self) -> None:
+        """Apply theme-aware styles for non-Fluent Qt widgets."""
+        border_color = "rgba(255, 255, 255, 0.12)" if isDarkTheme() else "rgba(0, 0, 0, 0.08)"
+        hover_color = "rgba(255, 255, 255, 0.06)" if isDarkTheme() else "rgba(0, 0, 0, 0.04)"
+        selected_color = "rgba(59, 130, 246, 0.26)" if isDarkTheme() else "rgba(37, 99, 235, 0.14)"
+        self._card_list.setStyleSheet(
+            "QListWidget {"
+            "background-color: transparent;"
+            f"border: 1px solid {border_color};"
+            "border-radius: 8px;"
+            "}"
+            "QListWidget::item {"
+            "padding: 8px 10px;"
+            "border-radius: 6px;"
+            "}"
+            f"QListWidget::item:selected {{background-color: {selected_color};}}"
+            f"QListWidget::item:hover {{background-color: {hover_color};}}"
+        )
+
     def update_theme(self) -> None:
         """Update card preview when global theme changes."""
+        self._apply_theme_styles()
         self._apply_browser_theme()
         if 0 <= self._current_index < len(self._filtered_cards):
             self._show_card(self._current_index)

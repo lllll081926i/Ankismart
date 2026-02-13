@@ -210,6 +210,26 @@ class PreviewPage(ProgressMixin, QWidget):
         progress_layout.addWidget(self._status_label)
 
         layout.addLayout(progress_layout)
+        self._apply_theme_styles()
+
+    def _apply_theme_styles(self) -> None:
+        """Apply theme-aware styles for Qt widgets in preview page."""
+        border_color = "rgba(255, 255, 255, 0.12)" if isDarkTheme() else "rgba(0, 0, 0, 0.08)"
+        hover_color = "rgba(255, 255, 255, 0.06)" if isDarkTheme() else "rgba(0, 0, 0, 0.04)"
+        selected_color = "rgba(59, 130, 246, 0.26)" if isDarkTheme() else "rgba(37, 99, 235, 0.14)"
+        self._file_list.setStyleSheet(
+            "QListWidget {"
+            "background-color: transparent;"
+            f"border: 1px solid {border_color};"
+            "border-radius: 8px;"
+            "}"
+            "QListWidget::item {"
+            "padding: 8px 10px;"
+            "border-radius: 6px;"
+            "}"
+            f"QListWidget::item:selected {{background-color: {selected_color};}}"
+            f"QListWidget::item:hover {{background-color: {hover_color};}}"
+        )
 
     def _init_shortcuts(self):
         """Initialize page-specific keyboard shortcuts."""
@@ -602,6 +622,7 @@ class PreviewPage(ProgressMixin, QWidget):
         """Update theme-dependent components when theme changes."""
         if self._highlighter:
             self._highlighter.update_theme()
+        self._apply_theme_styles()
 
     def closeEvent(self, event):
         """Clean up worker threads before closing."""

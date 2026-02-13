@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PyQt6.QtGui import QFont
 from qfluentwidgets import BodyLabel
 
 # Color constants
@@ -77,9 +78,10 @@ FONT_SIZE_PAGE_TITLE = 22
 
 def apply_page_title_style(label: BodyLabel) -> None:
     """Apply unified style for top-level page titles."""
-    label.setStyleSheet(
-        f"font-size: {FONT_SIZE_PAGE_TITLE}px; font-weight: 600;"
-    )
+    font = label.font()
+    font.setPixelSize(FONT_SIZE_PAGE_TITLE)
+    font.setWeight(QFont.Weight.DemiBold)
+    label.setFont(font)
 
 
 class Colors:

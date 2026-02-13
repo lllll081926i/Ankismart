@@ -284,28 +284,15 @@ class ProviderListItemWidget(QWidget):
 
     def _update_style(self):
         """Update style based on current theme - using QFluentWidgets theme system."""
-        # Use QFluentWidgets theme colors instead of hardcoded values
-        is_dark = isDarkTheme()
-        if is_dark:
-            self.setStyleSheet("""
-                QWidget#providerListItem {
-                    background-color: transparent;
-                    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-                }
-                QWidget#providerListItem:hover {
-                    background-color: rgba(255, 255, 255, 0.03);
-                }
-            """)
-        else:
-            self.setStyleSheet("""
-                QWidget#providerListItem {
-                    background-color: transparent;
-                    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-                }
-                QWidget#providerListItem:hover {
-                    background-color: rgba(0, 0, 0, 0.03);
-                }
-            """)
+        border_color = "rgba(255, 255, 255, 0.10)" if isDarkTheme() else "rgba(0, 0, 0, 0.08)"
+        hover_color = "rgba(255, 255, 255, 0.05)" if isDarkTheme() else "rgba(0, 0, 0, 0.04)"
+        self.setStyleSheet(
+            "QWidget#providerListItem {"
+            "background-color: transparent;"
+            f"border-bottom: 1px solid {border_color};"
+            "}"
+            f"QWidget#providerListItem:hover {{background-color: {hover_color};}}"
+        )
 
     def update_theme(self):
         """Update theme-dependent styles when theme changes."""
@@ -326,7 +313,7 @@ class ProviderListWidget(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._init_panel_ui()
         self._update_panel_style()
-        self.setAutoFillBackground(True)
+        self.setAutoFillBackground(False)
 
     def _init_panel_ui(self) -> None:
         """Initialize static UI structure for provider panel."""
@@ -357,23 +344,14 @@ class ProviderListWidget(QWidget):
 
     def _update_panel_style(self):
         """Update panel style based on current theme - using QFluentWidgets theme system."""
-        is_dark = isDarkTheme()
-        if is_dark:
-            self.setStyleSheet("""
-                QWidget#providerListPanel {
-                    background-color: rgba(45, 45, 45, 1);
-                    border: 1px solid rgba(255, 255, 255, 0.08);
-                    border-radius: 10px;
-                }
-            """)
-        else:
-            self.setStyleSheet("""
-                QWidget#providerListPanel {
-                    background-color: #FFFFFF;
-                    border: 1px solid rgba(0, 0, 0, 0.08);
-                    border-radius: 10px;
-                }
-            """)
+        border_color = "rgba(255, 255, 255, 0.10)" if isDarkTheme() else "rgba(0, 0, 0, 0.08)"
+        self.setStyleSheet(
+            "QWidget#providerListPanel {"
+            "background-color: transparent;"
+            f"border: 1px solid {border_color};"
+            "border-radius: 10px;"
+            "}"
+        )
 
     def _forward_wheel_to_parent(self, event: QWheelEvent) -> None:
         parent = self.parentWidget()
@@ -494,11 +472,15 @@ class SettingsPage(ScrollArea):
 
         self.scrollWidget.setObjectName("scrollWidget")
 
+        # Apply theme-aware background
+        self._apply_background_style()
+
         # Initialize layout
         self.__initLayout()
 
         # Load current configuration
         self._load_config()
+        self._apply_theme_styles()
 
         # Initialize shortcuts
         self._init_shortcuts()
@@ -526,6 +508,24 @@ class SettingsPage(ScrollArea):
             duration=duration,
             parent=self,
         )
+
+    def _apply_background_style(self) -> None:
+        """Apply theme-aware background color to settings page."""
+        if isDarkTheme():
+            bg_color = "#202020"  # Dark theme background
+        else:
+            bg_color = "#f5f5f5"  # Light theme background
+
+        self.setStyleSheet(f"QScrollArea#settingsPage {{ background-color: {bg_color}; border: none; }}")
+        self.scrollWidget.setStyleSheet(f"QWidget#scrollWidget {{ background-color: {bg_color}; }}")
+
+    def _apply_theme_styles(self) -> None:
+        """Apply theme-aware styles for non-Fluent labels in settings page."""
+        self._apply_background_style()
+        if hasattr(self, "_ocr_model_recommend_label"):
+            self._ocr_model_recommend_label.setStyleSheet("")
+        if hasattr(self, "_provider_list_widget") and self._provider_list_widget:
+            self._provider_list_widget.update_theme()
 
     def __initLayout(self):
         """Initialize layout and add all setting cards."""
@@ -1397,17 +1397,23 @@ class SettingsPage(ScrollArea):
         old_language = self._main.config.language
 
         try:
-            save_config(config)
+            # Update main window config first
             self._main.config = config
+
+            # Save config to disk
+            save_config(config)
+
+            # Configure OCR runtime
             configure_ocr_runtime(
                 model_tier=config.ocr_model_tier,
                 model_source=config.ocr_model_source,
                 reset_ocr_instance=True,
             )
 
-            # Apply theme change immediately
-            if old_theme != theme and hasattr(self._main, "switch_theme"):
-                self._main.switch_theme(theme)
+            # Apply theme change immediately (without saving again)
+            if old_theme != theme:
+                self._main._apply_theme()
+                self._main._update_theme_button_tooltip()
 
             # Apply language change if needed
             if old_language != language and hasattr(self._main, "switch_language"):
@@ -1516,5 +1522,6 @@ class SettingsPage(ScrollArea):
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""
+        self._apply_theme_styles()
         if self._provider_list_widget:
             self._provider_list_widget.update_theme()

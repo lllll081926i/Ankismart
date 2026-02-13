@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal
+from PyQt6.QtGui import QDesktopServices, QIcon
 from PyQt6.QtWidgets import QMessageBox
 from qfluentwidgets import (
     FluentIcon,
@@ -75,6 +75,12 @@ class MainWindow(FluentWindow):
         self.resize(1200, 800)
         self.setMinimumSize(1000, 700)  # Set minimum size for DPI compatibility
 
+        # Make top title bar slimmer and sync content top margin
+        if hasattr(self, "titleBar") and self.titleBar is not None:
+            self.titleBar.setFixedHeight(34)
+            if hasattr(self, "widgetLayout") and self.widgetLayout is not None:
+                self.widgetLayout.setContentsMargins(0, self.titleBar.height(), 0, 0)
+
         # Set window icon
         icon_path = self._get_icon_path()
         if icon_path.exists():
@@ -134,6 +140,15 @@ class MainWindow(FluentWindow):
             tooltip=self._get_theme_button_tooltip(),
         )
 
+        self._github_nav_button = NavigationToolButton(FluentIcon.GITHUB)
+        self.navigationInterface.addWidget(
+            "githubButton",
+            self._github_nav_button,
+            onClick=self._open_github_repository,
+            position=NavigationItemPosition.BOTTOM,
+            tooltip="GitHub",
+        )
+
         self.addSubInterface(
             self.settings_page,
             FluentIcon.SETTING,
@@ -166,7 +181,7 @@ class MainWindow(FluentWindow):
         icon_map = {
             "light": FluentIcon.BRIGHTNESS,
             "dark": FluentIcon.QUIET_HOURS,
-            "auto": FluentIcon.PROJECTOR,
+            "auto": FluentIcon.IOT,
         }
         return icon_map.get(self.config.theme, FluentIcon.BRIGHTNESS)
 
@@ -183,6 +198,10 @@ class MainWindow(FluentWindow):
         current = self.config.theme if self.config.theme in modes else "light"
         next_mode = modes[(modes.index(current) + 1) % len(modes)]
         self.switch_theme(next_mode)
+
+    def _open_github_repository(self) -> None:
+        """Open project GitHub repository."""
+        QDesktopServices.openUrl(QUrl("https://github.com/lllll081926i/Ankismart"))
 
     def _init_shortcuts(self):
         """Initialize global keyboard shortcuts."""

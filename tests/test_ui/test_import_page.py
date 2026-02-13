@@ -260,7 +260,7 @@ def test_sidebar_theme_icon_mapping() -> None:
     assert MainWindow._get_theme_button_icon(window) == FluentIcon.QUIET_HOURS
 
     window.config = SimpleNamespace(theme="auto")
-    assert MainWindow._get_theme_button_icon(window) == FluentIcon.PROJECTOR
+    assert MainWindow._get_theme_button_icon(window) == FluentIcon.IOT
 
 
 def test_batch_convert_done_shows_errors(monkeypatch):

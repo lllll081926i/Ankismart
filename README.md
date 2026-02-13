@@ -1,4 +1,4 @@
-# Ankismart
+﻿# Ankismart
 
 <p align="center">
   <img src="docs/images/hero.svg" alt="Ankismart hero" width="100%" />
@@ -63,10 +63,10 @@ python -m ankismart.ui.app
 
 ```bash
 # 完整构建（若本机安装了 Inno Setup，会同时产出安装包）
-python build.py --clean
+python packaging/build.py --clean
 
 # 仅构建应用分发目录 + 便携版
-python build.py --clean --skip-installer
+python packaging/build.py --clean --skip-installer
 ```
 
 输出目录结构（扁平且清晰）：
@@ -125,10 +125,10 @@ python -m ankismart.ui.app
 
 ```bash
 # Full release build (installer + portable if Inno Setup exists)
-python build.py --clean
+python packaging/build.py --clean
 
 # Portable-only release flow
-python build.py --clean --skip-installer
+python packaging/build.py --clean --skip-installer
 ```
 
 Release layout:
@@ -147,4 +147,5 @@ dist/release/
 - Architecture: `docs/architecture.md`
 
 </details>
+
 

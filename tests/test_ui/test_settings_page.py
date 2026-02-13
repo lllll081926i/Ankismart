@@ -38,11 +38,12 @@ def _make_main(config: AppConfig | None = None):
     return main, status_calls
 
 
-def test_provider_list_panel_uses_white_background_style(_qapp) -> None:
+def test_provider_list_panel_uses_theme_neutral_style(_qapp) -> None:
     panel = ProviderListWidget()
     assert panel.objectName() == "providerListPanel"
     assert "QWidget#providerListPanel" in panel.styleSheet()
-    assert "background-color: #FFFFFF" in panel.styleSheet()
+    assert "background-color: transparent" in panel.styleSheet()
+    assert "#FFFFFF" not in panel.styleSheet()
 
 
 def test_provider_list_item_has_detailed_provider_fields(_qapp) -> None:

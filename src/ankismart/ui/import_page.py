@@ -605,12 +605,13 @@ class ImportPage(ProgressMixin, QWidget):
         self._tags_input.setToolTip(
             get_text("import.tags_tooltip", self._main.config.language)
         )
-        self._tags_input.setMinimumWidth(460)
+        self._tags_input.setMinimumWidth(320)
+        self._tags_input.setMaximumWidth(520)
         self._tags_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         if self._main.config.last_tags:
             self._tags_input.setText(self._main.config.last_tags)
         self._tags_card.hBoxLayout.addWidget(self._tags_input)
-        self._tags_card.hBoxLayout.addSpacing(24)
+        self._tags_card.hBoxLayout.addSpacing(16)
         self._tags_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self._tags_card.setMaximumHeight(_RIGHT_OPTION_CARD_MAX_HEIGHT)
         group.addSettingCard(self._tags_card)
