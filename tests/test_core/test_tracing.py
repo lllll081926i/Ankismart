@@ -9,6 +9,8 @@ import pytest
 
 from ankismart.core.tracing import (
     _trace_id_var,
+    export_metrics_prometheus,
+    export_metrics_snapshot,
     generate_trace_id,
     get_trace_id,
     metrics,
@@ -122,6 +124,37 @@ class TestTimedAsync:
                 assert extra["duration_ms"] >= 0
 
         asyncio.run(_run())
+
+
+class TestMetricsCollector:
+    def test_counter_and_gauge_snapshot_export(self):
+        metrics.reset()
+        metrics.increment("llm_requests_total")
+        metrics.increment("llm_requests_failed_total", labels={"code": "E_LLM_ERROR"})
+        metrics.set_gauge("anki_push_success_ratio", 0.75)
+        metrics.record_cache_hit()
+        metrics.record_cache_miss()
+
+        snapshot = export_metrics_snapshot()
+        counters = snapshot["counters"]
+        gauges = snapshot["gauges"]
+
+        assert counters["llm_requests_total"] == 1.0
+        assert counters["llm_requests_failed_total[code=E_LLM_ERROR]"] == 1.0
+        assert gauges["anki_push_success_ratio"] == 0.75
+        assert snapshot["cache_hits"] == 1
+        assert snapshot["cache_misses"] == 1
+
+    def test_export_prometheus_contains_expected_metrics(self):
+        metrics.reset()
+        metrics.increment("convert_success_total", 2)
+        metrics.set_gauge("convert_cache_hit_ratio", 0.5)
+
+        payload = export_metrics_prometheus()
+
+        assert "ankismart_convert_success_total 2.0" in payload
+        assert "ankismart_convert_cache_hit_ratio 0.5" in payload
+        assert "ankismart_cache_hits_total" in payload
 
     def test_records_metrics(self):
         import asyncio

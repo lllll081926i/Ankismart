@@ -10,6 +10,7 @@ import pytest
 
 from ankismart.card_gen.llm_client import _BASE_DELAY, _MAX_RETRIES, LLMClient, _RpmThrottle
 from ankismart.core.errors import CardGenError, ErrorCode
+from ankismart.core.tracing import metrics
 
 
 def _make_response(content: str, prompt_tokens: int = 10, completion_tokens: int = 20):
@@ -340,3 +341,39 @@ class TestThrottleUsageInChat:
             client.chat("sys", "usr")
 
         assert client._throttle.wait.call_count == _MAX_RETRIES
+
+
+class TestLLMClientMetrics:
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_chat_success_updates_metrics(self, mock_openai_cls):
+        metrics.reset()
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.chat.completions.create.return_value = _make_response("ok", prompt_tokens=12, completion_tokens=8)
+
+        client = LLMClient(api_key="sk-test")
+        assert client.chat("sys", "usr") == "ok"
+
+        assert metrics.get_counter("llm_requests_total") == 1.0
+        assert metrics.get_counter("llm_requests_succeeded_total") == 1.0
+        assert metrics.get_counter("llm_total_tokens_total") == 20.0
+
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_chat_auth_failure_updates_labeled_metric(self, mock_openai_cls):
+        from openai import AuthenticationError
+
+        metrics.reset()
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        response = httpx.Response(401, request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"))
+        mock_client.chat.completions.create.side_effect = AuthenticationError(
+            message="bad auth",
+            response=response,
+            body=None,
+        )
+
+        client = LLMClient(api_key="sk-test")
+        with pytest.raises(CardGenError):
+            client.chat("sys", "usr")
+
+        assert metrics.get_counter("llm_requests_failed_total", labels={"code": ErrorCode.E_LLM_AUTH_ERROR.value}) == 1.0

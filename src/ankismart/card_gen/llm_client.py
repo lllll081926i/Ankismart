@@ -17,7 +17,7 @@ from openai import (
 
 from ankismart.core.errors import CardGenError, ErrorCode
 from ankismart.core.logging import get_logger
-from ankismart.core.tracing import get_trace_id, timed
+from ankismart.core.tracing import get_trace_id, metrics, timed
 
 logger = get_logger("llm_client")
 
@@ -34,9 +34,11 @@ class _RpmThrottle:
         self._lock = threading.Lock()
         self._timestamps: deque[float] = deque()
 
-    def wait(self) -> None:
+    def wait(self) -> float:
         if self._rpm <= 0:
-            return
+            return 0.0
+
+        total_waited = 0.0
 
         while True:
             now = time.monotonic()
@@ -49,12 +51,13 @@ class _RpmThrottle:
 
                 if len(self._timestamps) < self._rpm:
                     self._timestamps.append(now)
-                    return
+                    return total_waited
 
                 wait_for = 60.0 - (now - self._timestamps[0])
 
             if wait_for > 0:
                 time.sleep(wait_for)
+                total_waited += wait_for
             else:
                 # Yield to avoid busy spin on edge timing.
                 time.sleep(0)
@@ -85,12 +88,16 @@ class LLMClient:
 
     def validate_connection(self) -> bool:
         """Test if the LLM endpoint is reachable by listing models."""
+        metrics.increment("llm_validate_requests_total")
         try:
             self._client.models.list()
+            metrics.increment("llm_validate_success_total")
             return True
         except Exception as exc:
             trace_id = get_trace_id()
-            raise self._convert_to_card_error(exc, trace_id=trace_id, context="validate connection") from exc
+            converted = self._convert_to_card_error(exc, trace_id=trace_id, context="validate connection")
+            metrics.increment("llm_validate_failed_total", labels={"code": converted.code.value})
+            raise converted from exc
 
     @classmethod
     def from_config(cls, config) -> LLMClient:
@@ -114,9 +121,18 @@ class LLMClient:
     def chat(self, system_prompt: str, user_prompt: str) -> str:
         """Send a chat completion request with retry logic."""
         trace_id = get_trace_id()
+        metrics.increment("llm_requests_total")
 
         for attempt in range(_MAX_RETRIES):
-            self._throttle.wait()
+            waited_raw = self._throttle.wait()
+            try:
+                waited = float(waited_raw)
+            except (TypeError, ValueError):
+                waited = 0.0
+            metrics.increment("llm_attempts_total")
+            if waited > 0:
+                metrics.increment("llm_throttle_wait_seconds_total", value=waited)
+                metrics.set_gauge("llm_throttle_last_wait_seconds", waited)
             try:
                 with timed(f"llm_call_attempt_{attempt + 1}"):
                     kwargs = {
@@ -134,6 +150,9 @@ class LLMClient:
 
                 usage = response.usage
                 if usage:
+                    metrics.increment("llm_prompt_tokens_total", value=usage.prompt_tokens)
+                    metrics.increment("llm_completion_tokens_total", value=usage.completion_tokens)
+                    metrics.increment("llm_total_tokens_total", value=usage.total_tokens)
                     logger.info(
                         "LLM call completed",
                         extra={
@@ -147,11 +166,16 @@ class LLMClient:
 
                 content = response.choices[0].message.content
                 if content is None:
+                    metrics.increment(
+                        "llm_requests_failed_total",
+                        labels={"code": ErrorCode.E_LLM_ERROR.value},
+                    )
                     raise CardGenError(
                         "LLM returned empty response",
                         code=ErrorCode.E_LLM_ERROR,
                         trace_id=trace_id,
                     )
+                metrics.increment("llm_requests_succeeded_total")
                 return content
 
             except CardGenError:
@@ -175,12 +199,17 @@ class LLMClient:
                             "error_code": str(converted.code),
                         },
                     )
+                    metrics.increment("llm_retries_total")
                     time.sleep(delay)
                 else:
                     converted = self._convert_to_card_error(
                         exc,
                         trace_id=trace_id,
                         context="chat completion",
+                    )
+                    metrics.increment(
+                        "llm_requests_failed_total",
+                        labels={"code": converted.code.value},
                     )
                     raise CardGenError(
                         f"LLM call failed after {_MAX_RETRIES} attempts: {converted.message}",
@@ -190,9 +219,17 @@ class LLMClient:
 
             except Exception as exc:
                 converted = self._convert_to_card_error(exc, trace_id=trace_id, context="chat completion")
+                metrics.increment(
+                    "llm_requests_failed_total",
+                    labels={"code": converted.code.value},
+                )
                 raise converted from exc
 
         # Should not reach here, but just in case
+        metrics.increment(
+            "llm_requests_failed_total",
+            labels={"code": ErrorCode.E_LLM_ERROR.value},
+        )
         raise CardGenError(
             "LLM call failed: exhausted retries",
             code=ErrorCode.E_LLM_ERROR,

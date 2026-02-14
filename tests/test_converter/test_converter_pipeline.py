@@ -7,6 +7,7 @@ import pytest
 from ankismart.converter.converter import DocumentConverter
 from ankismart.core.errors import ConvertError, ErrorCode
 from ankismart.core.models import MarkdownResult
+from ankismart.core.tracing import metrics
 
 
 def test_docx_parse_failure_raises_convert_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -43,9 +44,11 @@ def test_convert_doc_is_not_supported(tmp_path: Path) -> None:
 
 
 def test_convert_missing_file_raises_file_not_found(tmp_path: Path) -> None:
+    metrics.reset()
     file_path = tmp_path / "missing.md"
 
     with pytest.raises(ConvertError) as exc_info:
         DocumentConverter().convert(file_path)
 
     assert exc_info.value.code == ErrorCode.E_FILE_NOT_FOUND
+    assert metrics.get_counter("convert_failures_total", labels={"code": ErrorCode.E_FILE_NOT_FOUND.value}) == 1.0

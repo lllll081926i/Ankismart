@@ -7,7 +7,7 @@ from ankismart.anki_gateway.validator import validate_card_draft
 from ankismart.core.errors import AnkiGatewayError
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft, CardPushStatus, PushResult
-from ankismart.core.tracing import timed, trace_context
+from ankismart.core.tracing import metrics, timed, trace_context
 
 logger = get_logger("anki_gateway")
 
@@ -94,6 +94,8 @@ class AnkiGateway:
         cards: list[CardDraft],
         update_mode: UpdateMode = "create_only",
     ) -> PushResult:
+        metrics.increment("anki_push_batches_total")
+        metrics.increment("anki_push_cards_total", value=len(cards))
         initial_trace_id = cards[0].trace_id if cards else None
         with trace_context(initial_trace_id) as trace_id:
             with timed("anki_push_total"):
@@ -108,8 +110,10 @@ class AnkiGateway:
                         results.append(status)
                         if status.success:
                             succeeded += 1
+                            metrics.increment("anki_push_succeeded_total")
                         else:
                             failed += 1
+                            metrics.increment("anki_push_failed_total")
                     except AnkiGatewayError as exc:
                         logger.warning(
                             "Card push failed",
@@ -117,6 +121,11 @@ class AnkiGateway:
                         )
                         results.append(CardPushStatus(index=i, success=False, error=exc.message))
                         failed += 1
+                        metrics.increment("anki_push_failed_total")
+
+                total_processed = succeeded + failed
+                success_ratio = (succeeded / total_processed) if total_processed else 0.0
+                metrics.set_gauge("anki_push_success_ratio", success_ratio)
 
                 logger.info(
                     "Push completed",

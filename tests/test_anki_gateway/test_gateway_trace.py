@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ankismart.anki_gateway.gateway import AnkiGateway
 from ankismart.core.models import CardDraft
+from ankismart.core.tracing import metrics
 
 
 class _FakeClient:
@@ -10,6 +11,7 @@ class _FakeClient:
 
 
 def test_push_reuses_first_card_trace_id(monkeypatch):
+    metrics.reset()
     captured = {"trace_id": None}
 
     def fake_trace_context(trace_id=None):
@@ -51,3 +53,7 @@ def test_push_reuses_first_card_trace_id(monkeypatch):
     assert captured["trace_id"] == "trace-abc"
     assert result.total == 1
     assert result.succeeded == 1
+    assert metrics.get_counter("anki_push_batches_total") == 1.0
+    assert metrics.get_counter("anki_push_cards_total") == 1.0
+    assert metrics.get_counter("anki_push_succeeded_total") == 1.0
+    assert metrics.get_gauge("anki_push_success_ratio") == 1.0

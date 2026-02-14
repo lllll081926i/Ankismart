@@ -32,6 +32,12 @@ _CONVERTERS: dict[str, Callable[[Path, str], MarkdownResult]] = {
 }
 
 
+def _update_cache_hit_ratio_metric() -> None:
+    total = metrics.cache_hits + metrics.cache_misses
+    ratio = float(metrics.cache_hits / total) if total else 0.0
+    metrics.set_gauge("convert_cache_hit_ratio", ratio)
+
+
 class DocumentConverter:
     """Main converter that dispatches to format-specific converters."""
 
@@ -69,7 +75,12 @@ class DocumentConverter:
     def convert(self, file_path: Path, *, progress_callback: Callable[[str], None] | None = None) -> MarkdownResult:
         with trace_context() as trace_id:
             with timed("convert_total"):
+                metrics.increment("convert_requests_total")
                 if not file_path.exists():
+                    metrics.increment(
+                        "convert_failures_total",
+                        labels={"code": ErrorCode.E_FILE_NOT_FOUND.value},
+                    )
                     raise ConvertError(
                         f"File not found: {file_path}",
                         code=ErrorCode.E_FILE_NOT_FOUND,
@@ -81,6 +92,9 @@ class DocumentConverter:
                 cached = get_cached_by_hash(file_hash)
                 if cached is not None:
                     metrics.record_cache_hit()
+                    metrics.increment("convert_cache_hits_total")
+                    metrics.increment("convert_success_total")
+                    _update_cache_hit_ratio_metric()
                     logger.info(
                         "Cache hit (file hash)",
                         extra={"path": str(file_path), "trace_id": trace_id},
@@ -135,9 +149,17 @@ class DocumentConverter:
                         )
                     else:
                         result = converter_fn(file_path, trace_id)
-                except ConvertError:
+                except ConvertError as exc:
+                    metrics.increment(
+                        "convert_failures_total",
+                        labels={"code": exc.code.value},
+                    )
                     raise
                 except Exception as exc:
+                    metrics.increment(
+                        "convert_failures_total",
+                        labels={"code": ErrorCode.E_CONVERT_FAILED.value},
+                    )
                     raise ConvertError(
                         f"Conversion failed: {exc}",
                         code=ErrorCode.E_CONVERT_FAILED,
@@ -147,6 +169,9 @@ class DocumentConverter:
                 save_cache(result)
                 save_cache_by_hash(file_hash, result)
                 metrics.record_cache_miss()
+                metrics.increment("convert_cache_misses_total")
+                metrics.increment("convert_success_total")
+                _update_cache_hit_ratio_metric()
                 logger.info(
                     "Conversion completed",
                     extra={"trace_id": trace_id, "content_length": len(result.content)},
