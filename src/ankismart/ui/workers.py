@@ -12,6 +12,7 @@ from ankismart.anki_gateway.gateway import AnkiGateway, UpdateMode
 from ankismart.card_gen.generator import CardGenerator
 from ankismart.card_gen.llm_client import LLMClient
 from ankismart.core.config import LLMProviderConfig
+from ankismart.core.errors import AnkiSmartError
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft, GenerateRequest, MarkdownResult
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
@@ -23,6 +24,13 @@ if TYPE_CHECKING:
 DocumentConverter = None
 
 logger = get_logger(__name__)
+
+
+def _format_error_for_ui(exc: Exception) -> str:
+    """Preserve structured error code in UI error payload."""
+    if isinstance(exc, AnkiSmartError):
+        return f"[{exc.code}] {exc.message}"
+    return str(exc)
 
 
 class ConvertWorker(QThread):
@@ -51,7 +59,7 @@ class ConvertWorker(QThread):
             )
             self.finished.emit(result)
         except Exception as e:
-            self.error.emit(str(e))
+            self.error.emit(_format_error_for_ui(e))
 
 
 class GenerateWorker(QThread):
@@ -96,7 +104,7 @@ class GenerateWorker(QThread):
             cards = self._generator.generate(request)
             self.finished.emit(cards)
         except Exception as e:
-            self.error.emit(str(e))
+            self.error.emit(_format_error_for_ui(e))
 
 
 class PushWorker(QThread):
@@ -163,7 +171,7 @@ class PushWorker(QThread):
                     "push workflow failed",
                     extra={"event": "worker.push.failed"},
                 )
-                self.error.emit(str(e))
+                self.error.emit(_format_error_for_ui(e))
 
 
 class ExportWorker(QThread):
@@ -191,7 +199,7 @@ class ExportWorker(QThread):
             result_path = self._exporter.export(self._cards, self._output_path)
             self.finished.emit(str(result_path))
         except Exception as e:
-            self.error.emit(str(e))
+            self.error.emit(_format_error_for_ui(e))
 
 
 class ConnectionCheckWorker(QThread):
@@ -247,7 +255,7 @@ class ProviderConnectionWorker(QThread):
             ok = client.validate_connection()
             self.finished.emit(ok, "")
         except Exception as exc:
-            self.finished.emit(False, str(exc))
+            self.finished.emit(False, _format_error_for_ui(exc))
 
 
 class BatchConvertWorker(QThread):
@@ -435,7 +443,7 @@ class BatchConvertWorker(QThread):
                     "batch conversion failed",
                     extra={"event": "worker.batch_convert.failed"},
                 )
-                self.error.emit(str(exc))
+                self.error.emit(_format_error_for_ui(exc))
         finally:
             self._release_ocr_runtime()
 
@@ -739,6 +747,8 @@ class BatchGenerateWorker(QThread):
             total_cards_to_generate = sum(strategy_counts.values())
             cards_generated = 0
             cards_lock = threading.Lock()
+            first_error_message = [None]
+            first_error_lock = threading.Lock()
 
             def generate_for_document(doc_idx: int, document: ConvertedDocument) -> list[CardDraft]:
                 """Generate cards for a single document."""
@@ -792,6 +802,9 @@ class BatchGenerateWorker(QThread):
                             self.card_progress.emit(cards_generated, total_cards_to_generate)
 
                     except Exception as e:
+                        with first_error_lock:
+                            if first_error_message[0] is None:
+                                first_error_message[0] = _format_error_for_ui(e)
                         # Log error but continue with other strategies
                         logger.warning(
                             "strategy generation failed",
@@ -803,7 +816,7 @@ class BatchGenerateWorker(QThread):
                             },
                         )
                         self.progress.emit(
-                            f"生成 {strategy} 卡片时出错 ({document.file_name}): {str(e)}"
+                            f"生成 {strategy} 卡片时出错 ({document.file_name}): {_format_error_for_ui(e)}"
                         )
 
                 # Emit document completion signal
@@ -833,6 +846,9 @@ class BatchGenerateWorker(QThread):
                         cards = future.result()
                         all_cards.extend(cards)
                     except Exception as e:
+                        with first_error_lock:
+                            if first_error_message[0] is None:
+                                first_error_message[0] = _format_error_for_ui(e)
                         idx, doc = future_to_doc[future]
                         logger.warning(
                             "document generation failed",
@@ -843,10 +859,14 @@ class BatchGenerateWorker(QThread):
                                 "error_detail": str(e),
                             },
                         )
-                        self.progress.emit(f"处理 {doc.file_name} 时出错: {str(e)}")
+                        self.progress.emit(f"处理 {doc.file_name} 时出错: {_format_error_for_ui(e)}")
 
             if self._is_cancelled():
                 self.cancelled.emit()
+                return
+
+            if not all_cards and first_error_message[0] is not None:
+                self.error.emit(first_error_message[0])
                 return
 
             # Update statistics
@@ -872,7 +892,7 @@ class BatchGenerateWorker(QThread):
                 "batch generation failed",
                 extra={"event": "worker.batch_generate.failed"},
             )
-            self.error.emit(str(e))
+            self.error.emit(_format_error_for_ui(e))
 
     @staticmethod
     def _allocate_mix_counts(target_total: int, ratio_items: list[dict[str, Any]]) -> dict[str, int]:

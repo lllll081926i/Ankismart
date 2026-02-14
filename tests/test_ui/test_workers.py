@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ankismart.core.errors import CardGenError, ErrorCode
 from ankismart.core.models import MarkdownResult
+from ankismart.core.models import ConvertedDocument
 from ankismart.ui.workers import BatchGenerateWorker
 from ankismart.ui.workers import BatchConvertWorker
 
@@ -158,3 +160,39 @@ def test_batch_generate_worker_has_cancel() -> None:
     worker._cancelled = False
     worker.cancel()
     assert worker._cancelled is True
+
+
+def test_batch_generate_worker_emits_structured_error_when_all_failed(monkeypatch) -> None:
+    doc = ConvertedDocument(
+        result=MarkdownResult(
+            content="demo",
+            source_path="a.md",
+            source_format="markdown",
+            trace_id="trace-1",
+        ),
+        file_name="a.md",
+    )
+
+    def _always_fail_generate(_self, _request):
+        raise CardGenError(
+            "auth failed",
+            code=ErrorCode.E_LLM_AUTH_ERROR,
+            trace_id="trace-1",
+        )
+
+    monkeypatch.setattr("ankismart.ui.workers.CardGenerator.generate", _always_fail_generate)
+
+    worker = BatchGenerateWorker(
+        documents=[doc],
+        generation_config={"target_total": 1, "strategy_mix": [{"strategy": "basic", "ratio": 1}]},
+        llm_client=object(),
+        deck_name="Default",
+        tags=[],
+    )
+
+    errors: list[str] = []
+    worker.error.connect(errors.append)
+    worker.run()
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[E_LLM_AUTH_ERROR]")

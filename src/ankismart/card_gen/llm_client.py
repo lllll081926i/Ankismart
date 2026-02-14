@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+from collections import deque
 import threading
 import time
 
 import httpx
-from openai import APIError, APITimeoutError, OpenAI, RateLimitError
+from openai import (
+    APIError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    OpenAI,
+    PermissionDeniedError,
+    RateLimitError,
+)
 
 from ankismart.core.errors import CardGenError, ErrorCode
 from ankismart.core.logging import get_logger
@@ -18,22 +27,37 @@ _BASE_DELAY = 1.0  # seconds
 
 
 class _RpmThrottle:
-    """Simple per-minute request throttle (thread-safe)."""
+    """Thread-safe sliding-window RPM throttle."""
 
     def __init__(self, rpm: int) -> None:
-        self._interval = 60.0 / rpm if rpm > 0 else 0.0
+        self._rpm = max(0, int(rpm))
         self._lock = threading.Lock()
-        self._last: float = 0.0
+        self._timestamps: deque[float] = deque()
 
     def wait(self) -> None:
-        if self._interval <= 0:
+        if self._rpm <= 0:
             return
-        with self._lock:
+
+        while True:
             now = time.monotonic()
-            wait = self._last + self._interval - now
-            if wait > 0:
-                time.sleep(wait)
-            self._last = time.monotonic()
+            wait_for = 0.0
+
+            with self._lock:
+                window_start = now - 60.0
+                while self._timestamps and self._timestamps[0] <= window_start:
+                    self._timestamps.popleft()
+
+                if len(self._timestamps) < self._rpm:
+                    self._timestamps.append(now)
+                    return
+
+                wait_for = 60.0 - (now - self._timestamps[0])
+
+            if wait_for > 0:
+                time.sleep(wait_for)
+            else:
+                # Yield to avoid busy spin on edge timing.
+                time.sleep(0)
 
 
 class LLMClient:
@@ -64,8 +88,9 @@ class LLMClient:
         try:
             self._client.models.list()
             return True
-        except (OSError, ValueError, RuntimeError):
-            return False
+        except Exception as exc:
+            trace_id = get_trace_id()
+            raise self._convert_to_card_error(exc, trace_id=trace_id, context="validate connection") from exc
 
     @classmethod
     def from_config(cls, config) -> LLMClient:
@@ -89,9 +114,9 @@ class LLMClient:
     def chat(self, system_prompt: str, user_prompt: str) -> str:
         """Send a chat completion request with retry logic."""
         trace_id = get_trace_id()
-        self._throttle.wait()
 
         for attempt in range(_MAX_RETRIES):
+            self._throttle.wait()
             try:
                 with timed(f"llm_call_attempt_{attempt + 1}"):
                     kwargs = {
@@ -129,9 +154,17 @@ class LLMClient:
                     )
                 return content
 
+            except CardGenError:
+                raise
+
             except _RETRYABLE_ERRORS as exc:
                 if attempt < _MAX_RETRIES - 1:
                     delay = _BASE_DELAY * (2 ** attempt)
+                    converted = self._convert_to_card_error(
+                        exc,
+                        trace_id=trace_id,
+                        context="chat completion",
+                    )
                     logger.warning(
                         "LLM call failed, retrying",
                         extra={
@@ -139,36 +172,84 @@ class LLMClient:
                             "attempt": attempt + 1,
                             "delay": delay,
                             "error": str(exc),
+                            "error_code": str(converted.code),
                         },
                     )
                     time.sleep(delay)
                 else:
+                    converted = self._convert_to_card_error(
+                        exc,
+                        trace_id=trace_id,
+                        context="chat completion",
+                    )
                     raise CardGenError(
-                        f"LLM call failed after {_MAX_RETRIES} attempts: {exc}",
-                        code=ErrorCode.E_LLM_ERROR,
+                        f"LLM call failed after {_MAX_RETRIES} attempts: {converted.message}",
+                        code=converted.code,
                         trace_id=trace_id,
                     ) from exc
 
-            except APIError as exc:
-                raise CardGenError(
-                    f"LLM API error: {exc}",
-                    code=ErrorCode.E_LLM_ERROR,
-                    trace_id=trace_id,
-                ) from exc
-
-            except CardGenError:
-                raise
-
             except Exception as exc:
-                raise CardGenError(
-                    f"Unexpected LLM error: {exc}",
-                    code=ErrorCode.E_LLM_ERROR,
-                    trace_id=trace_id,
-                ) from exc
+                converted = self._convert_to_card_error(exc, trace_id=trace_id, context="chat completion")
+                raise converted from exc
 
         # Should not reach here, but just in case
         raise CardGenError(
             "LLM call failed: exhausted retries",
+            code=ErrorCode.E_LLM_ERROR,
+            trace_id=trace_id,
+        )
+
+    @staticmethod
+    def _extract_status_code(exc: Exception) -> int | None:
+        if isinstance(exc, APIStatusError):
+            return getattr(exc, "status_code", None)
+        response = getattr(exc, "response", None)
+        if response is not None:
+            return getattr(response, "status_code", None)
+        return None
+
+    def _convert_to_card_error(
+        self,
+        exc: Exception,
+        *,
+        trace_id: str,
+        context: str,
+    ) -> CardGenError:
+        if isinstance(exc, CardGenError):
+            return exc
+
+        status_code = self._extract_status_code(exc)
+
+        if isinstance(exc, AuthenticationError) or status_code == 401:
+            return CardGenError(
+                f"LLM authentication failed (HTTP 401) during {context}: {exc}",
+                code=ErrorCode.E_LLM_AUTH_ERROR,
+                trace_id=trace_id,
+            )
+
+        if isinstance(exc, PermissionDeniedError) or status_code == 403:
+            return CardGenError(
+                f"LLM permission denied (HTTP 403) during {context}: {exc}",
+                code=ErrorCode.E_LLM_PERMISSION_ERROR,
+                trace_id=trace_id,
+            )
+
+        if isinstance(exc, APIStatusError):
+            return CardGenError(
+                f"LLM API status error (HTTP {status_code}) during {context}: {exc}",
+                code=ErrorCode.E_LLM_ERROR,
+                trace_id=trace_id,
+            )
+
+        if isinstance(exc, APIError):
+            return CardGenError(
+                f"LLM API error during {context}: {exc}",
+                code=ErrorCode.E_LLM_ERROR,
+                trace_id=trace_id,
+            )
+
+        return CardGenError(
+            f"Unexpected LLM error during {context}: {exc}",
             code=ErrorCode.E_LLM_ERROR,
             trace_id=trace_id,
         )

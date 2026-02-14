@@ -25,6 +25,7 @@ from qfluentwidgets import (
 from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.gateway import AnkiGateway
 from ankismart.card_gen.llm_client import LLMClient
+from ankismart.core.errors import ErrorCode, get_error_info
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
 from ankismart.ui.workers import BatchGenerateWorker, PushWorker
@@ -857,6 +858,19 @@ class PreviewPage(ProgressMixin, QWidget):
         if hasattr(tooltip, "deleteLater"):
             tooltip.deleteLater()
 
+    def _parse_error_payload(self, error: str) -> tuple[ErrorCode | None, str]:
+        """Parse worker error payload like '[E_CODE] message'."""
+        text = str(error).strip()
+        if not (text.startswith("[") and "]" in text):
+            return None, text
+
+        code_token, _, remainder = text.partition("]")
+        code_str = code_token.lstrip("[").strip()
+        try:
+            return ErrorCode(code_str), remainder.strip()
+        except ValueError:
+            return None, text
+
     def _cleanup_generate_worker(self) -> None:
         worker = self.__dict__.get("_generate_worker")
         self.__dict__["_generate_worker"] = None
@@ -959,6 +973,17 @@ class PreviewPage(ProgressMixin, QWidget):
         """Handle generation error."""
         self._cleanup_generate_worker()
         is_zh = self._main.config.language == "zh"
+        code, detail = self._parse_error_payload(error)
+        if code is not None:
+            error_info = get_error_info(code, self._main.config.language)
+            title = error_info["title"]
+            message = error_info["message"]
+            if detail:
+                message = f"{message} ({detail})"
+        else:
+            title = "错误" if is_zh else "Error"
+            message = error
+
         self._finish_state_tooltip(
             False,
             "卡片生成失败" if is_zh else "Card generation failed",
@@ -967,8 +992,8 @@ class PreviewPage(ProgressMixin, QWidget):
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
         InfoBar.error(
-            title="错误" if is_zh else "Error",
-            content=error,
+            title=title,
+            content=message,
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,

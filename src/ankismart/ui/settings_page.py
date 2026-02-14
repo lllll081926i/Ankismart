@@ -47,6 +47,7 @@ from qfluentwidgets import (
 )
 
 from ankismart.core.config import KNOWN_PROVIDERS, LLMProviderConfig, save_config
+from ankismart.core.errors import ErrorCode, get_error_info
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
 from ankismart.ui.styles import (
     PROVIDER_ITEM_HEIGHT,
@@ -1140,6 +1141,13 @@ class SettingsPage(ScrollArea):
             return
 
         if error:
+            code, detail = self._parse_error_payload(error)
+            if code is not None:
+                info = get_error_info(code, self._main.config.language)
+                message = info["message"] if not detail else f"{info['message']} ({detail})"
+                self._show_info_bar("error", info["title"], message, duration=5000)
+                return
+
             self._show_info_bar(
                 "error",
                 "连接失败",
@@ -1149,6 +1157,19 @@ class SettingsPage(ScrollArea):
             return
 
         self._show_info_bar("warning", "连接失败", f"提供商「{provider_name}」未通过连通性测试", duration=4000)
+
+    @staticmethod
+    def _parse_error_payload(error: str) -> tuple[ErrorCode | None, str]:
+        text = str(error).strip()
+        if not (text.startswith("[") and "]" in text):
+            return None, text
+
+        code_token, _, remainder = text.partition("]")
+        code_str = code_token.lstrip("[").strip()
+        try:
+            return ErrorCode(code_str), remainder.strip()
+        except ValueError:
+            return None, text
 
     def _test_connection(self) -> None:
         """Test connection to AnkiConnect."""

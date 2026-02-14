@@ -258,8 +258,18 @@ class ErrorHandler:
         Returns:
             ErrorInfo object with classification and suggestions
         """
-        error_str = str(error).lower()
+        raw_error = str(error).strip()
+        error_str = raw_error.lower()
         is_zh = self.language == "zh"
+
+        # Explicit structured error code from worker, e.g. "[E_LLM_AUTH_ERROR] ...".
+        if raw_error.startswith("[") and "]" in raw_error:
+            code_token, _, _ = raw_error.partition("]")
+            code = code_token.lstrip("[").strip()
+            if code in {"E_LLM_AUTH_ERROR"}:
+                return self._error_patterns["unauthorized"]
+            if code in {"E_LLM_PERMISSION_ERROR"}:
+                return self._error_patterns["permission"]
 
         # Match error patterns
         if any(keyword in error_str for keyword in ["connection", "connect", "网络", "连接"]):

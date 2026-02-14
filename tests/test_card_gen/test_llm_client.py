@@ -5,9 +5,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
-from ankismart.card_gen.llm_client import _BASE_DELAY, _MAX_RETRIES, LLMClient
+from ankismart.card_gen.llm_client import _BASE_DELAY, _MAX_RETRIES, LLMClient, _RpmThrottle
 from ankismart.core.errors import CardGenError, ErrorCode
 
 
@@ -192,6 +193,48 @@ class TestLLMClientChat:
         assert mock_client.chat.completions.create.call_count == 1
 
     @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_authentication_error_mapped_to_auth_code(self, mock_openai_cls):
+        from openai import AuthenticationError
+
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        response = httpx.Response(401, request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"))
+        mock_client.chat.completions.create.side_effect = AuthenticationError(
+            message="invalid api key",
+            response=response,
+            body=None,
+        )
+
+        client = LLMClient(api_key="sk-test")
+        with pytest.raises(CardGenError) as exc_info:
+            client.chat("sys", "usr")
+
+        assert exc_info.value.code == ErrorCode.E_LLM_AUTH_ERROR
+        assert "401" in exc_info.value.message
+        assert mock_client.chat.completions.create.call_count == 1
+
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_permission_denied_error_mapped_to_permission_code(self, mock_openai_cls):
+        from openai import PermissionDeniedError
+
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        response = httpx.Response(403, request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"))
+        mock_client.chat.completions.create.side_effect = PermissionDeniedError(
+            message="model access denied",
+            response=response,
+            body=None,
+        )
+
+        client = LLMClient(api_key="sk-test")
+        with pytest.raises(CardGenError) as exc_info:
+            client.chat("sys", "usr")
+
+        assert exc_info.value.code == ErrorCode.E_LLM_PERMISSION_ERROR
+        assert "403" in exc_info.value.message
+        assert mock_client.chat.completions.create.call_count == 1
+
+    @patch("ankismart.card_gen.llm_client.OpenAI")
     def test_unexpected_exception_wraps_in_card_gen_error(self, mock_openai_cls):
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
@@ -252,3 +295,48 @@ class TestLLMClientProxy:
         # Verify http_client was NOT passed to OpenAI constructor
         call_kwargs = mock_openai_cls.call_args[1]
         assert "http_client" not in call_kwargs
+
+
+class TestRpmThrottle:
+    @patch("ankismart.card_gen.llm_client.time.sleep")
+    @patch("ankismart.card_gen.llm_client.time.monotonic")
+    def test_sliding_window_blocks_when_window_full(self, mock_monotonic, mock_sleep):
+        clock = {"t": 0.0}
+
+        def _mono():
+            return clock["t"]
+
+        def _sleep(seconds: float):
+            clock["t"] += seconds
+
+        mock_monotonic.side_effect = _mono
+        mock_sleep.side_effect = _sleep
+
+        throttle = _RpmThrottle(2)
+        throttle.wait()  # t=0
+        throttle.wait()  # t=0
+        throttle.wait()  # must wait ~60s before third request
+
+        assert mock_sleep.call_count == 1
+        assert pytest.approx(mock_sleep.call_args[0][0], rel=1e-6) == 60.0
+
+
+class TestThrottleUsageInChat:
+    @patch("ankismart.card_gen.llm_client.time.sleep")
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_chat_calls_throttle_for_every_retry_attempt(self, mock_openai_cls, mock_sleep):
+        from openai import APITimeoutError
+
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.chat.completions.create.side_effect = APITimeoutError(
+            request=MagicMock(),
+        )
+
+        client = LLMClient(api_key="sk-test")
+        client._throttle = MagicMock()
+
+        with pytest.raises(CardGenError):
+            client.chat("sys", "usr")
+
+        assert client._throttle.wait.call_count == _MAX_RETRIES

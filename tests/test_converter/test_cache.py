@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import patch
 
-from ankismart.converter.cache import get_cached, save_cache
+from ankismart.converter.cache import get_cached, get_file_hash, save_cache
 from ankismart.core.models import MarkdownResult
 
 # ---------------------------------------------------------------------------
@@ -176,3 +177,32 @@ class TestGetCached:
         assert loaded.source_path == original.source_path
         assert loaded.source_format == original.source_format
         assert loaded.trace_id == original.trace_id
+
+
+# ---------------------------------------------------------------------------
+# get_file_hash
+# ---------------------------------------------------------------------------
+
+class TestGetFileHash:
+    def test_content_change_with_same_size_and_mtime_changes_hash(self, tmp_path: Path) -> None:
+        file_path = tmp_path / "same.txt"
+        file_path.write_text("AAAA", encoding="utf-8")
+        hash1 = get_file_hash(file_path)
+
+        fixed_ts = 1700000000
+        os.utime(file_path, (fixed_ts, fixed_ts))
+        file_path.write_text("BBBB", encoding="utf-8")
+        os.utime(file_path, (fixed_ts, fixed_ts))
+        hash2 = get_file_hash(file_path)
+
+        assert hash1 != hash2
+
+    def test_unreadable_content_falls_back_to_metadata_key(self, tmp_path: Path) -> None:
+        file_path = tmp_path / "x.txt"
+        file_path.write_text("data", encoding="utf-8")
+
+        with patch("ankismart.converter.cache._hash_file_content", side_effect=OSError("locked")):
+            value = get_file_hash(file_path)
+
+        assert isinstance(value, str)
+        assert len(value) == 64

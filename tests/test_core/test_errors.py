@@ -23,6 +23,8 @@ class TestErrorCode:
         assert ErrorCode.E_DECK_NOT_FOUND == "E_DECK_NOT_FOUND"
         assert ErrorCode.E_UNKNOWN == "E_UNKNOWN"
         assert ErrorCode.E_LLM_ERROR == "E_LLM_ERROR"
+        assert ErrorCode.E_LLM_AUTH_ERROR == "E_LLM_AUTH_ERROR"
+        assert ErrorCode.E_LLM_PERMISSION_ERROR == "E_LLM_PERMISSION_ERROR"
 
 
 class TestAnkiSmartError:

@@ -29,13 +29,32 @@ CACHE_DIR: Path = _resolve_app_dir() / "cache"
 
 
 # ---------------------------------------------------------------------------
-# File-hash based cache (path + mtime + size)
+# File-hash based cache (content fingerprint + metadata)
 # ---------------------------------------------------------------------------
 
+def _hash_file_content(path: Path) -> str:
+    """Compute SHA-256 for file content with streaming reads."""
+    digest = hashlib.sha256()
+    with path.open("rb") as fp:
+        for chunk in iter(lambda: fp.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def get_file_hash(path: Path) -> str:
-    """Generate a cache key based on path, mtime and size."""
+    """Generate a cache key with content fingerprint to avoid metadata collisions."""
     stat = path.stat()
-    raw = f"{path.resolve()}|{stat.st_mtime}|{stat.st_size}"
+    try:
+        content_hash = _hash_file_content(path)
+    except OSError as exc:
+        # Keep conversion path available even if file cannot be re-read for hashing.
+        logger.warning(
+            "Failed to read file content for cache hash, fallback to metadata-only key",
+            extra={"path": str(path), "error_detail": str(exc)},
+        )
+        content_hash = "content_unavailable"
+
+    raw = f"{path.resolve()}|{stat.st_mtime_ns}|{stat.st_size}|{content_hash}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 

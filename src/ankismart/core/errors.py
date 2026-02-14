@@ -13,6 +13,8 @@ class ErrorCode(StrEnum):
     E_CONVERT_FAILED = "E_CONVERT_FAILED"
     E_OCR_FAILED = "E_OCR_FAILED"
     E_LLM_ERROR = "E_LLM_ERROR"
+    E_LLM_AUTH_ERROR = "E_LLM_AUTH_ERROR"
+    E_LLM_PERMISSION_ERROR = "E_LLM_PERMISSION_ERROR"
     E_LLM_PARSE_ERROR = "E_LLM_PARSE_ERROR"
     E_CONFIG_INVALID = "E_CONFIG_INVALID"
     E_FILE_NOT_FOUND = "E_FILE_NOT_FOUND"
@@ -132,6 +134,16 @@ ERROR_MESSAGES = {
             "message": "AI 模型调用失败，无法生成卡片",
             "solution": "• 检查网络连接\n• 验证 API Key 是否有效\n• 确认账户余额充足\n• 检查 API 服务状态\n• 尝试切换其他 AI 提供商",
         },
+        ErrorCode.E_LLM_AUTH_ERROR: {
+            "title": "LLM 认证失败",
+            "message": "LLM 接口认证失败（401），请检查 API Key 或 Token",
+            "solution": "• 检查 API Key 是否正确\n• 确认密钥未过期或被吊销\n• 确认请求的 Base URL 与提供商一致",
+        },
+        ErrorCode.E_LLM_PERMISSION_ERROR: {
+            "title": "LLM 权限不足",
+            "message": "LLM 接口拒绝访问（403），当前账户或密钥无权限",
+            "solution": "• 检查账号/项目权限\n• 确认模型访问权限已开通\n• 检查组织或项目配额策略",
+        },
         ErrorCode.E_LLM_PARSE_ERROR: {
             "title": "AI 响应解析失败",
             "message": "无法解析 AI 返回的内容",
@@ -203,6 +215,16 @@ ERROR_MESSAGES = {
             "title": "AI Generation Failed",
             "message": "AI model call failed, cannot generate cards",
             "solution": "• Check network connection\n• Verify API Key is valid\n• Confirm account has sufficient balance\n• Check API service status\n• Try switching to another AI provider",
+        },
+        ErrorCode.E_LLM_AUTH_ERROR: {
+            "title": "LLM Authentication Failed",
+            "message": "LLM API authentication failed (401). Check API key or token.",
+            "solution": "• Verify API key/token is correct\n• Confirm key is not expired or revoked\n• Ensure Base URL matches provider endpoint",
+        },
+        ErrorCode.E_LLM_PERMISSION_ERROR: {
+            "title": "LLM Permission Denied",
+            "message": "LLM API access denied (403). Current account/key lacks permission.",
+            "solution": "• Check account/project permissions\n• Confirm model access is enabled\n• Review organization/project policy and quota",
         },
         ErrorCode.E_LLM_PARSE_ERROR: {
             "title": "AI Response Parse Failed",
