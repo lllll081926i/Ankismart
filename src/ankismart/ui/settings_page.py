@@ -130,9 +130,15 @@ def get_missing_ocr_models(*, model_tier: str, model_source: str):
     )
 
 
-def is_cuda_available() -> bool:
+def is_cuda_available(*, force_refresh: bool = False) -> bool:
     try:
-        return bool(_get_ocr_converter_module().is_cuda_available())
+        module = _get_ocr_converter_module()
+        try:
+            return bool(module.is_cuda_available(force_refresh=force_refresh))
+        except TypeError as exc:
+            if "force_refresh" not in str(exc):
+                raise
+            return bool(module.is_cuda_available())
     except OCRRuntimeUnavailableError:
         return False
 
@@ -1026,7 +1032,7 @@ class SettingsPage(ScrollArea):
 
     def _manual_detect_cuda(self) -> None:
         is_zh = self._main.config.language == "zh"
-        has_cuda = is_cuda_available()
+        has_cuda = is_cuda_available(force_refresh=True)
         tier = self._get_combo_current_data(self._ocr_model_tier_combo, "lite")
 
         if has_cuda:
@@ -1313,6 +1319,15 @@ class SettingsPage(ScrollArea):
 
         self._save_config_silent(show_feedback=True)
 
+    @staticmethod
+    def _should_reset_ocr_runtime(old_config, new_config) -> bool:
+        tracked_fields = (
+            "ocr_mode",
+            "ocr_model_tier",
+            "ocr_model_source",
+        )
+        return any(getattr(old_config, name, None) != getattr(new_config, name, None) for name in tracked_fields)
+
     def _save_config_silent(self, *, show_feedback: bool = False) -> None:
         """Save configuration without showing success message (for auto-save)."""
         # Validate active provider
@@ -1375,7 +1390,9 @@ class SettingsPage(ScrollArea):
             }
         )
 
-        old_language = self._main.config.language
+        old_config = self._main.config
+        old_language = old_config.language
+        should_reset_ocr_runtime = self._should_reset_ocr_runtime(old_config, config)
 
         try:
             # Update main window config first
@@ -1384,15 +1401,16 @@ class SettingsPage(ScrollArea):
             # Save config to disk
             save_config(config)
 
-            # Configure OCR runtime (optional in no-OCR package)
-            try:
-                configure_ocr_runtime(
-                    model_tier=config.ocr_model_tier,
-                    model_source=config.ocr_model_source,
-                    reset_ocr_instance=True,
-                )
-            except OCRRuntimeUnavailableError:
-                pass
+            # Configure OCR runtime only when OCR settings are changed.
+            if should_reset_ocr_runtime and getattr(config, "ocr_mode", "local") == "local":
+                try:
+                    configure_ocr_runtime(
+                        model_tier=config.ocr_model_tier,
+                        model_source=config.ocr_model_source,
+                        reset_ocr_instance=True,
+                    )
+                except OCRRuntimeUnavailableError:
+                    pass
 
             # Apply language change if needed
             if old_language != language and hasattr(self._main, "switch_language"):

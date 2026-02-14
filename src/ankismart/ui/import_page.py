@@ -49,6 +49,7 @@ from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_t
 from ankismart.ui.styles import SPACING_LARGE, SPACING_MEDIUM, SPACING_SMALL, MARGIN_STANDARD, MARGIN_SMALL
 from ankismart.ui.utils import ProgressMixin, split_tags_text
 from ankismart.ui.i18n import get_text
+from ankismart.ui.workers import BatchConvertWorker
 import re
 
 logger = get_logger(__name__)
@@ -115,11 +116,21 @@ def is_ocr_runtime_available() -> bool:
 
 
 def configure_ocr_runtime(*, model_tier: str, model_source: str, reset_ocr_instance: bool = False) -> None:
-    _get_ocr_converter_module().configure_ocr_runtime(
-        model_tier=model_tier,
-        model_source=model_source,
-        reset_ocr_instance=reset_ocr_instance,
-    )
+    module = _get_ocr_converter_module()
+    try:
+        module.configure_ocr_runtime(
+            model_tier=model_tier,
+            model_source=model_source,
+            reset_ocr_instance=reset_ocr_instance,
+        )
+    except TypeError as exc:
+        # Backward compatibility: older runtime doesn't accept reset_ocr_instance.
+        if "reset_ocr_instance" not in str(exc):
+            raise
+        module.configure_ocr_runtime(
+            model_tier=model_tier,
+            model_source=model_source,
+        )
 
 
 def download_missing_ocr_models(*, model_tier: str, model_source: str):
@@ -143,9 +154,15 @@ def get_ocr_model_presets():
         return _OCR_PRESET_FALLBACK
 
 
-def is_cuda_available() -> bool:
+def is_cuda_available(*, force_refresh: bool = False) -> bool:
     try:
-        return bool(_get_ocr_converter_module().is_cuda_available())
+        module = _get_ocr_converter_module()
+        try:
+            return bool(module.is_cuda_available(force_refresh=force_refresh))
+        except TypeError as exc:
+            if "force_refresh" not in str(exc):
+                raise
+            return bool(module.is_cuda_available())
     except OCRRuntimeUnavailableError:
         return False
 
@@ -249,7 +266,7 @@ class OCRDownloadConfigDialog(QDialog):
         return str(self._source_combo.currentData())
 
 
-class BatchConvertWorker(QThread):
+class _LegacyBatchConvertWorker(QThread):
     """Worker thread for batch file conversion."""
 
     file_progress = pyqtSignal(str, int, int)  # filename, current, total
@@ -1128,7 +1145,7 @@ class ImportPage(ProgressMixin, QWidget):
         if getattr(config, "ocr_cuda_checked_once", False):
             return
 
-        has_cuda = is_cuda_available()
+        has_cuda = is_cuda_available(force_refresh=True)
         updates: dict[str, object] = {"ocr_cuda_checked_once": True}
 
         if (

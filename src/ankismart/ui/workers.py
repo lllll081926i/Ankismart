@@ -269,6 +269,8 @@ class BatchConvertWorker(QThread):
         self._cancelled = False
         self._start_time = 0.0
         self._last_file_error_message: str | None = None
+        self._ocr_correction_fn = None
+        self._ocr_correction_fn_ready = False
 
     def cancel(self) -> None:
         """Cancel the conversion operation."""
@@ -427,6 +429,46 @@ class BatchConvertWorker(QThread):
                 )
                 self.error.emit(str(exc))
 
+    def _resolve_ocr_correction_fn(self):
+        if self._ocr_correction_fn_ready:
+            return self._ocr_correction_fn
+
+        self._ocr_correction_fn_ready = True
+        if not self._config or not getattr(self._config, "ocr_correction", False):
+            self._ocr_correction_fn = None
+            return None
+
+        provider = getattr(self._config, "active_provider", None)
+        if provider is None:
+            raise ValueError("OCR correction is enabled but no active provider is configured")
+        if not getattr(provider, "model", ""):
+            raise ValueError(f"Provider '{provider.name}' requires a model for OCR correction")
+        if "Ollama" not in provider.name and not getattr(provider, "api_key", "").strip():
+            raise ValueError(f"Provider '{provider.name}' requires an API key for OCR correction")
+
+        proxy_mode = str(getattr(self._config, "proxy_mode", "system"))
+        proxy_url = str(getattr(self._config, "proxy_url", "")).strip() if proxy_mode == "manual" else ""
+
+        llm_client = LLMClient(
+            api_key=provider.api_key,
+            model=provider.model,
+            base_url=provider.base_url or None,
+            rpm_limit=getattr(provider, "rpm_limit", 0),
+            temperature=float(getattr(self._config, "llm_temperature", 0.3)),
+            max_tokens=int(getattr(self._config, "llm_max_tokens", 0)),
+            proxy_url=proxy_url,
+        )
+        generator = CardGenerator(llm_client)
+        self._ocr_correction_fn = generator.correct_ocr_text
+        return self._ocr_correction_fn
+
+    def _build_converter(self):
+        converter_cls = DocumentConverter
+        if converter_cls is None:
+            from ankismart.converter.converter import DocumentConverter as converter_cls
+
+        return converter_cls(ocr_correction_fn=self._resolve_ocr_correction_fn())
+
     def _merge_and_convert_images(self, image_files: list[Path]) -> MarkdownResult | None:
         """Merge multiple images into one PDF and convert via OCR."""
         try:
@@ -481,11 +523,7 @@ class BatchConvertWorker(QThread):
                 self.ocr_progress.emit("图片合并完成，开始 OCR 识别...")
 
                 # Convert PDF via OCR
-                converter_cls = DocumentConverter
-                if converter_cls is None:
-                    from ankismart.converter.converter import DocumentConverter as converter_cls
-
-                converter = converter_cls()
+                converter = self._build_converter()
 
                 def progress_callback(*args):
                     if len(args) == 3:
@@ -535,11 +573,7 @@ class BatchConvertWorker(QThread):
                 return None
 
             try:
-                converter_cls = DocumentConverter
-                if converter_cls is None:
-                    from ankismart.converter.converter import DocumentConverter as converter_cls
-
-                converter = converter_cls()
+                converter = self._build_converter()
 
                 # Create progress callback that emits page progress
                 def progress_callback(*args):

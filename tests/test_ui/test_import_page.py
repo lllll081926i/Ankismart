@@ -148,6 +148,35 @@ def _make_warning_box_collector(collected: list[tuple[str, str]]):
     )
 
 
+def _patch_infobar(monkeypatch) -> dict[str, list[dict]]:
+    calls: dict[str, list[dict]] = {
+        "warning": [],
+        "success": [],
+        "info": [],
+        "error": [],
+    }
+
+    def _record(level: str):
+        def _inner(*args, **kwargs):
+            calls[level].append(kwargs)
+            return None
+
+        return _inner
+
+    infobar_stub = type(
+        "_InfoBarStub",
+        (),
+        {
+            "warning": staticmethod(_record("warning")),
+            "success": staticmethod(_record("success")),
+            "info": staticmethod(_record("info")),
+            "error": staticmethod(_record("error")),
+        },
+    )
+    monkeypatch.setattr("ankismart.ui.import_page.InfoBar", infobar_stub)
+    return calls
+
+
 def test_build_generation_config_single_mode() -> None:
     page = _make_page()
 
@@ -278,6 +307,7 @@ def test_switch_to_result_targets_result_page() -> None:
 def test_batch_convert_done_shows_errors(monkeypatch):
     page = _make_page()
     warnings_shown = []
+    infobar_calls = _patch_infobar(monkeypatch)
 
     monkeypatch.setattr(
         "ankismart.ui.import_page.QMessageBox",
@@ -309,14 +339,16 @@ def test_batch_convert_done_shows_errors(monkeypatch):
 
     ImportPage._on_batch_convert_done(page, result)
 
-    assert len(warnings_shown) == 1
-    assert "b.pdf" in warnings_shown[0]
+    assert len(warnings_shown) == 0
+    assert len(infobar_calls["warning"]) == 1
+    assert "b.pdf" in infobar_calls["warning"][0]["content"]
     assert page._main.batch_result is result
 
 
 def test_batch_convert_done_no_documents(monkeypatch):
     page = _make_page()
     status_texts = []
+    _patch_infobar(monkeypatch)
     page._status_label = type(
         "_Label", (), {"setText": lambda self, t: status_texts.append(t)}
     )()
@@ -341,6 +373,9 @@ def test_start_convert_uses_batch_worker(monkeypatch):
         def __init__(self, file_paths, config=None):
             captured["file_paths"] = file_paths
             self.file_progress = type(
+                "_Sig", (), {"connect": lambda self, fn: None}
+            )()
+            self.file_completed = type(
                 "_Sig", (), {"connect": lambda self, fn: None}
             )()
             self.page_progress = type(
@@ -390,6 +425,7 @@ def test_start_convert_skips_ocr_checks_for_non_ocr_files(monkeypatch):
     class _FakeBatchWorker:
         def __init__(self, file_paths, config=None):
             self.file_progress = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.file_completed = type("_Sig", (), {"connect": lambda self, fn: None})()
             self.page_progress = type("_Sig", (), {"connect": lambda self, fn: None})()
             self.finished = type("_Sig", (), {"connect": lambda self, fn: None})()
             self.error = type("_Sig", (), {"connect": lambda self, fn: None})()
@@ -423,12 +459,13 @@ def test_start_convert_checks_ocr_for_pdf(monkeypatch):
 
 def test_apply_cuda_strategy_upgrades_lite_once(monkeypatch):
     page = _make_page()
+    infobar_calls = _patch_infobar(monkeypatch)
     page._main.config.ocr_model_tier = "lite"
     page._main.config.ocr_auto_cuda_upgrade = True
     page._main.config.ocr_model_locked_by_user = False
     page._main.config.ocr_cuda_checked_once = False
 
-    monkeypatch.setattr("ankismart.ui.import_page.is_cuda_available", lambda: True)
+    monkeypatch.setattr("ankismart.ui.import_page.is_cuda_available", lambda **kwargs: True)
     monkeypatch.setattr("ankismart.ui.import_page.save_config", lambda cfg: None)
     monkeypatch.setattr(
         "ankismart.ui.import_page.QMessageBox",
@@ -439,10 +476,12 @@ def test_apply_cuda_strategy_upgrades_lite_once(monkeypatch):
 
     assert page._main.config.ocr_model_tier == "standard"
     assert page._main.config.ocr_cuda_checked_once is True
+    assert len(infobar_calls["success"]) == 1
 
 
 def test_start_convert_rejects_empty_api_key_for_non_ollama(monkeypatch):
     page = _make_page()
+    infobar_calls = _patch_infobar(monkeypatch)
     page._file_paths = [Path("a.md")]
     page._main.config = AppConfig(
         llm_providers=[
@@ -457,8 +496,9 @@ def test_start_convert_rejects_empty_api_key_for_non_ollama(monkeypatch):
 
     ImportPage._start_convert(page)
 
-    assert len(warnings) == 1
-    assert "API" in warnings[0][1]
+    assert len(warnings) == 0
+    assert len(infobar_calls["warning"]) == 1
+    assert "API" in infobar_calls["warning"][0]["content"]
 
 
 def test_start_convert_allows_empty_api_key_for_ollama(monkeypatch):
@@ -476,6 +516,7 @@ def test_start_convert_allows_empty_api_key_for_ollama(monkeypatch):
     class _FakeBatchWorker:
         def __init__(self, file_paths, config=None):
             self.file_progress = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.file_completed = type("_Sig", (), {"connect": lambda self, fn: None})()
             self.page_progress = type("_Sig", (), {"connect": lambda self, fn: None})()
             self.finished = type("_Sig", (), {"connect": lambda self, fn: None})()
             self.error = type("_Sig", (), {"connect": lambda self, fn: None})()
@@ -495,6 +536,7 @@ def test_start_convert_allows_empty_api_key_for_ollama(monkeypatch):
 
 def test_start_convert_rejects_empty_deck(monkeypatch):
     page = _make_page()
+    infobar_calls = _patch_infobar(monkeypatch)
     page._file_paths = [Path("a.md")]
     page._deck_combo = _DummyCombo("   ")
 
@@ -504,12 +546,14 @@ def test_start_convert_rejects_empty_deck(monkeypatch):
 
     ImportPage._start_convert(page)
 
-    assert len(warnings) == 1
-    assert "牌组" in warnings[0][1]
+    assert len(warnings) == 0
+    assert len(infobar_calls["warning"]) == 1
+    assert "牌组" in infobar_calls["warning"][0]["content"]
 
 
 def test_start_convert_rejects_mixed_mode_without_positive_ratio(monkeypatch):
     page = _make_page()
+    infobar_calls = _patch_infobar(monkeypatch)
     page._file_paths = [Path("a.md")]
     page._strategy_sliders = [
         ("basic", _DummySlider(0), None),
@@ -522,8 +566,9 @@ def test_start_convert_rejects_mixed_mode_without_positive_ratio(monkeypatch):
 
     ImportPage._start_convert(page)
 
-    assert len(warnings) == 1
-    assert "占比" in warnings[0][1]
+    assert len(warnings) == 0
+    assert len(infobar_calls["warning"]) == 1
+    assert "占比" in infobar_calls["warning"][0]["content"]
 
 
 def test_on_decks_loaded_restores_last_deck_choice():

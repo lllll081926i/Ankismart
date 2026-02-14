@@ -96,6 +96,67 @@ sequenceDiagram
 - PDF (`.pdf`) - 通过 OCR
 - 图片 (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`, `.webp`) - 通过 OCR
 
+#### OCR 子系统改造设计（2026-02）
+
+为解决 OCR 相关逻辑在运行中出现的“配置漂移、线程行为不一致、设备检测阻塞、下载与转换互相影响”等问题，OCR 子系统按职责划分为 4 个逻辑层（先逻辑解耦，再逐步物理解耦）：
+
+1. `PDF 解析层`：
+- 职责：PDF 文字层探测、页渲染、图片流式产出。
+- 边界：只返回“可提取文本”或“逐页图像”，不感知模型/设备。
+- 关键约束：必须在函数内部关闭 `PdfDocument` 与图像资源，避免长任务句柄泄漏。
+
+2. `OCR 引擎管理层`：
+- 职责：`PaddleOCR` 单例生命周期、CPU/GPU 参数组装、oneDNN 回退策略。
+- 边界：仅关心“如何初始化/重建引擎”，不直接发起模型下载。
+- 关键约束：重建必须显式触发，避免 UI 任意设置变更导致 OCR 引擎被无关重置。
+
+3. `设备检测层`：
+- 职责：检测 CUDA 可用性并缓存结果。
+- 边界：对外提供 `is_cuda_available(force_refresh=False)`，UI 可手动强制刷新。
+- 关键约束：缓存需要 TTL，避免“一次检测结果永久有效”造成误导。
+
+4. `模型下载与仓储层`：
+- 职责：缺失模型探测、串行下载、下载后校验。
+- 边界：提供明确错误类型（下载中/网络失败/校验失败）。
+- 关键约束：下载过程加锁，防止并发下载污染本地模型目录状态。
+
+**迁移步骤（分阶段）**
+
+1. P0（稳定性优先）：
+- 统一 UI 侧 `BatchConvertWorker` 接口，消除导入页信号缺失崩溃。
+- OCR runtime 适配器兼容旧签名（`reset_ocr_instance` 可选）并在设置页/导入页行为一致。
+- 设置页仅在 OCR 相关配置变化时重建 OCR 引擎，去掉“全量设置变更触发重建”。
+
+2. P1（结构与可维护性）：
+- 引擎管理、设备检测、模型下载分别引入独立状态控制（锁、缓存、事件日志）。
+- PDF 文字层判定从固定长度阈值改为“有效文本”判定，减少误判。
+- OCR 日志统一事件名，保证问题定位链路完整。
+
+3. P2（体验和观测）：
+- 设备检测与下载支持前台状态可视化（进行中/成功/失败/重试）。
+- 增加 OCR 任务级 trace 字段，支持按文件与阶段检索。
+
+**回滚策略**
+
+- 保留现有 `ocr_converter.convert/convert_image/configure_ocr_runtime` 对外接口不变。
+- 若新检测/下载策略出现兼容问题，可单独回退对应内部函数，不影响 UI 调用层。
+
+**测试策略**
+
+1. 单元测试：
+- 设备检测缓存、强制刷新、下载并发锁、模型缺失与下载后校验。
+- PDF 文字层短文本、空文本、图像页混合场景。
+
+2. UI 测试：
+- 导入页启动转换流程（含 OCR 文件）不崩溃。
+- 设置页语言/代理/OCR 选项切换不触发无关 OCR 重建。
+
+3. 回归测试：
+- `uv run pytest tests/test_ui/test_import_page.py`
+- `uv run pytest tests/test_ui/test_workers.py`
+- `uv run pytest tests/test_ui/test_settings_page.py`（已知 Qt 不稳定用例除外）
+- `uv run pytest tests/test_converter/test_ocr_converter.py`
+
 ### 3. CardGen 模块 (`ankismart.card_gen`)
 
 **职责**：使用 LLM 从 Markdown 生成 Anki 闪卡
