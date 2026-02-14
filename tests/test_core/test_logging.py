@@ -19,6 +19,7 @@ class TestJsonFormatter:
             msg=msg,
             args=(),
             exc_info=None,
+            func="test_func",
         )
         for k, v in extra.items():
             setattr(record, k, v)
@@ -51,7 +52,15 @@ class TestJsonFormatter:
         fmt = JsonFormatter()
         record = self._make_record("with extra", custom_field="custom_value")
         parsed = json.loads(fmt.format(record))
-        assert parsed["custom_field"] == "custom_value"
+        assert parsed["context"]["custom_field"] == "custom_value"
+
+    def test_contains_logger_and_source_location(self):
+        fmt = JsonFormatter()
+        record = self._make_record("msg")
+        parsed = json.loads(fmt.format(record))
+        assert parsed["logger"] == "ankismart.test"
+        assert parsed["function"] == "test_func"
+        assert parsed["line"] == 1
 
     def test_exception_info_included(self):
         fmt = JsonFormatter()

@@ -45,7 +45,7 @@ class PerformancePage(QWidget):
             self,
         )
         self._total_files_label = BodyLabel("0")
-        self._total_files_label.setFixedWidth(160)
+        self._total_files_label.setMinimumWidth(160)
         self._total_files_card.hBoxLayout.addWidget(self._total_files_label)
         self._total_files_card.hBoxLayout.addSpacing(16)
         self._stats_group.addSettingCard(self._total_files_card)
@@ -57,7 +57,7 @@ class PerformancePage(QWidget):
             self,
         )
         self._avg_conversion_label = BodyLabel("0.0")
-        self._avg_conversion_label.setFixedWidth(160)
+        self._avg_conversion_label.setMinimumWidth(160)
         self._avg_conversion_card.hBoxLayout.addWidget(self._avg_conversion_label)
         self._avg_conversion_card.hBoxLayout.addSpacing(16)
         self._stats_group.addSettingCard(self._avg_conversion_card)
@@ -69,7 +69,7 @@ class PerformancePage(QWidget):
             self,
         )
         self._avg_generation_label = BodyLabel("0.0")
-        self._avg_generation_label.setFixedWidth(160)
+        self._avg_generation_label.setMinimumWidth(160)
         self._avg_generation_card.hBoxLayout.addWidget(self._avg_generation_label)
         self._avg_generation_card.hBoxLayout.addSpacing(16)
         self._stats_group.addSettingCard(self._avg_generation_card)
@@ -81,7 +81,7 @@ class PerformancePage(QWidget):
             self,
         )
         self._total_cards_label = BodyLabel("0")
-        self._total_cards_label.setFixedWidth(160)
+        self._total_cards_label.setMinimumWidth(160)
         self._total_cards_card.hBoxLayout.addWidget(self._total_cards_label)
         self._total_cards_card.hBoxLayout.addSpacing(16)
         self._stats_group.addSettingCard(self._total_cards_card)

@@ -10,6 +10,8 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
+from ankismart.core.logging import get_log_directory
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,6 +28,10 @@ class LogExporter:
         Returns:
             Path to log directory
         """
+        configured_dir = get_log_directory()
+        if configured_dir.exists() and configured_dir.is_dir():
+            return configured_dir
+
         # Try to find log directory in common locations
         possible_dirs = [
             Path.cwd() / "logs",

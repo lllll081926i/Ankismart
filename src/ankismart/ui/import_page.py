@@ -645,7 +645,7 @@ class ImportPage(ProgressMixin, QWidget):
         )
         self._total_count_input = LineEdit()
         self._total_count_input.setText("20")
-        self._total_count_input.setFixedWidth(100)
+        self._total_count_input.setMinimumWidth(100)
         self._total_count_input.setPlaceholderText(
             get_text("import.card_count_placeholder", self._main.config.language)
         )
@@ -701,7 +701,6 @@ class ImportPage(ProgressMixin, QWidget):
             get_text("import.tags_tooltip", self._main.config.language)
         )
         self._tags_input.setMinimumWidth(320)
-        self._tags_input.setMaximumWidth(520)
         self._tags_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         if self._main.config.last_tags:
             self._tags_input.setText(self._main.config.last_tags)
@@ -1833,7 +1832,7 @@ class ImportPage(ProgressMixin, QWidget):
 
             # Select button
             select_btn = PushButton("选择" if is_zh else "Select")
-            select_btn.setFixedWidth(100)
+            select_btn.setMinimumWidth(100)
 
             def make_handler(ex):
                 def handler():

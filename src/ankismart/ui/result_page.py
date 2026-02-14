@@ -115,14 +115,11 @@ class ResultPage(QWidget):
         self._header_checkbox.stateChanged.connect(self._on_select_all_changed)
 
         self._table.setHorizontalHeaderLabels(["", "卡片标题", "状态", "错误信息", "操作"])
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(0, 50)
-        self._table.setColumnWidth(2, 100)
-        self._table.setColumnWidth(4, 80)
+        self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self._table.setSortingEnabled(False)  # Disable sorting to keep checkbox alignment
         self._table.setEditTriggers(TableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(TableWidget.SelectionBehavior.SelectRows)
@@ -199,7 +196,7 @@ class ResultPage(QWidget):
         self._update_combo.addItem(t("result.create_only"), userData="create_only")
         self._update_combo.addItem(t("result.update_only"), userData="update_only")
         self._update_combo.addItem(t("result.create_or_update"), userData="create_or_update")
-        self._update_combo.setFixedWidth(170)
+        self._update_combo.setMinimumWidth(170)
 
         default_mode = getattr(self._main.config, "last_update_mode", None) or "create_only"
         for idx in range(self._update_combo.count()):
@@ -218,7 +215,7 @@ class ResultPage(QWidget):
         self._duplicate_scope_combo = ComboBox()
         self._duplicate_scope_combo.addItem(t("result.duplicate_scope_deck"), userData="deck")
         self._duplicate_scope_combo.addItem(t("result.duplicate_scope_collection"), userData="collection")
-        self._duplicate_scope_combo.setFixedWidth(170)
+        self._duplicate_scope_combo.setMinimumWidth(170)
         duplicate_scope = getattr(self._main.config, "duplicate_scope", "deck")
         self._duplicate_scope_combo.setCurrentIndex(
             0 if duplicate_scope == "deck" else 1
@@ -275,7 +272,7 @@ class ResultPage(QWidget):
         scope_row.setSpacing(SPACING_MEDIUM)
 
         scope_label = BodyLabel(t("result.duplicate_scope"))
-        scope_label.setFixedWidth(100)
+        scope_label.setMinimumWidth(100)
         scope_row.addWidget(scope_label)
 
         self._duplicate_scope_combo = ComboBox()
@@ -286,7 +283,7 @@ class ResultPage(QWidget):
             0 if duplicate_scope == "deck" else 1
         )
         self._duplicate_scope_combo.currentIndexChanged.connect(self._on_duplicate_scope_changed)
-        self._duplicate_scope_combo.setFixedWidth(150)
+        self._duplicate_scope_combo.setMinimumWidth(150)
         scope_row.addWidget(self._duplicate_scope_combo)
 
         scope_desc = CaptionLabel(t("result.duplicate_scope_desc"))
@@ -300,7 +297,7 @@ class ResultPage(QWidget):
         model_row.setSpacing(SPACING_MEDIUM)
 
         model_label = BodyLabel(t("result.duplicate_check_model"))
-        model_label.setFixedWidth(100)
+        model_label.setMinimumWidth(100)
         model_row.addWidget(model_label)
 
         self._check_model_switch = SwitchButton()
@@ -319,7 +316,7 @@ class ResultPage(QWidget):
         allow_row.setSpacing(SPACING_MEDIUM)
 
         allow_label = BodyLabel(t("result.allow_duplicate"))
-        allow_label.setFixedWidth(100)
+        allow_label.setMinimumWidth(100)
         allow_row.addWidget(allow_label)
 
         self._allow_duplicate_switch = SwitchButton()

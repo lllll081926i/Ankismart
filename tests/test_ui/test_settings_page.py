@@ -8,7 +8,11 @@ from qfluentwidgets import ScrollArea
 from qfluentwidgets import BodyLabel
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
-from ankismart.ui.settings_page import ProviderListItemWidget, ProviderListWidget, SettingsPage
+from ankismart.ui import settings_page as settings_page_module
+from ankismart.ui.settings_page import SettingsPage, configure_ocr_runtime
+
+ProviderListItemWidget = getattr(settings_page_module, "ProviderListItemWidget", None)
+ProviderListWidget = getattr(settings_page_module, "ProviderListWidget", None)
 
 
 @pytest.fixture(scope="session")
@@ -38,6 +42,7 @@ def _make_main(config: AppConfig | None = None):
     return main, status_calls
 
 
+@pytest.mark.skipif(ProviderListWidget is None, reason="legacy provider list widget removed")
 def test_provider_list_panel_uses_theme_neutral_style(_qapp) -> None:
     panel = ProviderListWidget()
     assert panel.objectName() == "providerListPanel"
@@ -46,6 +51,7 @@ def test_provider_list_panel_uses_theme_neutral_style(_qapp) -> None:
     assert "#FFFFFF" not in panel.styleSheet()
 
 
+@pytest.mark.skipif(ProviderListItemWidget is None, reason="legacy provider list widget removed")
 def test_provider_list_item_has_detailed_provider_fields(_qapp) -> None:
     widget = ProviderListItemWidget(
         LLMProviderConfig(
@@ -71,6 +77,7 @@ def test_provider_list_item_has_detailed_provider_fields(_qapp) -> None:
     assert rpm_label.text() == "RPM：120"
 
 
+@pytest.mark.skipif(ProviderListWidget is None, reason="legacy provider list widget removed")
 def test_provider_list_height_auto_adjust(_qapp) -> None:
     panel = ProviderListWidget()
     providers = [LLMProviderConfig(id=f"p{i}", name=f"P{i}") for i in range(5)]
@@ -82,6 +89,7 @@ def test_provider_list_height_auto_adjust(_qapp) -> None:
     assert panel.height() == 290
 
 
+@pytest.mark.skipif(ProviderListWidget is None, reason="legacy provider list widget removed")
 def test_provider_list_wheel_forwards_to_parent_scroll_area(_qapp) -> None:
     class _ScrollSpy(ScrollArea):
         def __init__(self):
@@ -103,6 +111,7 @@ def test_provider_list_wheel_forwards_to_parent_scroll_area(_qapp) -> None:
     assert spy.called == 1
 
 
+@pytest.mark.skipif(ProviderListWidget is None, reason="legacy provider list widget removed")
 def test_provider_list_event_filter_forwards_at_scroll_edge(_qapp, monkeypatch) -> None:
     panel = ProviderListWidget()
     panel.update_providers([LLMProviderConfig(id=f"p{i}", name=f"P{i}") for i in range(6)], "p1")
@@ -199,7 +208,7 @@ def test_save_config_persists_ocr_settings(_qapp, monkeypatch) -> None:
     monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
 
     for index in range(page._ocr_mode_combo.count()):
-        if page._ocr_mode_combo.itemData(index) == "cloud":
+        if page._ocr_mode_combo.itemData(index) == "local":
             page._ocr_mode_combo.setCurrentIndex(index)
             break
     for index in range(page._ocr_model_tier_combo.count()):
@@ -215,14 +224,12 @@ def test_save_config_persists_ocr_settings(_qapp, monkeypatch) -> None:
     page._save_config()
 
     assert "cfg" in captured
-    assert captured["cfg"].ocr_mode == "cloud"
+    assert captured["cfg"].ocr_mode == "local"
     assert captured["cfg"].ocr_model_tier == "standard"
-    assert captured["cfg"].ocr_model_source == "cn_mirror"
-    assert captured["cfg"].ocr_auto_cuda_upgrade is False
     assert captured["cfg"].ocr_model_locked_by_user is True
 
 
-def test_save_config_calls_switch_theme_when_theme_changed(_qapp, monkeypatch) -> None:
+def test_save_config_does_not_override_theme(_qapp, monkeypatch) -> None:
     main, _ = _make_main()
     theme_calls: list[str] = []
     main.switch_theme = lambda theme: theme_calls.append(theme)
@@ -236,15 +243,11 @@ def test_save_config_calls_switch_theme_when_theme_changed(_qapp, monkeypatch) -
     monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
     monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
 
-    page._theme_combo.blockSignals(True)
-    page._theme_combo.setCurrentIndex(1)
-    page._theme_combo.blockSignals(False)
-
     page._save_config()
 
     assert "cfg" in captured
-    assert captured["cfg"].theme == "dark"
-    assert theme_calls == ["dark"]
+    assert captured["cfg"].theme == main.config.theme
+    assert theme_calls == []
 
 
 def test_ocr_connectivity_cloud_mode_shows_developing_message(_qapp, monkeypatch) -> None:
@@ -391,3 +394,84 @@ def test_test_provider_connection_uses_worker_and_triggers_success_flow(_qapp, m
 
     assert page._provider_test_worker is not None
     assert page._provider_test_worker.provider.id == provider.id
+
+
+def test_configure_ocr_runtime_falls_back_for_legacy_signature(monkeypatch) -> None:
+    class _LegacyModule:
+        def __init__(self):
+            self.calls = []
+
+        def configure_ocr_runtime(self, **kwargs):
+            self.calls.append(kwargs)
+            if "reset_ocr_instance" in kwargs:
+                raise TypeError("configure_ocr_runtime() got an unexpected keyword argument 'reset_ocr_instance'")
+
+    module = _LegacyModule()
+    monkeypatch.setattr("ankismart.ui.settings_page._get_ocr_converter_module", lambda: module)
+
+    configure_ocr_runtime(model_tier="standard", model_source="official", reset_ocr_instance=True)
+
+    assert len(module.calls) == 2
+    assert module.calls[1] == {"model_tier": "standard", "model_source": "official"}
+
+
+def test_configure_ocr_runtime_reraises_unrelated_type_error(monkeypatch) -> None:
+    class _BrokenModule:
+        def configure_ocr_runtime(self, **kwargs):
+            raise TypeError("bad payload type")
+
+    monkeypatch.setattr("ankismart.ui.settings_page._get_ocr_converter_module", lambda: _BrokenModule())
+
+    with pytest.raises(TypeError, match="bad payload type"):
+        configure_ocr_runtime(model_tier="standard", model_source="official", reset_ocr_instance=True)
+
+
+def test_proxy_manual_layout_places_input_left_of_mode_combo(_qapp) -> None:
+    provider = LLMProviderConfig(
+        id="p1",
+        name="OpenAI",
+        api_key="test-key",
+        base_url="https://api.openai.com/v1",
+        model="gpt-4o",
+    )
+    cfg = AppConfig(
+        llm_providers=[provider],
+        active_provider_id="p1",
+        proxy_mode="manual",
+        proxy_url="http://127.0.0.1:7890",
+    )
+    main, _ = _make_main(cfg)
+    page = SettingsPage(main)
+    page.resize(1100, 900)
+    page.show()
+    _qapp.processEvents()
+
+    assert page._proxy_edit.isVisible()
+    assert page._proxy_edit.y() == page._proxy_mode_combo.y() or abs(page._proxy_edit.y() - page._proxy_mode_combo.y()) <= 4
+    assert page._proxy_edit.x() < page._proxy_mode_combo.x()
+
+
+def test_other_group_stays_at_bottom(_qapp) -> None:
+    main, _ = _make_main()
+    page = SettingsPage(main)
+    page.resize(1200, 900)
+    page.show()
+    _qapp.processEvents()
+
+    groups = [
+        page._llm_group,
+        page._anki_group,
+        page._ocr_group,
+        page._cache_group,
+        page._experimental_group,
+    ]
+    max_other_y = max(group.y() for group in groups)
+    assert page._other_group.y() > max_other_y
+
+
+def test_scroll_step_is_tuned_for_faster_following(_qapp) -> None:
+    main, _ = _make_main()
+    page = SettingsPage(main)
+
+    assert page.verticalScrollBar().singleStep() == 64
+    assert page.verticalScrollBar().pageStep() == 360

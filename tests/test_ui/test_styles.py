@@ -1,4 +1,10 @@
-from ankismart.ui.styles import get_stylesheet, Colors, DarkColors
+from ankismart.ui.styles import (
+    Colors,
+    DarkColors,
+    get_list_widget_palette,
+    get_page_background_color,
+    get_stylesheet,
+)
 
 
 def test_light_stylesheet_contains_light_bg():
@@ -17,3 +23,17 @@ def test_dark_colors_differ_from_light():
     assert Colors.BACKGROUND != DarkColors.BACKGROUND
     assert Colors.TEXT_PRIMARY != DarkColors.TEXT_PRIMARY
     assert Colors.SURFACE != DarkColors.SURFACE
+
+
+def test_list_widget_palette_light_and_dark_are_distinct():
+    light = get_list_widget_palette(dark=False)
+    dark = get_list_widget_palette(dark=True)
+
+    assert light.background != dark.background
+    assert light.border != dark.border
+    assert light.selected_background != dark.selected_background
+
+
+def test_page_background_color_matches_theme():
+    assert get_page_background_color(dark=False) == Colors.BACKGROUND
+    assert get_page_background_color(dark=True) == "#202020"

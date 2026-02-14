@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from PyQt6.QtGui import QFont
-from qfluentwidgets import BodyLabel
+from qfluentwidgets import BodyLabel, isDarkTheme
 
 # Color constants
 COLOR_SUCCESS = "#10b981"  # Green
@@ -104,6 +106,53 @@ class DarkColors:
     TEXT_PRIMARY = "#f3f4f6"
     TEXT_SECONDARY = "#9ca3af"
     ACCENT = "#60a5fa"
+
+
+@dataclass(frozen=True)
+class ListWidgetPalette:
+    """Theme-aware palette for list-like Qt widgets."""
+
+    background: str
+    border: str
+    text: str
+    text_disabled: str
+    hover: str
+    selected_background: str
+    selected_text: str
+
+
+def get_list_widget_palette(*, dark: bool | None = None) -> ListWidgetPalette:
+    """Get unified list widget palette for light/dark theme."""
+    if dark is None:
+        dark = isDarkTheme()
+
+    if dark:
+        return ListWidgetPalette(
+            background="rgba(39, 39, 39, 1)",
+            border="rgba(255, 255, 255, 0.08)",
+            text="rgba(255, 255, 255, 0.9)",
+            text_disabled="rgba(255, 255, 255, 0.3)",
+            hover="rgba(255, 255, 255, 0.06)",
+            selected_background="rgba(37, 99, 235, 0.4)",
+            selected_text="rgba(255, 255, 255, 1)",
+        )
+
+    return ListWidgetPalette(
+        background="rgba(249, 249, 249, 1)",
+        border="rgba(0, 0, 0, 0.08)",
+        text="rgba(0, 0, 0, 0.9)",
+        text_disabled="rgba(0, 0, 0, 0.3)",
+        hover="rgba(0, 0, 0, 0.04)",
+        selected_background="rgba(37, 99, 235, 0.15)",
+        selected_text="rgba(0, 0, 0, 1)",
+    )
+
+
+def get_page_background_color(*, dark: bool | None = None) -> str:
+    """Get unified page background color for settings-like pages."""
+    if dark is None:
+        dark = isDarkTheme()
+    return "#202020" if dark else Colors.BACKGROUND
 
 
 def get_stylesheet(*, dark: bool = False) -> str:

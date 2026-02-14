@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
 from PyQt6.QtWidgets import QHBoxLayout, QListWidget, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -25,14 +25,23 @@ from qfluentwidgets import (
 from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.gateway import AnkiGateway
 from ankismart.card_gen.llm_client import LLMClient
+from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
 from ankismart.ui.workers import BatchGenerateWorker, PushWorker
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
 from ankismart.ui.utils import ProgressMixin, split_tags_text
-from ankismart.ui.styles import SPACING_MEDIUM, MARGIN_STANDARD, MARGIN_SMALL, apply_page_title_style
+from ankismart.ui.styles import (
+    SPACING_MEDIUM,
+    MARGIN_STANDARD,
+    MARGIN_SMALL,
+    apply_page_title_style,
+    get_list_widget_palette,
+)
 
 if TYPE_CHECKING:
     from ankismart.ui.main_window import MainWindow
+
+logger = get_logger(__name__)
 
 
 class MarkdownHighlighter(QSyntaxHighlighter):
@@ -178,20 +187,31 @@ class PreviewPage(ProgressMixin, QWidget):
         content_layout = QHBoxLayout()
         content_layout.setSpacing(MARGIN_SMALL)
 
-        # Left: File list
+        # Left column
+        self._left_panel = QWidget()
+        left_layout = QVBoxLayout(self._left_panel)
+        left_layout.setContentsMargins(MARGIN_SMALL, MARGIN_SMALL, MARGIN_SMALL, MARGIN_SMALL)
+        left_layout.setSpacing(MARGIN_SMALL)
+
         self._file_list = QListWidget()
-        self._file_list.setMaximumWidth(250)
         self._file_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._file_list.setWordWrap(False)
         self._file_list.currentRowChanged.connect(self._on_file_switched)
-        content_layout.addWidget(self._file_list)
+        left_layout.addWidget(self._file_list)
+        content_layout.addWidget(self._left_panel, 3)
 
-        # Right: Editor
+        # Right column
+        self._right_panel = QWidget()
+        right_layout = QVBoxLayout(self._right_panel)
+        right_layout.setContentsMargins(MARGIN_SMALL, MARGIN_SMALL, MARGIN_SMALL, MARGIN_SMALL)
+        right_layout.setSpacing(MARGIN_SMALL)
+
         self._editor = PlainTextEdit()
         self._editor.setPlaceholderText("在此编辑 Markdown 内容...")
         self._editor.textChanged.connect(self._on_editor_text_changed)
         self._highlighter = MarkdownHighlighter(self._editor.document())
-        content_layout.addWidget(self._editor, 1)  # Add stretch factor to fill space
+        right_layout.addWidget(self._editor, 1)
+        content_layout.addWidget(self._right_panel, 7)
 
         layout.addLayout(content_layout, 1)  # Main content takes all available space
 
@@ -205,36 +225,18 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _apply_theme_styles(self) -> None:
         """Apply theme-aware styles for Qt widgets in preview page."""
-        is_dark = isDarkTheme()
-
-        # QFluentWidgets official style colors
-        if is_dark:
-            bg_color = "rgba(39, 39, 39, 1)"
-            border_color = "rgba(255, 255, 255, 0.08)"
-            text_color = "rgba(255, 255, 255, 0.9)"
-            text_color_disabled = "rgba(255, 255, 255, 0.3)"
-            hover_bg = "rgba(255, 255, 255, 0.06)"
-            selected_bg = "rgba(0, 120, 212, 0.4)"
-            selected_text = "rgba(255, 255, 255, 1)"
-        else:
-            bg_color = "rgba(249, 249, 249, 1)"
-            border_color = "rgba(0, 0, 0, 0.08)"
-            text_color = "rgba(0, 0, 0, 0.9)"
-            text_color_disabled = "rgba(0, 0, 0, 0.3)"
-            hover_bg = "rgba(0, 0, 0, 0.04)"
-            selected_bg = "rgba(0, 120, 212, 0.15)"
-            selected_text = "rgba(0, 0, 0, 1)"
+        palette = get_list_widget_palette(dark=isDarkTheme())
 
         self._file_list.setStyleSheet(
             "QListWidget {"
-            f"background-color: {bg_color};"
-            f"border: 1px solid {border_color};"
+            f"background-color: {palette.background};"
+            f"border: 1px solid {palette.border};"
             "border-radius: 8px;"
             "padding: 8px;"
             "outline: none;"
             "}"
             "QListWidget::item {"
-            f"color: {text_color};"
+            f"color: {palette.text};"
             "font-size: 15px;"
             "padding: 8px 14px;"
             "border-radius: 6px;"
@@ -242,18 +244,36 @@ class PreviewPage(ProgressMixin, QWidget):
             "margin: 2px 0px;"
             "}"
             "QListWidget::item:hover {"
-            f"background-color: {hover_bg};"
+            f"background-color: {palette.hover};"
             "}"
             "QListWidget::item:selected {"
-            f"background-color: {selected_bg};"
-            f"color: {selected_text};"
+            f"background-color: {palette.selected_background};"
+            f"color: {palette.selected_text};"
             "font-weight: 500;"
             "}"
             "QListWidget::item:selected:hover {"
-            f"background-color: {selected_bg};"
+            f"background-color: {palette.selected_background};"
             "}"
             "QListWidget::item:disabled {"
-            f"color: {text_color_disabled};"
+            f"color: {palette.text_disabled};"
+            "}"
+        )
+
+        panel_style = (
+            f"background-color: {palette.background};"
+            f"border: 1px solid {palette.border};"
+            "border-radius: 8px;"
+        )
+        self._left_panel.setStyleSheet(panel_style)
+        self._right_panel.setStyleSheet(panel_style)
+
+        self._editor.setStyleSheet(
+            "QPlainTextEdit, QTextEdit {"
+            f"background-color: {palette.background};"
+            f"color: {palette.text};"
+            f"border: 1px solid {palette.border};"
+            "border-radius: 8px;"
+            "padding: 8px;"
             "}"
         )
 
@@ -810,13 +830,47 @@ class PreviewPage(ProgressMixin, QWidget):
             parent=self,
         )
 
+    def _show_state_tooltip(self, title: str, content: str) -> None:
+        """Show or update workflow state tooltip."""
+        if self._state_tooltip is None:
+            self._state_tooltip = StateToolTip(title, content, self.window())
+            self._state_tooltip.move(self._state_tooltip.getSuitablePos())
+            self._state_tooltip.show()
+            return
+
+        self._state_tooltip.setContent(content)
+
+    def _finish_state_tooltip(self, success: bool, content: str) -> None:
+        """Finish workflow state tooltip and clear reference."""
+        if self._state_tooltip is None:
+            return
+
+        self._state_tooltip.setContent(content)
+        self._state_tooltip.setState(success)
+        self._state_tooltip = None
+
     def _on_generation_progress(self, message: str):
         """Handle generation progress message."""
-        pass
+        is_zh = self._main.config.language == "zh"
+        self._show_state_tooltip(
+            "正在生成卡片" if is_zh else "Generating Cards",
+            message,
+        )
+        logger.info(
+            "generation progress",
+            extra={"event": "ui.generation.progress", "message_detail": message},
+        )
 
     def _on_card_progress(self, current: int, total: int):
         """Handle card generation progress."""
-        pass
+        if total <= 0:
+            return
+
+        is_zh = self._main.config.language == "zh"
+        self._show_state_tooltip(
+            "正在生成卡片" if is_zh else "Generating Cards",
+            f"已生成 {current}/{total} 张卡片" if is_zh else f"Generated {current}/{total} cards",
+        )
 
     def _on_document_completed(self, document_name: str, cards_count: int):
         """Handle document generation completion."""
@@ -833,14 +887,19 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_generation_finished(self, cards):
         """Handle generation completion."""
+        is_zh = self._main.config.language == "zh"
+        self._finish_state_tooltip(
+            True,
+            "卡片生成完成" if is_zh else "Card generation completed",
+        )
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
 
         if not cards:
             InfoBar.warning(
-                title="警告" if self._main.config.language == "zh" else "Warning",
-                content="没有生成任何卡片" if self._main.config.language == "zh" else "No cards generated",
+                title="警告" if is_zh else "Warning",
+                content="没有生成任何卡片" if is_zh else "No cards generated",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -850,7 +909,6 @@ class PreviewPage(ProgressMixin, QWidget):
             return
 
         # Show completion notification
-        is_zh = self._main.config.language == "zh"
         InfoBar.success(
             title="制卡完成" if is_zh else "Generation Complete",
             content=f"成功生成 {len(cards)} 张卡片" if is_zh else f"Generated {len(cards)} cards",
@@ -865,14 +923,23 @@ class PreviewPage(ProgressMixin, QWidget):
         self._main.cards = cards
         self._main.card_preview_page.load_cards(cards)
         self._main._switch_page(2)  # Switch to card preview page (index 2)
+        logger.info(
+            "generation completed",
+            extra={"event": "ui.generation.completed", "cards_count": len(cards)},
+        )
 
     def _on_generation_error(self, error: str):
         """Handle generation error."""
+        is_zh = self._main.config.language == "zh"
+        self._finish_state_tooltip(
+            False,
+            "卡片生成失败" if is_zh else "Card generation failed",
+        )
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
         InfoBar.error(
-            title="错误" if self._main.config.language == "zh" else "Error",
+            title="错误" if is_zh else "Error",
             content=error,
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
@@ -880,16 +947,25 @@ class PreviewPage(ProgressMixin, QWidget):
             duration=5000,
             parent=self,
         )
+        logger.error(
+            "generation failed",
+            extra={"event": "ui.generation.failed", "error_detail": error},
+        )
 
     def _on_generation_cancelled(self):
         """Handle generation cancellation."""
+        is_zh = self._main.config.language == "zh"
+        self._finish_state_tooltip(
+            False,
+            "已取消生成任务" if is_zh else "Generation cancelled",
+        )
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
 
         InfoBar.warning(
-            title="已取消" if self._main.config.language == "zh" else "Cancelled",
-            content="卡片生成已被用户取消" if self._main.config.language == "zh" else "Card generation cancelled by user",
+            title="已取消" if is_zh else "Cancelled",
+            content="卡片生成已被用户取消" if is_zh else "Card generation cancelled by user",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -956,32 +1032,53 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_push_progress(self, message: str):
         """Handle push progress message."""
-        pass
+        is_zh = self._main.config.language == "zh"
+        self._show_state_tooltip(
+            "正在推送到 Anki" if is_zh else "Pushing to Anki",
+            message,
+        )
 
     def _on_push_finished(self, result):
         """Handle push completion."""
+        is_zh = self._main.config.language == "zh"
+        self._finish_state_tooltip(
+            True,
+            "推送完成" if is_zh else "Push completed",
+        )
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
 
-        # Load result page and switch to it
+        # Sync result data without automatic page navigation.
         self._main.result_page.load_result(result, self._main.cards)
-        self._main.switch_to_result()
-
-        # Also load cards to card preview page for later viewing
         self._main.card_preview_page.load_cards(self._main.cards)
 
-        # After a short delay, switch to card preview page
-        from PyQt6.QtCore import QTimer
-        QTimer.singleShot(500, lambda: self._main._switch_page(2))
+        InfoBar.success(
+            title="推送完成" if is_zh else "Push Complete",
+            content=(
+                "已完成推送，结果页已更新；当前页面保持不跳转。"
+                if is_zh
+                else "Push completed. Result page is updated and current page stays unchanged."
+            ),
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=3200,
+            parent=self,
+        )
 
     def _on_push_error(self, error: str):
         """Handle push error."""
+        is_zh = self._main.config.language == "zh"
+        self._finish_state_tooltip(
+            False,
+            "推送失败" if is_zh else "Push failed",
+        )
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
         InfoBar.error(
-            title="错误" if self._main.config.language == "zh" else "Error",
+            title="错误" if is_zh else "Error",
             content=error,
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
@@ -992,13 +1089,18 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_push_cancelled(self):
         """Handle push cancellation."""
+        is_zh = self._main.config.language == "zh"
+        self._finish_state_tooltip(
+            False,
+            "推送已取消" if is_zh else "Push cancelled",
+        )
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
 
         InfoBar.warning(
-            title="已取消" if self._main.config.language == "zh" else "Cancelled",
-            content="卡片推送已被用户取消" if self._main.config.language == "zh" else "Card push cancelled by user",
+            title="已取消" if is_zh else "Cancelled",
+            content="卡片推送已被用户取消" if is_zh else "Card push cancelled by user",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,

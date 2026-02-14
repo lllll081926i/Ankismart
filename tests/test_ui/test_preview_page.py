@@ -213,3 +213,14 @@ class TestMarkdownHighlighter:
         # Each rule is (pattern, format)
         for pattern, fmt in hl._rules:
             assert hasattr(pattern, "finditer")
+
+
+class TestPreviewPageFlow:
+    def test_push_finished_does_not_auto_navigate(self):
+        main = _make_main_window()
+        page = PreviewPage(main)
+        page._main.cards = []
+
+        page._on_push_finished(MagicMock())
+
+        main.switch_to_result.assert_not_called()

@@ -56,6 +56,7 @@ from ankismart.ui.styles import (
     SPACING_SMALL,
     MARGIN_STANDARD,
     MARGIN_SMALL,
+    get_page_background_color,
 )
 
 if TYPE_CHECKING:
@@ -99,11 +100,27 @@ def _get_ocr_converter_module():
     return _OCR_CONVERTER_MODULE
 
 
-def configure_ocr_runtime(*, model_tier: str, model_source: str) -> None:
-    _get_ocr_converter_module().configure_ocr_runtime(
-        model_tier=model_tier,
-        model_source=model_source,
-    )
+def configure_ocr_runtime(
+    *,
+    model_tier: str,
+    model_source: str,
+    reset_ocr_instance: bool = False,
+) -> None:
+    module = _get_ocr_converter_module()
+    try:
+        module.configure_ocr_runtime(
+            model_tier=model_tier,
+            model_source=model_source,
+            reset_ocr_instance=reset_ocr_instance,
+        )
+    except TypeError as exc:
+        # Backward compatibility: older runtime doesn't accept reset_ocr_instance.
+        if "reset_ocr_instance" not in str(exc):
+            raise
+        module.configure_ocr_runtime(
+            model_tier=model_tier,
+            model_source=model_source,
+        )
 
 
 def get_missing_ocr_models(*, model_tier: str, model_source: str):
@@ -223,11 +240,14 @@ class SettingsPage(ScrollArea):
         """Initialize widgets and layout."""
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setSmoothMode(SmoothMode.LINEAR, Qt.Orientation.Vertical)
+        # Improve wheel-following responsiveness for long settings pages.
+        self.setSmoothMode(SmoothMode.NO_SMOOTH, Qt.Orientation.Vertical)
         self.setViewportMargins(0, 0, 0, 0)
         self.setWidget(self.scrollWidget)
         self.setWidgetResizable(True)
         self.setObjectName("settingsPage")
+        self.verticalScrollBar().setSingleStep(64)
+        self.verticalScrollBar().setPageStep(360)
 
         self.scrollWidget.setObjectName("scrollWidget")
 
@@ -266,7 +286,6 @@ class SettingsPage(ScrollArea):
         self._default_tags_edit.textChanged.connect(self._save_config_silent)
 
         # Other settings
-        self._theme_combo.currentIndexChanged.connect(self._save_config_silent)
         self._language_combo.currentIndexChanged.connect(self._save_config_silent)
         self._proxy_mode_combo.currentIndexChanged.connect(self._save_config_silent)
         self._proxy_edit.textChanged.connect(self._save_config_silent)
@@ -303,10 +322,7 @@ class SettingsPage(ScrollArea):
 
     def _apply_background_style(self) -> None:
         """Apply theme-aware background color to settings page."""
-        if isDarkTheme():
-            bg_color = "#202020"  # Dark theme background
-        else:
-            bg_color = "#f5f5f5"  # Light theme background
+        bg_color = get_page_background_color(dark=isDarkTheme())
 
         self.setStyleSheet(f"QScrollArea#settingsPage {{ background-color: {bg_color}; border: none; }}")
         self.scrollWidget.setStyleSheet(f"QWidget#scrollWidget {{ background-color: {bg_color}; }}")
@@ -350,6 +366,7 @@ class SettingsPage(ScrollArea):
         self._provider_table.setEditTriggers(TableWidget.EditTrigger.NoEditTriggers)
         self._provider_table.setSelectionBehavior(TableWidget.SelectionBehavior.SelectRows)
         self._provider_table.setSelectionMode(TableWidget.SelectionMode.SingleSelection)
+        self._provider_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         # Set fixed row height (36px per row)
         self._provider_table.verticalHeader().setDefaultSectionSize(36)
@@ -358,14 +375,15 @@ class SettingsPage(ScrollArea):
         header_height = self._provider_table.horizontalHeader().height()
         self._provider_table.setFixedHeight(header_height + 36 * 2 + 2)  # 2 rows + border
 
-        # Set column widths - compress action column, expand others
-        self._provider_table.setColumnWidth(0, 60)   # Status
-        self._provider_table.setColumnWidth(1, 150)  # Name (increased from 120)
-        self._provider_table.setColumnWidth(2, 180)  # Model (increased from 150)
-        self._provider_table.setColumnWidth(3, 350)  # URL (increased from 300)
-        self._provider_table.setColumnWidth(4, 100)  # RPM (increased from 80)
-        self._provider_table.setColumnWidth(5, 280)  # Actions (fixed, no stretch)
-        self._provider_table.horizontalHeader().setStretchLastSection(False)
+        # Use adaptive widths to avoid horizontal scrolling.
+        header = self._provider_table.horizontalHeader()
+        header.setMinimumSectionSize(56)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
 
         # Reduce top margin for table
         self.expandLayout.setSpacing(8)  # Reduce spacing between widgets
@@ -517,7 +535,8 @@ class SettingsPage(ScrollArea):
         self._theme_combo.setMinimumWidth(200)
         self._theme_card.hBoxLayout.addWidget(self._theme_combo)
         self._theme_card.hBoxLayout.addSpacing(16)
-        self._other_group.addSettingCard(self._theme_card)
+        # Theme switching is handled by sidebar button, keep this control hidden.
+        self._theme_card.setVisible(False)
 
         # Language
         self._language_card = SettingCard(
@@ -541,28 +560,25 @@ class SettingsPage(ScrollArea):
             self.scrollWidget,
         )
 
-        # Proxy container with mode selector and manual input
+        # Proxy row: manual URL input on the left, mode selector on the right.
         proxy_container = QWidget(self._proxy_card)
-        proxy_layout = QVBoxLayout(proxy_container)
+        proxy_layout = QHBoxLayout(proxy_container)
         proxy_layout.setContentsMargins(0, 0, 0, 0)
         proxy_layout.setSpacing(8)
-
-        # Proxy mode selector
-        proxy_mode_layout = QHBoxLayout()
-        self._proxy_mode_combo = ComboBox(proxy_container)
-        self._proxy_mode_combo.addItems(["系统代理", "手动配置", "不使用代理"])
-        self._proxy_mode_combo.setMinimumWidth(150)
-        self._proxy_mode_combo.currentIndexChanged.connect(self._on_proxy_mode_changed)
-        proxy_mode_layout.addWidget(self._proxy_mode_combo)
-        proxy_mode_layout.addStretch()
-        proxy_layout.addLayout(proxy_mode_layout)
 
         # Manual proxy input (hidden by default)
         self._proxy_edit = LineEdit(proxy_container)
         self._proxy_edit.setPlaceholderText("http://proxy.example.com:8080")
         self._proxy_edit.setMinimumWidth(300)
         self._proxy_edit.setVisible(False)
-        proxy_layout.addWidget(self._proxy_edit)
+
+        self._proxy_mode_combo = ComboBox(proxy_container)
+        self._proxy_mode_combo.addItems(["系统代理", "手动配置", "不使用代理"])
+        self._proxy_mode_combo.setMinimumWidth(150)
+        self._proxy_mode_combo.currentIndexChanged.connect(self._on_proxy_mode_changed)
+
+        proxy_layout.addWidget(self._proxy_edit, 1)
+        proxy_layout.addWidget(self._proxy_mode_combo, 0)
 
         self._proxy_card.hBoxLayout.addWidget(proxy_container)
         self._proxy_card.hBoxLayout.addSpacing(16)
@@ -622,8 +638,6 @@ class SettingsPage(ScrollArea):
         )
         self._view_logs_card.clicked.connect(self._open_log_directory)
         self._other_group.addSettingCard(self._view_logs_card)
-
-        self.expandLayout.addWidget(self._other_group)
 
         # ── OCR Settings Group ──
         self._ocr_group = SettingCardGroup("OCR 设置", self.scrollWidget)
@@ -769,10 +783,7 @@ class SettingsPage(ScrollArea):
 
         self.expandLayout.addWidget(self._experimental_group)
 
-        # ── Action Buttons Group ──
-        self._action_group = SettingCardGroup("操作", self.scrollWidget)
-
-        # Export logs button
+        # Action cards are merged into "Other Settings" and moved to bottom.
         is_zh = self._main.config.language == "zh"
         self._export_logs_card = PushSettingCard(
             "导出日志" if is_zh else "Export Logs",
@@ -781,7 +792,7 @@ class SettingsPage(ScrollArea):
             "导出应用日志文件用于问题排查" if is_zh else "Export application logs for troubleshooting",
         )
         self._export_logs_card.clicked.connect(self._export_logs)
-        self._action_group.addSettingCard(self._export_logs_card)
+        self._other_group.addSettingCard(self._export_logs_card)
 
         self._reset_card = PushSettingCard(
             "恢复默认",
@@ -790,9 +801,10 @@ class SettingsPage(ScrollArea):
             "将所有设置恢复为默认值",
         )
         self._reset_card.clicked.connect(self._reset_to_default)
-        self._action_group.addSettingCard(self._reset_card)
+        self._other_group.addSettingCard(self._reset_card)
 
-        self.expandLayout.addWidget(self._action_group)
+        # Keep "Other Settings" at the very bottom.
+        self.expandLayout.addWidget(self._other_group)
 
     def _load_config(self) -> None:
         """Load configuration from main window."""
@@ -825,7 +837,9 @@ class SettingsPage(ScrollArea):
         # Proxy settings - load mode and manual URL
         proxy_mode = getattr(config, "proxy_mode", "system")
         proxy_mode_map = {"system": 0, "manual": 1, "none": 2}
+        self._proxy_mode_combo.blockSignals(True)
         self._proxy_mode_combo.setCurrentIndex(proxy_mode_map.get(proxy_mode, 0))
+        self._proxy_mode_combo.blockSignals(False)
         self._proxy_edit.setText(config.proxy_url)
         # Show/hide manual input based on mode
         self._proxy_edit.setVisible(proxy_mode == "manual")
@@ -888,40 +902,38 @@ class SettingsPage(ScrollArea):
             # Column 5: Action buttons
             action_widget = QWidget()
             action_layout = QHBoxLayout(action_widget)
-            action_layout.setContentsMargins(4, 2, 4, 2)
-            action_layout.setSpacing(4)
+            action_layout.setContentsMargins(2, 2, 2, 2)
+            action_layout.setSpacing(2)
 
             # Activate button
             if is_active:
-                activate_btn = PushButton("当前使用")
+                activate_btn = PushButton("当前")
                 activate_btn.setEnabled(False)
-                activate_btn.setFixedSize(80, 28)
+                activate_btn.setFixedSize(52, 28)
             else:
                 activate_btn = PrimaryPushButton("激活")
-                activate_btn.setFixedSize(60, 28)
+                activate_btn.setFixedSize(52, 28)
                 activate_btn.clicked.connect(lambda checked, p=provider: self._activate_provider(p))
             action_layout.addWidget(activate_btn)
 
             # Edit button
-            edit_btn = PushButton("修改")
-            edit_btn.setFixedSize(60, 28)
+            edit_btn = PushButton("编辑")
+            edit_btn.setFixedSize(52, 28)
             edit_btn.clicked.connect(lambda checked, p=provider: self._edit_provider(p))
             action_layout.addWidget(edit_btn)
 
             # Test button
             test_btn = PushButton("测试")
-            test_btn.setFixedSize(60, 28)
+            test_btn.setFixedSize(52, 28)
             test_btn.clicked.connect(lambda checked, p=provider: self._test_provider_connection(p))
             action_layout.addWidget(test_btn)
 
             # Delete button
             delete_btn = PushButton("删除")
-            delete_btn.setFixedSize(60, 28)
+            delete_btn.setFixedSize(52, 28)
             delete_btn.setEnabled(can_delete)
             delete_btn.clicked.connect(lambda checked, p=provider: self._delete_provider(p))
             action_layout.addWidget(delete_btn)
-
-            action_layout.addStretch()
             self._provider_table.setCellWidget(row, 5, action_widget)
 
     @staticmethod
@@ -1248,16 +1260,26 @@ class SettingsPage(ScrollArea):
 
     def _on_proxy_mode_changed(self, index: int) -> None:
         """Handle proxy mode change - show/hide manual input."""
+        from ankismart.ui.i18n import t
+
         # 0: System, 1: Manual, 2: None
         is_manual = (index == 1)
         self._proxy_edit.setVisible(is_manual)
+        if not self.isVisible():
+            return
 
-        # Show notification
+        if index == 0:
+            mode_text = "系统代理" if self._main.config.language == "zh" else "System Proxy"
+        elif index == 1:
+            mode_text = "手动配置" if self._main.config.language == "zh" else "Manual Proxy"
+        else:
+            mode_text = "不使用代理" if self._main.config.language == "zh" else "No Proxy"
+
         self._show_info_bar(
-            "success",
-            t("log.level_changed", self._main.config.language),
-            t("log.level_changed_msg", self._main.config.language, level=log_level),
-            duration=2000,
+            "info",
+            t("settings.proxy", self._main.config.language),
+            f"{mode_text}",
+            duration=1500,
         )
 
     def _open_log_directory(self) -> None:
@@ -1278,14 +1300,20 @@ class SettingsPage(ScrollArea):
 
     def _save_config(self) -> None:
         """Save configuration."""
+        from ankismart.ui.i18n import t
+
         # Validate active provider
         if not self._providers:
-            QMessageBox.warning(self, "错误", "至少需要配置一个 LLM 提供商")
+            QMessageBox.warning(
+                self,
+                t("settings.error", self._main.config.language),
+                t("settings.must_have_provider", self._main.config.language),
+            )
             return
 
-        self._save_config_silent()
+        self._save_config_silent(show_feedback=True)
 
-    def _save_config_silent(self) -> None:
+    def _save_config_silent(self, *, show_feedback: bool = False) -> None:
         """Save configuration without showing success message (for auto-save)."""
         # Validate active provider
         if not self._providers:
@@ -1296,10 +1324,7 @@ class SettingsPage(ScrollArea):
         if not tags:
             tags = ["ankismart"]
 
-        # Get theme and language
-        theme_values = ["light", "dark", "auto"]
-        theme = theme_values[self._theme_combo.currentIndex()]
-
+        # Theme switching is controlled in sidebar, settings page does not override it.
         lang_values = ["zh", "en"]
         language = lang_values[self._language_combo.currentIndex()]
 
@@ -1343,7 +1368,6 @@ class SettingsPage(ScrollArea):
                 "llm_concurrency": self._concurrency_spin.value(),
                 "proxy_mode": proxy_mode,
                 "proxy_url": proxy_url,
-                "theme": theme,
                 "language": language,
                 "log_level": log_level,
                 "enable_auto_split": self._auto_split_switch.isChecked(),
@@ -1351,7 +1375,6 @@ class SettingsPage(ScrollArea):
             }
         )
 
-        old_theme = self._main.config.theme
         old_language = self._main.config.language
 
         try:
@@ -1371,22 +1394,28 @@ class SettingsPage(ScrollArea):
             except OCRRuntimeUnavailableError:
                 pass
 
-            # Apply theme change immediately (without saving again)
-            if old_theme != theme:
-                if hasattr(self._main, "switch_theme"):
-                    self._main.switch_theme(theme)
-                else:
-                    self._main._apply_theme()
-                    if hasattr(self._main, "_update_theme_button_tooltip"):
-                        self._main._update_theme_button_tooltip()
-
             # Apply language change if needed
             if old_language != language and hasattr(self._main, "switch_language"):
                 self._main.switch_language(language)
 
-            QMessageBox.information(self, "成功", "配置保存成功")
+            if show_feedback:
+                from ankismart.ui.i18n import t
+
+                self._show_info_bar(
+                    "success",
+                    t("settings.success", self._main.config.language),
+                    t("settings.save_success", self._main.config.language),
+                    duration=2000,
+                )
         except Exception as exc:
-            QMessageBox.critical(self, "错误", f"保存配置失败：{exc}")
+            if show_feedback:
+                from ankismart.ui.i18n import t
+
+                QMessageBox.critical(
+                    self,
+                    t("settings.error", self._main.config.language),
+                    t("settings.save_failed", self._main.config.language, error=str(exc)),
+                )
 
     def _reset_to_default(self) -> None:
         """Reset configuration to default values."""
@@ -1479,11 +1508,11 @@ class SettingsPage(ScrollArea):
         is_zh = self._main.config.language == "zh"
 
         # Update save card tooltip with shortcut
-        save_text = "保存配置" if is_zh else "Save Configuration"
         save_shortcut = get_shortcut_text(ShortcutKeys.SAVE_EDIT, self._main.config.language)
-        self._save_card.setContent(
-            f"保存所有配置更改 ({save_shortcut})" if is_zh else f"Save all configuration changes ({save_shortcut})"
-        )
+        if hasattr(self, "_save_card"):
+            self._save_card.setContent(
+                f"保存所有配置更改 ({save_shortcut})" if is_zh else f"Save all configuration changes ({save_shortcut})"
+            )
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""

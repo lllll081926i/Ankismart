@@ -130,6 +130,14 @@ class PushWorker(QThread):
                 self.cancelled.emit()
                 return
 
+            logger.info(
+                "push workflow started",
+                extra={
+                    "event": "worker.push.started",
+                    "cards_count": len(self._cards),
+                    "update_mode": self._update_mode,
+                },
+            )
             self.progress.emit(f"正在推送 {len(self._cards)} 张卡片到 Anki")
 
             # Push with progress tracking
@@ -139,9 +147,22 @@ class PushWorker(QThread):
                 self.cancelled.emit()
                 return
 
+            logger.info(
+                "push workflow finished",
+                extra={
+                    "event": "worker.push.finished",
+                    "cards_count": len(self._cards),
+                    "succeeded": getattr(result, "succeeded", None),
+                    "failed": getattr(result, "failed", None),
+                },
+            )
             self.finished.emit(result)
         except Exception as e:
             if not self._cancelled:
+                logger.exception(
+                    "push workflow failed",
+                    extra={"event": "worker.push.failed"},
+                )
                 self.error.emit(str(e))
 
 
@@ -247,6 +268,7 @@ class BatchConvertWorker(QThread):
         self._config = config
         self._cancelled = False
         self._start_time = 0.0
+        self._last_file_error_message: str | None = None
 
     def cancel(self) -> None:
         """Cancel the conversion operation."""
@@ -263,6 +285,10 @@ class BatchConvertWorker(QThread):
             documents: list[ConvertedDocument] = []
             errors: list[str] = []
             total = len(self._file_paths)
+            logger.info(
+                "batch conversion started",
+                extra={"event": "worker.batch_convert.started", "total_files": total},
+            )
 
             # Separate files by type
             text_files: list[Path] = []
@@ -284,6 +310,17 @@ class BatchConvertWorker(QThread):
                 except Exception:
                     other_files.append(file_path)
 
+            logger.info(
+                "batch conversion grouped files",
+                extra={
+                    "event": "worker.batch_convert.grouped",
+                    "text_files": len(text_files),
+                    "pdf_files": len(pdf_files),
+                    "image_files": len(image_files),
+                    "other_files": len(other_files),
+                },
+            )
+
             # Process text files first (fast, direct to MD)
             for index, file_path in enumerate(text_files, 1):
                 if self._cancelled:
@@ -294,6 +331,9 @@ class BatchConvertWorker(QThread):
 
                 converted = self._convert_with_retry(file_path)
                 if converted is None:
+                    if self._last_file_error_message:
+                        errors.append(self._last_file_error_message)
+                        self._last_file_error_message = None
                     continue
 
                 doc = ConvertedDocument(result=converted, file_name=file_path.name)
@@ -310,6 +350,9 @@ class BatchConvertWorker(QThread):
 
                 converted = self._convert_with_retry(file_path)
                 if converted is None:
+                    if self._last_file_error_message:
+                        errors.append(self._last_file_error_message)
+                        self._last_file_error_message = None
                     continue
 
                 doc = ConvertedDocument(result=converted, file_name=file_path.name)
@@ -330,6 +373,9 @@ class BatchConvertWorker(QThread):
                     doc = ConvertedDocument(result=merged_result, file_name="图片合集")
                     documents.append(doc)
                     self.file_completed.emit("图片合集", doc)
+                elif self._last_file_error_message:
+                    errors.append(self._last_file_error_message)
+                    self._last_file_error_message = None
 
             # Process other files (convert to PDF then OCR)
             for index, file_path in enumerate(other_files, len(text_files) + len(pdf_files) + (1 if image_files else 0) + 1):
@@ -341,6 +387,9 @@ class BatchConvertWorker(QThread):
 
                 converted = self._convert_with_retry(file_path)
                 if converted is None:
+                    if self._last_file_error_message:
+                        errors.append(self._last_file_error_message)
+                        self._last_file_error_message = None
                     continue
 
                 doc = ConvertedDocument(result=converted, file_name=file_path.name)
@@ -359,9 +408,23 @@ class BatchConvertWorker(QThread):
                 save_config(self._config)
 
             batch_result = BatchConvertResult(documents=documents, errors=errors)
+            logger.info(
+                "batch conversion finished",
+                extra={
+                    "event": "worker.batch_convert.finished",
+                    "total_files": total,
+                    "converted_files": len(documents),
+                    "failed_files": len(errors),
+                    "duration_ms": round((time.time() - self._start_time) * 1000, 2),
+                },
+            )
             self.finished.emit(batch_result)
         except Exception as exc:
             if not self._cancelled:
+                logger.exception(
+                    "batch conversion failed",
+                    extra={"event": "worker.batch_convert.failed"},
+                )
                 self.error.emit(str(exc))
 
     def _merge_and_convert_images(self, image_files: list[Path]) -> MarkdownResult | None:
@@ -394,7 +457,9 @@ class BatchConvertWorker(QThread):
                         continue
 
                 if not images:
-                    self.file_error.emit("图片合集: 没有可用的图片")
+                    message = "图片合集: 没有可用的图片"
+                    self._last_file_error_message = message
+                    self.file_error.emit(message)
                     return None
 
                 # Save as PDF
@@ -453,13 +518,19 @@ class BatchConvertWorker(QThread):
                     pass
 
         except Exception as exc:
-            self.file_error.emit(f"图片合集: {exc}")
+            message = f"图片合集: {exc}"
+            self._last_file_error_message = message
+            logger.warning(
+                "image merge conversion failed",
+                extra={"event": "worker.batch_convert.image_merge_failed", "error_detail": str(exc)},
+            )
+            self.file_error.emit(message)
             return None
 
     def _convert_with_retry(self, file_path: Path) -> MarkdownResult | None:
         last_error: Exception | None = None
 
-        for _ in range(2):
+        for attempt in range(2):
             if self._cancelled:
                 return None
 
@@ -489,8 +560,18 @@ class BatchConvertWorker(QThread):
                 return converter.convert(file_path, progress_callback=progress_callback)
             except Exception as exc:
                 last_error = exc
+                logger.warning(
+                    "file conversion attempt failed",
+                    extra={
+                        "event": "worker.batch_convert.retry",
+                        "file_name": file_path.name,
+                        "attempt": attempt + 1,
+                        "error_detail": str(exc),
+                    },
+                )
 
         message = f"{file_path.name}: {last_error}" if last_error else f"{file_path.name}: unknown error"
+        self._last_file_error_message = message
         self.file_error.emit(message)
         return None
 
@@ -549,17 +630,39 @@ class BatchGenerateWorker(QThread):
             if max_workers == 0:
                 max_workers = None
 
+            logger.info(
+                "batch generation started",
+                extra={
+                    "event": "worker.batch_generate.started",
+                    "documents_count": len(self._documents),
+                    "target_total": target_total,
+                    "max_workers": max_workers if max_workers is not None else "auto",
+                },
+            )
+
             if not strategy_mix:
+                logger.warning(
+                    "batch generation aborted: no strategy mix",
+                    extra={"event": "worker.batch_generate.invalid_input"},
+                )
                 self.error.emit("No strategy mix configured")
                 return
 
             if not self._documents:
+                logger.warning(
+                    "batch generation aborted: no documents",
+                    extra={"event": "worker.batch_generate.invalid_input"},
+                )
                 self.error.emit("No documents to generate cards from")
                 return
 
             # Step 1: Allocate card counts per strategy
             strategy_counts = self._allocate_mix_counts(target_total, strategy_mix)
             if not strategy_counts:
+                logger.warning(
+                    "batch generation aborted: allocation failed",
+                    extra={"event": "worker.batch_generate.allocation_failed"},
+                )
                 self.error.emit("Failed to allocate strategy counts")
                 return
 
@@ -627,6 +730,15 @@ class BatchGenerateWorker(QThread):
 
                     except Exception as e:
                         # Log error but continue with other strategies
+                        logger.warning(
+                            "strategy generation failed",
+                            extra={
+                                "event": "worker.batch_generate.strategy_failed",
+                                "strategy": strategy,
+                                "file_name": document.file_name,
+                                "error_detail": str(e),
+                            },
+                        )
                         self.progress.emit(
                             f"生成 {strategy} 卡片时出错 ({document.file_name}): {str(e)}"
                         )
@@ -659,6 +771,15 @@ class BatchGenerateWorker(QThread):
                         all_cards.extend(cards)
                     except Exception as e:
                         idx, doc = future_to_doc[future]
+                        logger.warning(
+                            "document generation failed",
+                            extra={
+                                "event": "worker.batch_generate.document_failed",
+                                "document_index": idx,
+                                "file_name": doc.file_name,
+                                "error_detail": str(e),
+                            },
+                        )
                         self.progress.emit(f"处理 {doc.file_name} 时出错: {str(e)}")
 
             if self._cancelled:
@@ -672,9 +793,22 @@ class BatchGenerateWorker(QThread):
                 self._config.total_cards_generated += len(all_cards)
                 save_config(self._config)
 
+            logger.info(
+                "batch generation finished",
+                extra={
+                    "event": "worker.batch_generate.finished",
+                    "documents_count": len(self._documents),
+                    "cards_generated": len(all_cards),
+                    "duration_ms": round((time.time() - self._start_time) * 1000, 2),
+                },
+            )
             self.finished.emit(all_cards)
 
         except Exception as e:
+            logger.exception(
+                "batch generation failed",
+                extra={"event": "worker.batch_generate.failed"},
+            )
             self.error.emit(str(e))
 
     @staticmethod

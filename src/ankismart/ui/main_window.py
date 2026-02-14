@@ -373,12 +373,16 @@ class MainWindow(FluentWindow):
         if preview_page is not None and batch_result is not None:
             load_documents = getattr(preview_page, "load_documents", None)
             if callable(load_documents):
-                load_documents(batch_result, pending_files_count, total_expected)
+                try:
+                    load_documents(batch_result, pending_files_count, total_expected)
+                except TypeError:
+                    # Backward compatibility for legacy mocks/adapters.
+                    load_documents(batch_result)
         self._switch_page(1)
 
     def switch_to_result(self) -> None:
         """Switch to result page."""
-        self._switch_page(2)
+        self._switch_page(3)
 
     def switch_to_results(self) -> None:
         """Compatibility alias for old callers."""

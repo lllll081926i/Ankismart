@@ -7,6 +7,40 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+_EXCLUDED_RECORD_FIELDS = {
+    "name",
+    "msg",
+    "args",
+    "created",
+    "relativeCreated",
+    "exc_info",
+    "exc_text",
+    "stack_info",
+    "lineno",
+    "funcName",
+    "pathname",
+    "filename",
+    "module",
+    "levelno",
+    "levelname",
+    "thread",
+    "threadName",
+    "process",
+    "processName",
+    "message",
+    "msecs",
+    "taskName",
+    "trace_id",
+}
+
+
+def _collect_extra_fields(record: logging.LogRecord) -> dict[str, object]:
+    extras: dict[str, object] = {}
+    for key, value in record.__dict__.items():
+        if key not in _EXCLUDED_RECORD_FIELDS:
+            extras[key] = value
+    return extras
+
 
 def _get_env_bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
@@ -32,23 +66,25 @@ class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         from ankismart.core.tracing import get_trace_id
 
+        trace_id = getattr(record, "trace_id", None) or get_trace_id()
         entry: dict[str, object] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
+            "logger": record.name,
             "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno,
             "message": record.getMessage(),
-            "trace_id": get_trace_id(),
+            "trace_id": trace_id,
         }
 
-        for key, value in record.__dict__.items():
-            if key not in {
-                "name", "msg", "args", "created", "relativeCreated",
-                "exc_info", "exc_text", "stack_info", "lineno", "funcName",
-                "pathname", "filename", "module", "levelno", "levelname",
-                "thread", "threadName", "process", "processName", "message",
-                "msecs", "taskName", "trace_id",
-            }:
-                entry[key] = value
+        extras = _collect_extra_fields(record)
+        if extras:
+            event = extras.pop("event", None)
+            if event is not None:
+                entry["event"] = event
+            if extras:
+                entry["context"] = extras
 
         if record.exc_info and record.exc_info[1] is not None:
             entry["exception"] = self.formatException(record.exc_info)
@@ -58,9 +94,29 @@ class JsonFormatter(logging.Formatter):
 
 class ConsoleFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        from ankismart.core.tracing import get_trace_id
+
         ts = datetime.now().strftime("%H:%M:%S")
         module = record.name.replace("ankismart.", "")
-        return f"[{ts}] {record.levelname:<7} {module}: {record.getMessage()}"
+        trace_id = getattr(record, "trace_id", None) or get_trace_id()
+        trace_short = str(trace_id).split("-", 1)[0][:8]
+        extras = _collect_extra_fields(record)
+        event = extras.pop("event", None)
+
+        line = f"[{ts}] {record.levelname:<7} {module} [{trace_short}]"
+        if event:
+            line = f"{line} {event}"
+
+        line = f"{line}: {record.getMessage()}"
+
+        if extras:
+            keys = sorted(extras)
+            preview = ", ".join(f"{key}={extras[key]}" for key in keys[:4])
+            if len(keys) > 4:
+                preview = f"{preview}, ..."
+            line = f"{line} | {preview}"
+
+        return line
 
 
 class ConsoleNoiseFilter(logging.Filter):

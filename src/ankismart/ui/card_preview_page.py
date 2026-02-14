@@ -31,18 +31,21 @@ from qfluentwidgets import (
 )
 from PyQt6.QtWidgets import QTextBrowser
 
+from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft
-from ankismart.ui.i18n import t
 from ankismart.ui.styles import (
     MARGIN_SMALL,
     MARGIN_STANDARD,
     SPACING_LARGE,
     SPACING_MEDIUM,
     apply_page_title_style,
+    get_list_widget_palette,
 )
 
 if TYPE_CHECKING:
     from ankismart.ui.main_window import MainWindow
+
+logger = get_logger(__name__)
 
 
 class CardRenderer:
@@ -616,7 +619,8 @@ class CardPreviewPage(QWidget):
         # Search box
         self._search_input = LineEdit()
         self._search_input.setPlaceholderText("搜索卡片内容..." if self._main.config.language == "zh" else "Search card content...")
-        self._search_input.setFixedWidth(200)
+        self._search_input.setMinimumWidth(200)
+        self._search_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._search_input.textChanged.connect(self._apply_filters)
         layout.addWidget(self._search_input)
 
@@ -625,7 +629,9 @@ class CardPreviewPage(QWidget):
     def _create_left_panel(self) -> QWidget:
         """Create left panel with card list."""
         panel = CardWidget()
+        panel.setObjectName("cardPreviewLeftPanel")
         panel.setBorderRadius(8)
+        self._left_panel = panel
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(MARGIN_SMALL, MARGIN_SMALL, MARGIN_SMALL, MARGIN_SMALL)
         layout.setSpacing(MARGIN_SMALL)
@@ -644,7 +650,9 @@ class CardPreviewPage(QWidget):
     def _create_right_panel(self) -> QWidget:
         """Create right panel with card preview."""
         panel = CardWidget()
+        panel.setObjectName("cardPreviewRightPanel")
         panel.setBorderRadius(8)
+        self._right_panel = panel
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(MARGIN_SMALL, MARGIN_SMALL, MARGIN_SMALL, MARGIN_SMALL)
         layout.setSpacing(MARGIN_SMALL)
@@ -804,45 +812,41 @@ class CardPreviewPage(QWidget):
 
     def _apply_browser_theme(self) -> None:
         """Apply theme-aware stylesheet to embedded HTML preview browser."""
-        border_color = "rgba(255, 255, 255, 0.12)" if isDarkTheme() else "rgba(0, 0, 0, 0.08)"
+        palette = get_list_widget_palette(dark=isDarkTheme())
         self._card_browser.setStyleSheet(
             "QTextBrowser {"
-            "background-color: transparent;"
-            f"border: 1px solid {border_color};"
+            f"background-color: {palette.background};"
+            f"border: 1px solid {palette.border};"
             "border-radius: 8px;"
             "}"
         )
 
     def _apply_theme_styles(self) -> None:
         """Apply theme-aware styles for non-Fluent Qt widgets."""
-        is_dark = isDarkTheme()
+        palette = get_list_widget_palette(dark=isDarkTheme())
 
-        # QFluentWidgets official style colors
-        if is_dark:
-            bg_color = "rgba(39, 39, 39, 1)"
-            border_color = "rgba(255, 255, 255, 0.08)"
-            text_color = "rgba(255, 255, 255, 0.9)"
-            hover_bg = "rgba(255, 255, 255, 0.06)"
-            selected_bg = "rgba(0, 120, 212, 0.4)"
-            selected_text = "rgba(255, 255, 255, 1)"
-        else:
-            bg_color = "rgba(249, 249, 249, 1)"
-            border_color = "rgba(0, 0, 0, 0.08)"
-            text_color = "rgba(0, 0, 0, 0.9)"
-            hover_bg = "rgba(0, 0, 0, 0.04)"
-            selected_bg = "rgba(0, 120, 212, 0.15)"
-            selected_text = "rgba(0, 0, 0, 1)"
+        panel_style = (
+            f"QWidget#cardPreviewLeftPanel, QWidget#cardPreviewRightPanel {{"
+            f"background-color: {palette.background};"
+            f"border: 1px solid {palette.border};"
+            "border-radius: 8px;"
+            "}"
+        )
+        if hasattr(self, "_left_panel"):
+            self._left_panel.setStyleSheet(panel_style)
+        if hasattr(self, "_right_panel"):
+            self._right_panel.setStyleSheet(panel_style)
 
         self._card_list.setStyleSheet(
             "QListWidget {"
-            f"background-color: {bg_color};"
-            f"border: 1px solid {border_color};"
+            f"background-color: {palette.background};"
+            f"border: 1px solid {palette.border};"
             "border-radius: 8px;"
             "padding: 8px;"
             "outline: none;"
             "}"
             "QListWidget::item {"
-            f"color: {text_color};"
+            f"color: {palette.text};"
             "font-size: 15px;"
             "padding: 8px 14px;"
             "border-radius: 6px;"
@@ -850,15 +854,15 @@ class CardPreviewPage(QWidget):
             "margin: 2px 0px;"
             "}"
             "QListWidget::item:hover {"
-            f"background-color: {hover_bg};"
+            f"background-color: {palette.hover};"
             "}"
             "QListWidget::item:selected {"
-            f"background-color: {selected_bg};"
-            f"color: {selected_text};"
+            f"background-color: {palette.selected_background};"
+            f"color: {palette.selected_text};"
             "font-weight: 500;"
             "}"
             "QListWidget::item:selected:hover {"
-            f"background-color: {selected_bg};"
+            f"background-color: {palette.selected_background};"
             "}"
         )
 
@@ -884,8 +888,14 @@ class CardPreviewPage(QWidget):
             return
 
         # Disable push button during push
+        is_zh = self._main.config.language == "zh"
         self._btn_push.setEnabled(False)
         self._progress_bar.show()
+        self._count_label.setText("正在推送到 Anki..." if is_zh else "Pushing to Anki...")
+        logger.info(
+            "push started",
+            extra={"event": "ui.push.started", "cards_count": len(self._all_cards)},
+        )
 
         # Apply duplicate check settings to cards
         config = self._main.config
@@ -925,23 +935,50 @@ class CardPreviewPage(QWidget):
 
     def _on_push_progress(self, message: str):
         """Handle push progress message."""
-        pass
+        is_zh = self._main.config.language == "zh"
+        self._count_label.setText(
+            f"推送中：{message}" if is_zh else f"Pushing: {message}"
+        )
 
     def _on_push_finished(self, result):
         """Handle push completion."""
+        is_zh = self._main.config.language == "zh"
         self._progress_bar.hide()
         self._btn_push.setEnabled(True)
 
-        # Load result page and switch to it
+        # Only update result data and keep current page.
         self._main.result_page.load_result(result, self._all_cards)
-        self._main.switch_to_result()
+        self._count_label.setText(
+            f"推送完成，共 {len(self._all_cards)} 张"
+            if is_zh
+            else f"Push complete, {len(self._all_cards)} cards"
+        )
+        InfoBar.success(
+            title="推送完成" if is_zh else "Push Complete",
+            content=(
+                "结果页已更新，可按需手动查看；当前保持在卡片预览页。"
+                if is_zh
+                else "Result page updated. Stay on card preview; open result page manually if needed."
+            ),
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=3200,
+            parent=self,
+        )
+        logger.info(
+            "push finished",
+            extra={"event": "ui.push.finished", "cards_count": len(self._all_cards)},
+        )
 
     def _on_push_error(self, error: str):
         """Handle push error."""
+        is_zh = self._main.config.language == "zh"
         self._progress_bar.hide()
         self._btn_push.setEnabled(True)
+        self._count_label.setText("推送失败" if is_zh else "Push failed")
         InfoBar.error(
-            title="错误" if self._main.config.language == "zh" else "Error",
+            title="错误" if is_zh else "Error",
             content=error,
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
@@ -949,14 +986,20 @@ class CardPreviewPage(QWidget):
             duration=5000,
             parent=self,
         )
+        logger.error(
+            "push failed",
+            extra={"event": "ui.push.failed", "error_detail": error},
+        )
 
     def _on_push_cancelled(self):
         """Handle push cancellation."""
+        is_zh = self._main.config.language == "zh"
         self._progress_bar.hide()
         self._btn_push.setEnabled(True)
+        self._count_label.setText("推送已取消" if is_zh else "Push cancelled")
         InfoBar.warning(
-            title="已取消" if self._main.config.language == "zh" else "Cancelled",
-            content="卡片推送已被用户取消" if self._main.config.language == "zh" else "Card push cancelled by user",
+            title="已取消" if is_zh else "Cancelled",
+            content="卡片推送已被用户取消" if is_zh else "Card push cancelled by user",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
