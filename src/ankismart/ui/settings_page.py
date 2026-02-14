@@ -1412,15 +1412,15 @@ class SettingsPage(ScrollArea):
         )
 
         old_config = self._main.config
-        old_language = old_config.language
         should_reset_ocr_runtime = self._should_reset_ocr_runtime(old_config, config)
 
         try:
-            # Update main window config first
-            self._main.config = config
-
-            # Save config to disk
-            save_config(config)
+            apply_runtime = getattr(self._main, "apply_runtime_config", None)
+            if callable(apply_runtime):
+                apply_runtime(config, persist=True)
+            else:
+                self._main.config = config
+                save_config(config)
 
             # Configure OCR runtime only when OCR settings are changed.
             if should_reset_ocr_runtime and getattr(config, "ocr_mode", "local") == "local":
@@ -1432,10 +1432,6 @@ class SettingsPage(ScrollArea):
                     )
                 except OCRRuntimeUnavailableError:
                     pass
-
-            # Apply language change if needed
-            if old_language != language and hasattr(self._main, "switch_language"):
-                self._main.switch_language(language)
 
             if show_feedback:
                 from ankismart.ui.i18n import t
@@ -1469,7 +1465,12 @@ class SettingsPage(ScrollArea):
             from ankismart.core.config import AppConfig
 
             default_config = AppConfig()
-            self._main.config = default_config
+            apply_runtime = getattr(self._main, "apply_runtime_config", None)
+            if callable(apply_runtime):
+                apply_runtime(default_config, persist=True)
+            else:
+                self._main.config = default_config
+                save_config(default_config)
             self._load_config()
             QMessageBox.information(self, "重置完成", "设置已恢复为默认值")
 

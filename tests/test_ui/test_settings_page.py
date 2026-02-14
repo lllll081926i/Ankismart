@@ -250,6 +250,37 @@ def test_save_config_does_not_override_theme(_qapp, monkeypatch) -> None:
     assert theme_calls == []
 
 
+def test_save_config_prefers_runtime_apply_when_available(_qapp, monkeypatch) -> None:
+    main, _ = _make_main()
+    applied: dict[str, object] = {}
+
+    def _apply_runtime(config: AppConfig, *, persist: bool = True, changed_fields=None):
+        applied["config"] = config
+        applied["persist"] = persist
+        applied["changed_fields"] = changed_fields
+        main.config = config
+        return set(changed_fields or [])
+
+    main.apply_runtime_config = _apply_runtime
+    page = SettingsPage(main)
+
+    def _unexpected_save(_):
+        raise AssertionError("save_config should not be called directly when runtime apply is available")
+
+    monkeypatch.setattr("ankismart.ui.settings_page.save_config", _unexpected_save)
+    monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+
+    page._language_combo.setCurrentIndex(1)  # English
+    page._save_config()
+
+    assert "config" in applied
+    assert applied["persist"] is True
+    assert isinstance(applied["config"], AppConfig)
+    assert applied["config"].language == "en"
+
+
 def test_ocr_connectivity_cloud_mode_shows_developing_message(_qapp, monkeypatch) -> None:
     main, _ = _make_main()
     page = SettingsPage(main)

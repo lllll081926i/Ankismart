@@ -579,3 +579,28 @@ def test_on_decks_loaded_restores_last_deck_choice():
     ImportPage._on_decks_loaded(page, ["Default", "MyDeck", "Other"])
 
     assert page._deck_combo.currentText() == "MyDeck"
+
+
+def test_persist_ocr_config_updates_prefers_runtime_apply(monkeypatch):
+    page = _make_page()
+    applied: dict[str, object] = {}
+
+    def _apply_runtime(config: AppConfig, *, persist: bool = True, changed_fields=None):
+        applied["config"] = config
+        applied["persist"] = persist
+        page._main.config = config
+        return set(changed_fields or [])
+
+    page._main.apply_runtime_config = _apply_runtime
+
+    def _unexpected_save(_):
+        raise AssertionError("save_config should not be called directly when runtime apply is available")
+
+    monkeypatch.setattr("ankismart.ui.import_page.save_config", _unexpected_save)
+
+    ImportPage._persist_ocr_config_updates(page, ocr_model_tier="accuracy")
+
+    assert "config" in applied
+    assert applied["persist"] is True
+    assert isinstance(applied["config"], AppConfig)
+    assert applied["config"].ocr_model_tier == "accuracy"

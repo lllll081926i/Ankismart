@@ -1167,6 +1167,10 @@ class ImportPage(ProgressMixin, QWidget):
 
     def _persist_ocr_config_updates(self, **updates) -> None:
         config = self._main.config.model_copy(update=updates)
+        apply_runtime = getattr(self._main, "apply_runtime_config", None)
+        if callable(apply_runtime):
+            apply_runtime(config, persist=True)
+            return
         self._main.config = config
         save_config(config)
 

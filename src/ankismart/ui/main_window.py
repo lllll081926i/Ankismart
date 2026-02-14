@@ -32,6 +32,7 @@ class MainWindow(FluentWindow):
 
     language_changed = pyqtSignal(str)  # Signal emitted when language changes
     theme_changed = pyqtSignal(str)  # Signal emitted when theme changes
+    config_updated = pyqtSignal(list)  # Signal emitted when runtime config fields change
 
     def __init__(self, config: AppConfig):
         super().__init__()
@@ -295,6 +296,63 @@ class MainWindow(FluentWindow):
             "settings": t("nav.settings", lang)
         }
 
+    @staticmethod
+    def _diff_config_fields(old_config: AppConfig, new_config: AppConfig) -> set[str]:
+        old_data = old_config.model_dump()
+        new_data = new_config.model_dump()
+        changed: set[str] = set()
+        for key, value in new_data.items():
+            if old_data.get(key) != value:
+                changed.add(key)
+        return changed
+
+    def _apply_language_runtime(self, language: str) -> None:
+        """Apply language change immediately without restart."""
+        set_language(language)
+        self.language_changed.emit(language)
+        self._refresh_navigation()
+
+        if hasattr(self.import_page, "retranslate_ui"):
+            self.import_page.retranslate_ui()
+        if hasattr(self.preview_page, "retranslate_ui"):
+            self.preview_page.retranslate_ui()
+        if hasattr(self.result_page, "retranslate_ui"):
+            self.result_page.retranslate_ui()
+        if hasattr(self.performance_page, "retranslate_ui"):
+            self.performance_page.retranslate_ui()
+        if hasattr(self.settings_page, "retranslate_ui"):
+            self.settings_page.retranslate_ui()
+        self._update_theme_button_tooltip()
+
+    def apply_runtime_config(
+        self,
+        config: AppConfig,
+        *,
+        persist: bool = True,
+        changed_fields: set[str] | None = None,
+    ) -> set[str]:
+        """Apply runtime config updates and notify listeners."""
+        current = self.config
+        changed = changed_fields or self._diff_config_fields(current, config)
+        self.config = config
+
+        if persist:
+            save_config(self.config)
+
+        if "theme" in changed:
+            self._apply_theme()
+            self._update_theme_button_tooltip()
+
+        if "language" in changed:
+            self._apply_language_runtime(self.config.language)
+
+        if "log_level" in changed:
+            from ankismart.core.logging import set_log_level
+            set_log_level(self.config.log_level)
+
+        self.config_updated.emit(sorted(changed))
+        return changed
+
     def _get_icon_path(self) -> Path:
         """Get the path to the application icon."""
         return Path(__file__).resolve().parent / "assets" / "icon.ico"
@@ -305,11 +363,11 @@ class MainWindow(FluentWindow):
         Args:
             theme: Theme name ("light", "dark", or "auto")
         """
-        self.config.theme = theme
-        save_config(self.config)
-        self._apply_theme()
-        self._update_theme_button_tooltip()
-        # Note: _on_theme_changed will be called automatically by qconfig.themeChanged signal
+        if self.config.theme == theme:
+            return
+        updated = self.config.model_copy(update={"theme": theme})
+        self.apply_runtime_config(updated, persist=True, changed_fields={"theme"})
+        # Note: _on_theme_changed will be called automatically by qconfig.themeChanged signal.
 
     def switch_language(self, language: str):
         """Switch application language and refresh all UI components.
@@ -320,28 +378,8 @@ class MainWindow(FluentWindow):
         if self.config.language == language:
             return  # No change needed
 
-        self.config.language = language
-        set_language(language)
-        save_config(self.config)
-
-        # Emit signal to notify all pages
-        self.language_changed.emit(language)
-
-        # Refresh navigation labels
-        self._refresh_navigation()
-
-        # Refresh all pages
-        if hasattr(self.import_page, 'retranslate_ui'):
-            self.import_page.retranslate_ui()
-        if hasattr(self.preview_page, 'retranslate_ui'):
-            self.preview_page.retranslate_ui()
-        if hasattr(self.result_page, 'retranslate_ui'):
-            self.result_page.retranslate_ui()
-        if hasattr(self.performance_page, 'retranslate_ui'):
-            self.performance_page.retranslate_ui()
-        if hasattr(self.settings_page, 'retranslate_ui'):
-            self.settings_page.retranslate_ui()
-        self._update_theme_button_tooltip()
+        updated = self.config.model_copy(update={"language": language})
+        self.apply_runtime_config(updated, persist=True, changed_fields={"language"})
 
     def _refresh_navigation(self):
         """Refresh navigation labels after language change."""
