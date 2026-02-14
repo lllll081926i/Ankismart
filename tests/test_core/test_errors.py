@@ -11,6 +11,7 @@ from ankismart.core.errors import (
     ConvertError,
     ErrorCode,
 )
+from ankismart.core.interfaces import IAnkiGateway, IApkgExporter, ICardGenerator, IConverter
 
 
 class TestErrorCode:
@@ -110,3 +111,11 @@ class TestConfigError:
         d = err.to_dict()
         assert d["code"] == "E_CONFIG_INVALID"
         assert d["traceId"] == "x"
+
+
+class TestInterfaces:
+    def test_protocol_symbols_exist(self):
+        assert IConverter is not None
+        assert ICardGenerator is not None
+        assert IAnkiGateway is not None
+        assert IApkgExporter is not None

@@ -6,6 +6,7 @@ import json
 from unittest.mock import MagicMock
 
 from ankismart.card_gen.generator import _STRATEGY_MAP, CardGenerator
+from ankismart.card_gen.strategy_recommender import StrategyRecommender
 from ankismart.card_gen.prompts import (
     BASIC_SYSTEM_PROMPT,
     CLOZE_SYSTEM_PROMPT,
@@ -228,3 +229,87 @@ class TestCorrectOcrText:
         gen = _make_generator(chat_return_value="clean output")
         result = gen.correct_ocr_text("messy input")
         assert result == "clean output"
+
+
+class TestSplitMarkdown:
+    def test_split_markdown_returns_original_when_short(self):
+        gen = _make_generator()
+        content = "short text"
+        chunks = gen._split_markdown(content, threshold=100)
+        assert chunks == [content]
+
+    def test_split_markdown_handles_long_paragraph_and_sentences(self):
+        gen = _make_generator()
+        content = (
+            "This is sentence one. "
+            "This is sentence two. "
+            "This is sentence three. "
+            "This is sentence four."
+        )
+        chunks = gen._split_markdown(content, threshold=30)
+        assert len(chunks) >= 2
+        assert all(chunk.strip() for chunk in chunks)
+
+    def test_split_markdown_handles_code_block_and_unclosed_block(self):
+        gen = _make_generator()
+        content = (
+            "Intro paragraph.\n\n"
+            "```python\n\n"
+            "print('hello world')\n\n"
+            "print('line 2')\n\n"
+            "```\n\n"
+            "Trailing paragraph.\n\n"
+            "```sql\n\n"
+            "SELECT * FROM table"
+        )
+        chunks = gen._split_markdown(content, threshold=40)
+        assert len(chunks) >= 2
+        assert any("```python" in chunk for chunk in chunks)
+        assert any("```sql" in chunk for chunk in chunks)
+
+    def test_generate_uses_chunk_mode_when_auto_split_enabled(self):
+        gen = _make_generator(chat_side_effect=_fake_llm_basic)
+        request = GenerateRequest(
+            markdown="Paragraph one.\n\nParagraph two.\n\nParagraph three.",
+            strategy="basic",
+            deck_name="Deck",
+            tags=["x"],
+            enable_auto_split=True,
+            split_threshold=10,
+        )
+        drafts = gen.generate(request)
+        assert len(drafts) >= 2
+        assert gen._llm.chat.call_count >= 2
+
+
+class TestStrategyRecommender:
+    def test_detect_document_type_and_rule_recommend(self):
+        recommender = StrategyRecommender()
+        content = "第1章 定义：测试概念。例题：请解释。"
+        result = recommender.recommend(content)
+        assert result.document_type in {"textbook", "general"}
+        assert result.strategy_mix
+        assert 0.0 <= result.confidence <= 1.0
+
+    def test_llm_recommend_parses_json_code_block(self):
+        llm = MagicMock()
+        llm.chat.return_value = """```json
+{
+  "strategy_mix": [{"strategy": "basic_qa", "ratio": 60}, {"strategy": "fill_blank", "ratio": 40}],
+  "reasoning": "ok",
+  "confidence": 0.9
+}
+```"""
+        recommender = StrategyRecommender(llm_client=llm)
+        result = recommender.recommend("notes summary")
+        assert result.strategy_mix[0]["strategy"] == "basic_qa"
+        assert result.reasoning == "ok"
+        assert result.confidence == 0.9
+
+    def test_llm_recommend_fallback_to_rule_when_response_invalid(self):
+        llm = MagicMock()
+        llm.chat.return_value = "not-json"
+        recommender = StrategyRecommender(llm_client=llm)
+        result = recommender.recommend("abstract introduction conclusion")
+        assert result.strategy_mix
+        assert result.document_type in {"paper", "general"}

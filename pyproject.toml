@@ -49,6 +49,20 @@ dev = [
 testpaths = ["tests"]
 pythonpath = ["src"]
 
+[tool.coverage.run]
+branch = true
+parallel = true
+source = [
+    "src/ankismart/core",
+    "src/ankismart/converter",
+    "src/ankismart/card_gen",
+    "src/ankismart/anki_gateway",
+]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100

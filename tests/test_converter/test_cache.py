@@ -6,7 +6,17 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from ankismart.converter.cache import get_cached, get_file_hash, save_cache
+from ankismart.converter.cache import (
+    clear_cache,
+    get_cache_count,
+    get_cache_size,
+    get_cache_stats,
+    get_cached,
+    get_cached_by_hash,
+    get_file_hash,
+    save_cache,
+    save_cache_by_hash,
+)
 from ankismart.core.models import MarkdownResult
 
 # ---------------------------------------------------------------------------
@@ -206,3 +216,57 @@ class TestGetFileHash:
 
         assert isinstance(value, str)
         assert len(value) == 64
+
+
+class TestHashCache:
+    def test_save_and_get_cached_by_hash_roundtrip(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / "cache"
+        result = MarkdownResult(
+            content="hash-content",
+            source_path="/tmp/a.md",
+            source_format="markdown",
+            trace_id="trace-1",
+        )
+        with patch("ankismart.converter.cache.CACHE_DIR", cache_dir):
+            save_cache_by_hash("abc", result)
+            loaded = get_cached_by_hash("abc")
+
+        assert loaded is not None
+        assert loaded.content == "hash-content"
+        assert loaded.source_path == "/tmp/a.md"
+        assert loaded.source_format == "markdown"
+
+    def test_get_cached_by_hash_returns_none_when_missing(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        with patch("ankismart.converter.cache.CACHE_DIR", cache_dir):
+            assert get_cached_by_hash("missing") is None
+
+    def test_get_cached_by_hash_returns_none_on_invalid_json(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        (cache_dir / "fh_bad.md").write_text("x", encoding="utf-8")
+        (cache_dir / "fh_bad.json").write_text("{bad", encoding="utf-8")
+        with patch("ankismart.converter.cache.CACHE_DIR", cache_dir):
+            assert get_cached_by_hash("bad") is None
+
+
+class TestCacheStatsAndClear:
+    def test_cache_size_count_stats_and_clear(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / "a.md").write_text("12345", encoding="utf-8")
+        (cache_dir / "a.json").write_text("{}", encoding="utf-8")
+
+        with patch("ankismart.converter.cache.CACHE_DIR", cache_dir):
+            size_mb = get_cache_size()
+            count = get_cache_count()
+            stats = get_cache_stats()
+            cleared = clear_cache()
+            count_after = get_cache_count()
+
+        assert size_mb > 0
+        assert count == 2
+        assert stats["count"] == 2
+        assert cleared is True
+        assert count_after == 0
