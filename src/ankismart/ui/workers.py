@@ -267,6 +267,7 @@ class BatchConvertWorker(QThread):
         self._file_paths = list(file_paths)
         self._config = config
         self._cancelled = False
+        self._cancel_event = threading.Event()
         self._start_time = 0.0
         self._last_file_error_message: str | None = None
         self._ocr_correction_fn = None
@@ -274,8 +275,15 @@ class BatchConvertWorker(QThread):
 
     def cancel(self) -> None:
         """Cancel the conversion operation."""
+        cancel_event = self.__dict__.get("_cancel_event")
+        if cancel_event is not None:
+            cancel_event.set()
         self._cancelled = True
-        self.cancelled.emit()
+
+    def _is_cancelled(self) -> bool:
+        cancel_event = self.__dict__.get("_cancel_event")
+        cancelled = bool(self.__dict__.get("_cancelled", False))
+        return cancelled or bool(cancel_event is not None and cancel_event.is_set())
 
     def run(self) -> None:
         import time
@@ -325,7 +333,7 @@ class BatchConvertWorker(QThread):
 
             # Process text files first (fast, direct to MD)
             for index, file_path in enumerate(text_files, 1):
-                if self._cancelled:
+                if self._is_cancelled():
                     self.cancelled.emit()
                     return
 
@@ -344,7 +352,7 @@ class BatchConvertWorker(QThread):
 
             # Process PDF files (check text layer first)
             for index, file_path in enumerate(pdf_files, len(text_files) + 1):
-                if self._cancelled:
+                if self._is_cancelled():
                     self.cancelled.emit()
                     return
 
@@ -363,7 +371,7 @@ class BatchConvertWorker(QThread):
 
             # Merge all images into one PDF and OCR
             if image_files:
-                if self._cancelled:
+                if self._is_cancelled():
                     self.cancelled.emit()
                     return
 
@@ -381,7 +389,7 @@ class BatchConvertWorker(QThread):
 
             # Process other files (convert to PDF then OCR)
             for index, file_path in enumerate(other_files, len(text_files) + len(pdf_files) + (1 if image_files else 0) + 1):
-                if self._cancelled:
+                if self._is_cancelled():
                     self.cancelled.emit()
                     return
 
@@ -398,7 +406,7 @@ class BatchConvertWorker(QThread):
                 documents.append(doc)
                 self.file_completed.emit(file_path.name, doc)
 
-            if self._cancelled:
+            if self._is_cancelled():
                 self.cancelled.emit()
                 return
 
@@ -422,12 +430,27 @@ class BatchConvertWorker(QThread):
             )
             self.finished.emit(batch_result)
         except Exception as exc:
-            if not self._cancelled:
+            if not self._is_cancelled():
                 logger.exception(
                     "batch conversion failed",
                     extra={"event": "worker.batch_convert.failed"},
                 )
                 self.error.emit(str(exc))
+        finally:
+            self._release_ocr_runtime()
+
+    @staticmethod
+    def _release_ocr_runtime() -> None:
+        """Release OCR engine after batch conversion to avoid long-lived memory usage."""
+        try:
+            from ankismart.converter.ocr_converter import release_ocr_runtime
+        except Exception:
+            return
+
+        try:
+            release_ocr_runtime(reason="batch_convert_finished")
+        except Exception as exc:
+            logger.debug(f"Failed to release OCR runtime after batch conversion: {exc}")
 
     def _resolve_ocr_correction_fn(self):
         if self._ocr_correction_fn_ready:
@@ -473,7 +496,6 @@ class BatchConvertWorker(QThread):
         """Merge multiple images into one PDF and convert via OCR."""
         try:
             from PIL import Image
-            import pypdfium2 as pdfium
             import tempfile
             import os
 
@@ -483,17 +505,16 @@ class BatchConvertWorker(QThread):
             temp_pdf = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
             temp_pdf_path = Path(temp_pdf.name)
             temp_pdf.close()
+            images: list[Image.Image] = []
 
             try:
                 # Load all images
-                images = []
                 for img_path in image_files:
                     try:
-                        img = Image.open(img_path)
-                        # Convert to RGB if necessary
-                        if img.mode != 'RGB':
-                            img = img.convert('RGB')
-                        images.append(img)
+                        with Image.open(img_path) as opened:
+                            # Copy image data to detach from file descriptor.
+                            img = opened.convert("RGB") if opened.mode != "RGB" else opened.copy()
+                            images.append(img)
                     except Exception as e:
                         self.ocr_progress.emit(f"无法加载图片 {img_path.name}: {e}")
                         continue
@@ -515,10 +536,6 @@ class BatchConvertWorker(QThread):
                         save_all=True,
                         append_images=images[1:]
                     )
-
-                # Close images
-                for img in images:
-                    img.close()
 
                 self.ocr_progress.emit("图片合并完成，开始 OCR 识别...")
 
@@ -546,9 +563,11 @@ class BatchConvertWorker(QThread):
                 result.source_path = "图片合集"
 
                 return result
-
             finally:
-                # Clean up temporary PDF
+                for image in images:
+                    close_fn = getattr(image, "close", None)
+                    if callable(close_fn):
+                        close_fn()
                 try:
                     if temp_pdf_path.exists():
                         os.unlink(temp_pdf_path)
@@ -569,7 +588,7 @@ class BatchConvertWorker(QThread):
         last_error: Exception | None = None
 
         for attempt in range(2):
-            if self._cancelled:
+            if self._is_cancelled():
                 return None
 
             try:
@@ -632,12 +651,14 @@ class BatchGenerateWorker(QThread):
         config: Any = None,
     ) -> None:
         super().__init__()
-        self._documents = documents
+        # Keep an immutable snapshot to avoid accidental cross-thread mutation.
+        self._documents = tuple(documents)
         self._generation_config = generation_config
         self._llm_client = llm_client
         self._deck_name = deck_name
         self._tags = tags
         self._cancelled = False
+        self._cancel_event = threading.Event()
         self._enable_auto_split = enable_auto_split
         self._split_threshold = split_threshold
         self._config = config
@@ -645,7 +666,15 @@ class BatchGenerateWorker(QThread):
 
     def cancel(self) -> None:
         """Cancel the generation operation."""
+        cancel_event = self.__dict__.get("_cancel_event")
+        if cancel_event is not None:
+            cancel_event.set()
         self._cancelled = True
+
+    def _is_cancelled(self) -> bool:
+        cancel_event = self.__dict__.get("_cancel_event")
+        cancelled = bool(self.__dict__.get("_cancelled", False))
+        return cancelled or bool(cancel_event is not None and cancel_event.is_set())
 
     def run(self) -> None:
         import time
@@ -715,7 +744,7 @@ class BatchGenerateWorker(QThread):
                 """Generate cards for a single document."""
                 nonlocal cards_generated
 
-                if self._cancelled:
+                if self._is_cancelled():
                     return []
 
                 allocation = per_doc_allocations[doc_idx]
@@ -731,7 +760,7 @@ class BatchGenerateWorker(QThread):
 
                 # Generate cards for each strategy in this document's allocation
                 for strategy, count in allocation.items():
-                    if self._cancelled:
+                    if self._is_cancelled():
                         return doc_cards
 
                     if count <= 0:
@@ -793,7 +822,7 @@ class BatchGenerateWorker(QThread):
 
                 # Collect results as they complete
                 for future in concurrent.futures.as_completed(future_to_doc):
-                    if self._cancelled:
+                    if self._is_cancelled():
                         # Cancel all pending futures
                         for f in future_to_doc:
                             f.cancel()
@@ -816,7 +845,7 @@ class BatchGenerateWorker(QThread):
                         )
                         self.progress.emit(f"处理 {doc.file_name} 时出错: {str(e)}")
 
-            if self._cancelled:
+            if self._is_cancelled():
                 self.cancelled.emit()
                 return
 

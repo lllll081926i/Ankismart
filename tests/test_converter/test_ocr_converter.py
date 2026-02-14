@@ -58,6 +58,52 @@ class TestGetOcr:
         finally:
             mod._ocr_instance = old
 
+    def test_release_ocr_runtime_clears_instance(self) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        old_instance = mod._ocr_instance
+        old_mkldnn = mod._mkldnn_fallback_applied
+        old_users = mod._ocr_active_users
+        old_deferred = mod._ocr_release_deferred
+        try:
+            instance = MagicMock()
+            mod._ocr_instance = instance
+            mod._mkldnn_fallback_applied = True
+            mod._ocr_active_users = 0
+            mod._ocr_release_deferred = False
+
+            released = mod.release_ocr_runtime(reason="test", force_gc=False)
+            assert released is True
+            assert mod._ocr_instance is None
+            assert mod._mkldnn_fallback_applied is False
+            assert instance.close.call_count == 1
+        finally:
+            mod._ocr_instance = old_instance
+            mod._mkldnn_fallback_applied = old_mkldnn
+            mod._ocr_active_users = old_users
+            mod._ocr_release_deferred = old_deferred
+
+    def test_release_ocr_runtime_deferred_when_in_use(self) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        old_instance = mod._ocr_instance
+        old_users = mod._ocr_active_users
+        old_deferred = mod._ocr_release_deferred
+        try:
+            sentinel = MagicMock()
+            mod._ocr_instance = sentinel
+            mod._ocr_active_users = 1
+            mod._ocr_release_deferred = False
+
+            released = mod.release_ocr_runtime(reason="test", force_gc=False)
+            assert released is False
+            assert mod._ocr_instance is sentinel
+            assert mod._ocr_release_deferred is True
+        finally:
+            mod._ocr_instance = old_instance
+            mod._ocr_active_users = old_users
+            mod._ocr_release_deferred = old_deferred
+
 
 # ---------------------------------------------------------------------------
 # _pdf_to_images
@@ -68,6 +114,8 @@ class TestPdfToImages:
         mock_image = MagicMock()
         mock_bitmap = MagicMock()
         mock_bitmap.to_pil.return_value = mock_image
+        copied = MagicMock()
+        mock_image.copy.return_value = copied
 
         mock_page = MagicMock()
         mock_page.render.return_value = mock_bitmap
@@ -80,7 +128,7 @@ class TestPdfToImages:
             images = list(_pdf_to_images(Path("test.pdf")))
 
         assert len(images) == 2
-        assert images[0] is mock_image
+        assert images[0] is copied
 
     def test_raises_on_failure(self) -> None:
         with patch("ankismart.converter.ocr_converter.pdfium.PdfDocument", side_effect=RuntimeError("bad pdf")):

@@ -135,6 +135,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._suspend_auto_save = False
         self._generate_worker = None
         self._push_worker = None
+        self._sample_worker = None
         self._state_tooltip = None
         self._converting_info_bar = None  # InfoBar for conversion status
         self._pending_files_count = 0  # Track pending files
@@ -598,6 +599,7 @@ class PreviewPage(ProgressMixin, QWidget):
         )
 
         # Start generation worker
+        self._cleanup_generate_worker()
         self._generate_worker = BatchGenerateWorker(
             documents=documents,
             generation_config=generation_config,
@@ -737,6 +739,7 @@ class PreviewPage(ProgressMixin, QWidget):
         tags = split_tags_text(tags_text)
 
         # Start worker
+        self._cleanup_sample_worker()
         self._sample_worker = SampleGenerateWorker(
             document, strategy_mix, llm_client, deck_name, tags
         )
@@ -746,6 +749,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_sample_finished(self, cards):
         """Handle sample generation completion."""
+        self._cleanup_sample_worker()
         is_zh = self._main.config.language == "zh"
 
         if not cards:
@@ -800,6 +804,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_sample_error(self, error: str):
         """Handle sample generation error."""
+        self._cleanup_sample_worker()
         is_zh = self._main.config.language == "zh"
         InfoBar.error(
             title="错误" if is_zh else "Error",
@@ -845,9 +850,30 @@ class PreviewPage(ProgressMixin, QWidget):
         if self._state_tooltip is None:
             return
 
-        self._state_tooltip.setContent(content)
-        self._state_tooltip.setState(success)
+        tooltip = self._state_tooltip
+        tooltip.setContent(content)
+        tooltip.setState(success)
         self._state_tooltip = None
+        if hasattr(tooltip, "deleteLater"):
+            tooltip.deleteLater()
+
+    def _cleanup_generate_worker(self) -> None:
+        worker = self.__dict__.get("_generate_worker")
+        self.__dict__["_generate_worker"] = None
+        if worker is not None and hasattr(worker, "deleteLater"):
+            worker.deleteLater()
+
+    def _cleanup_push_worker(self) -> None:
+        worker = self.__dict__.get("_push_worker")
+        self.__dict__["_push_worker"] = None
+        if worker is not None and hasattr(worker, "deleteLater"):
+            worker.deleteLater()
+
+    def _cleanup_sample_worker(self) -> None:
+        worker = self.__dict__.get("_sample_worker")
+        self.__dict__["_sample_worker"] = None
+        if worker is not None and hasattr(worker, "deleteLater"):
+            worker.deleteLater()
 
     def _on_generation_progress(self, message: str):
         """Handle generation progress message."""
@@ -887,6 +913,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_generation_finished(self, cards):
         """Handle generation completion."""
+        self._cleanup_generate_worker()
         is_zh = self._main.config.language == "zh"
         self._finish_state_tooltip(
             True,
@@ -930,6 +957,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_generation_error(self, error: str):
         """Handle generation error."""
+        self._cleanup_generate_worker()
         is_zh = self._main.config.language == "zh"
         self._finish_state_tooltip(
             False,
@@ -954,6 +982,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_generation_cancelled(self):
         """Handle generation cancellation."""
+        self._cleanup_generate_worker()
         is_zh = self._main.config.language == "zh"
         self._finish_state_tooltip(
             False,
@@ -1019,6 +1048,7 @@ class PreviewPage(ProgressMixin, QWidget):
         gateway = AnkiGateway(client)
 
         # Start push worker
+        self._cleanup_push_worker()
         self._push_worker = PushWorker(
             gateway=gateway,
             cards=cards,
@@ -1040,6 +1070,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_push_finished(self, result):
         """Handle push completion."""
+        self._cleanup_push_worker()
         is_zh = self._main.config.language == "zh"
         self._finish_state_tooltip(
             True,
@@ -1069,6 +1100,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_push_error(self, error: str):
         """Handle push error."""
+        self._cleanup_push_worker()
         is_zh = self._main.config.language == "zh"
         self._finish_state_tooltip(
             False,
@@ -1089,6 +1121,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_push_cancelled(self):
         """Handle push cancellation."""
+        self._cleanup_push_worker()
         is_zh = self._main.config.language == "zh"
         self._finish_state_tooltip(
             False,
@@ -1149,4 +1182,17 @@ class PreviewPage(ProgressMixin, QWidget):
                 self._push_worker.terminate()
                 self._push_worker.wait()
 
-        event.accept()
+        # Stop sample worker if running
+        if self._sample_worker and self._sample_worker.isRunning():
+            self._sample_worker.wait(3000)
+            if self._sample_worker.isRunning():
+                self._sample_worker.terminate()
+                self._sample_worker.wait()
+
+        self._cleanup_generate_worker()
+        self._cleanup_push_worker()
+        self._cleanup_sample_worker()
+        if self._state_tooltip is not None and hasattr(self._state_tooltip, "deleteLater"):
+            self._state_tooltip.deleteLater()
+            self._state_tooltip = None
+        super().closeEvent(event)

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import gc
 import os
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -38,13 +40,86 @@ PaddleOCR = None
 _ocr_instance: "PaddleOCR | None" = None
 _ocr_lock = threading.Lock()
 _mkldnn_fallback_applied = False
+_ocr_users_lock = threading.Lock()
+_ocr_active_users = 0
+_ocr_release_deferred = False
 
 
 def _reset_ocr_runtime_state() -> None:
-    global _ocr_instance, _mkldnn_fallback_applied
+    release_ocr_runtime(reason="runtime_reset")
+
+
+def release_ocr_runtime(*, reason: str = "manual", force_gc: bool = True) -> bool:
+    """Release global OCR runtime instance and return whether an instance existed."""
+    global _ocr_instance, _mkldnn_fallback_applied, _ocr_release_deferred
+
+    with _ocr_users_lock:
+        if _ocr_active_users > 0:
+            _ocr_release_deferred = True
+            logger.info(
+                "OCR runtime release deferred until active tasks finish",
+                extra={
+                    "event": "ocr.engine.release_deferred",
+                    "reason": reason,
+                    "active_users": _ocr_active_users,
+                },
+            )
+            return False
+
     with _ocr_lock:
+        instance = _ocr_instance
         _ocr_instance = None
         _mkldnn_fallback_applied = False
+
+    if instance is None:
+        return False
+
+    close_fn = getattr(instance, "close", None)
+    if callable(close_fn):
+        try:
+            close_fn()
+        except Exception as exc:
+            logger.debug(f"Failed to close OCR runtime gracefully: {exc}")
+
+    del instance
+
+    if force_gc:
+        gc.collect()
+
+    logger.info(
+        "Released PaddleOCR runtime",
+        extra={"event": "ocr.engine.released", "reason": reason},
+    )
+    return True
+
+
+def _mark_ocr_user_enter() -> None:
+    global _ocr_active_users
+    with _ocr_users_lock:
+        _ocr_active_users += 1
+
+
+def _mark_ocr_user_leave() -> None:
+    global _ocr_active_users, _ocr_release_deferred
+    should_release = False
+
+    with _ocr_users_lock:
+        _ocr_active_users = max(0, _ocr_active_users - 1)
+        if _ocr_active_users == 0 and _ocr_release_deferred:
+            _ocr_release_deferred = False
+            should_release = True
+
+    if should_release:
+        release_ocr_runtime(reason="deferred_release")
+
+
+@contextmanager
+def _borrow_ocr():
+    _mark_ocr_user_enter()
+    try:
+        yield _get_ocr()
+    finally:
+        _mark_ocr_user_leave()
 
 
 def get_ocr_model_presets() -> dict[str, dict[str, str]]:
@@ -423,21 +498,26 @@ def convert(
         sections: list[str] = []
         page_count = 0
         for i, image in enumerate(_pdf_to_images(file_path), 1):
-            page_count += 1
-            if progress_callback is not None:
-                progress_callback(i, total_pages, f"正在识别第 {i}/{total_pages} 页")
+            try:
+                page_count += 1
+                if progress_callback is not None:
+                    progress_callback(i, total_pages, f"正在识别第 {i}/{total_pages} 页")
 
-            with timed(f"ocr_page_{i}"):
-                ocr = _get_ocr()
-                page_text = _ocr_image(ocr, image)
+                with timed(f"ocr_page_{i}"):
+                    with _borrow_ocr() as ocr:
+                        page_text = _ocr_image(ocr, image)
 
-            if page_text.strip():
-                sections.append(f"## Page {i}\n\n{page_text}")
-            else:
-                logger.warning(
-                    "Empty OCR result for page",
-                    extra={"page": i, "trace_id": trace_id},
-                )
+                if page_text.strip():
+                    sections.append(f"## Page {i}\n\n{page_text}")
+                else:
+                    logger.warning(
+                        "Empty OCR result for page",
+                        extra={"page": i, "trace_id": trace_id},
+                    )
+            finally:
+                close_fn = getattr(image, "close", None)
+                if callable(close_fn):
+                    close_fn()
 
         if page_count == 0:
             raise ConvertError(
@@ -492,12 +572,12 @@ def convert_image(
 
     with timed("ocr_image_convert"):
         with Image.open(file_path) as image:
-            ocr = _get_ocr()
-            if progress_callback is not None:
-                progress_callback("OCR 正在识别图片...")
-            text = _ocr_image(ocr, image)
-            if progress_callback is not None:
-                progress_callback("OCR 图片识别完成")
+            with _borrow_ocr() as ocr:
+                if progress_callback is not None:
+                    progress_callback("OCR 正在识别图片...")
+                text = _ocr_image(ocr, image)
+                if progress_callback is not None:
+                    progress_callback("OCR 图片识别完成")
 
         if text.strip() and ocr_correction_fn is not None:
             try:

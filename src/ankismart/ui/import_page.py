@@ -1015,12 +1015,13 @@ class ImportPage(ProgressMixin, QWidget):
         if self._deck_loader and self._deck_loader.isRunning():
             return
 
+        self._cleanup_deck_loader_worker()
         self._deck_loader = DeckLoaderWorker(
             self._main.config.anki_connect_url,
             self._main.config.anki_connect_key
         )
         self._deck_loader.finished.connect(self._on_decks_loaded)
-        self._deck_loader.error.connect(lambda _: None)  # Silently ignore errors
+        self._deck_loader.error.connect(self._on_decks_load_error)
         self._deck_loader.start()
 
     def _on_decks_loaded(self, decks: list[str]):
@@ -1036,6 +1037,35 @@ class ImportPage(ProgressMixin, QWidget):
             self._deck_combo.setCurrentText(self._main.config.last_deck)
         elif current_text:
             self._deck_combo.setCurrentText(current_text)
+        self._cleanup_deck_loader_worker()
+
+    def _on_decks_load_error(self, _error: str):
+        """Handle deck loading error silently but release worker reference."""
+        self._cleanup_deck_loader_worker()
+
+    def _cleanup_batch_worker(self) -> None:
+        worker = self.__dict__.get("_worker")
+        self.__dict__["_worker"] = None
+        if worker is not None and hasattr(worker, "deleteLater"):
+            worker.deleteLater()
+
+    def _cleanup_ocr_download_worker(self) -> None:
+        worker = self.__dict__.get("_ocr_download_worker")
+        self.__dict__["_ocr_download_worker"] = None
+        if worker is not None and hasattr(worker, "deleteLater"):
+            worker.deleteLater()
+
+    def _cleanup_deck_loader_worker(self) -> None:
+        worker = self.__dict__.get("_deck_loader")
+        self.__dict__["_deck_loader"] = None
+        if worker is not None and hasattr(worker, "deleteLater"):
+            worker.deleteLater()
+
+    def _dispose_state_tooltip(self) -> None:
+        tooltip = self.__dict__.get("_state_tooltip")
+        self.__dict__["_state_tooltip"] = None
+        if tooltip is not None and hasattr(tooltip, "deleteLater"):
+            tooltip.deleteLater()
 
     def _select_files(self):
         """Open file dialog to select files."""
@@ -1366,6 +1396,7 @@ class ImportPage(ProgressMixin, QWidget):
             "正在转换文件..." if self._main.config.language == "zh" else "Converting files..."
         )
 
+        self._cleanup_batch_worker()
         self._worker = BatchConvertWorker(self._file_paths, self._main.config)
         self._worker.file_progress.connect(self._on_file_progress)
         self._worker.file_completed.connect(self._on_file_completed)
@@ -1463,6 +1494,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._state_tooltip.show()
 
         # Create and start worker
+        self._cleanup_ocr_download_worker()
         self._ocr_download_worker = OCRModelDownloadWorker(
             model_tier=getattr(self._main.config, "ocr_model_tier", "lite"),
             model_source=getattr(self._main.config, "ocr_model_source", "official"),
@@ -1483,6 +1515,7 @@ class ImportPage(ProgressMixin, QWidget):
         """Handle successful OCR model download."""
         self._model_check_in_progress = False
         self._set_generate_actions_enabled(True)
+        self._cleanup_ocr_download_worker()
 
         if self._state_tooltip:
             is_zh = self._main.config.language == "zh"
@@ -1493,7 +1526,7 @@ class ImportPage(ProgressMixin, QWidget):
             )
             self._state_tooltip.setContent(success_msg)
             self._state_tooltip.setState(True)
-            self._state_tooltip = None
+            self._dispose_state_tooltip()
 
         # Show success message
         is_zh = self._main.config.language == "zh"
@@ -1513,6 +1546,7 @@ class ImportPage(ProgressMixin, QWidget):
         """Handle OCR model download error."""
         self._model_check_in_progress = False
         self._set_generate_actions_enabled(True)
+        self._cleanup_ocr_download_worker()
 
         if self._state_tooltip:
             is_zh = self._main.config.language == "zh"
@@ -1520,7 +1554,7 @@ class ImportPage(ProgressMixin, QWidget):
                 "下载失败" if is_zh else "Download failed"
             )
             self._state_tooltip.setState(True)
-            self._state_tooltip = None
+            self._dispose_state_tooltip()
 
         # Show error message
         is_zh = self._main.config.language == "zh"
@@ -1667,6 +1701,7 @@ class ImportPage(ProgressMixin, QWidget):
 
     def _on_batch_convert_done(self, result: BatchConvertResult):
         """Handle batch conversion completion."""
+        self._cleanup_batch_worker()
         self._hide_progress()
         self._set_generate_actions_enabled(True)
 
@@ -1706,6 +1741,7 @@ class ImportPage(ProgressMixin, QWidget):
 
     def _on_convert_error(self, error: str):
         """Handle conversion error."""
+        self._cleanup_batch_worker()
         self._hide_progress()
         self._set_generate_actions_enabled(True)
         self._status_label.setText(
@@ -1741,6 +1777,7 @@ class ImportPage(ProgressMixin, QWidget):
 
     def _on_operation_cancelled(self):
         """Handle operation cancellation."""
+        self._cleanup_batch_worker()
         self._hide_progress()
         self._set_generate_actions_enabled(True)
         self._status_label.setText(
@@ -1759,6 +1796,33 @@ class ImportPage(ProgressMixin, QWidget):
             duration=3000,
             parent=self,
         )
+
+    def closeEvent(self, event):
+        """Ensure background workers are stopped and references released."""
+        if self._worker and self._worker.isRunning():
+            self._worker.cancel()
+            self._worker.wait(3000)
+            if self._worker.isRunning():
+                self._worker.terminate()
+                self._worker.wait()
+
+        if self._ocr_download_worker and self._ocr_download_worker.isRunning():
+            self._ocr_download_worker.wait(3000)
+            if self._ocr_download_worker.isRunning():
+                self._ocr_download_worker.terminate()
+                self._ocr_download_worker.wait()
+
+        if self._deck_loader and self._deck_loader.isRunning():
+            self._deck_loader.wait(3000)
+            if self._deck_loader.isRunning():
+                self._deck_loader.terminate()
+                self._deck_loader.wait()
+
+        self._cleanup_batch_worker()
+        self._cleanup_ocr_download_worker()
+        self._cleanup_deck_loader_worker()
+        self._dispose_state_tooltip()
+        super().closeEvent(event)
 
 
     def _clear_all(self):

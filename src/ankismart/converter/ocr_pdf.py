@@ -31,9 +31,22 @@ def _pdf_to_images(file_path: Path, *, pdfium_module=pdfium) -> Iterator[Image.I
         pdf = pdfium_module.PdfDocument(str(file_path))
         render_scale = float(os.getenv("ANKISMART_OCR_PDF_RENDER_SCALE", str(300 / 72)))
         for i in range(len(pdf)):
-            page = pdf[i]
-            bitmap = page.render(scale=render_scale)
-            yield bitmap.to_pil()
+            page = None
+            bitmap = None
+            try:
+                page = pdf[i]
+                bitmap = page.render(scale=render_scale)
+                image = bitmap.to_pil().copy()
+                yield image
+            finally:
+                if bitmap is not None:
+                    close_bitmap = getattr(bitmap, "close", None)
+                    if callable(close_bitmap):
+                        close_bitmap()
+                if page is not None:
+                    close_page = getattr(page, "close", None)
+                    if callable(close_page):
+                        close_page()
     except ConvertError:
         raise
     except Exception as exc:
@@ -62,13 +75,22 @@ def _extract_pdf_text(file_path: Path, *, pdfium_module=pdfium) -> str | None:
         pdf = pdfium_module.PdfDocument(str(file_path))
         sections: list[str] = []
         for i in range(len(pdf)):
-            page = pdf[i]
-            text_page = page.get_textpage()
-            page_text = text_page.get_text_range().strip()
-
-            close_text_page = getattr(text_page, "close", None)
-            if callable(close_text_page):
-                close_text_page()
+            page = None
+            text_page = None
+            page_text = ""
+            try:
+                page = pdf[i]
+                text_page = page.get_textpage()
+                page_text = text_page.get_text_range().strip()
+            finally:
+                if text_page is not None:
+                    close_text_page = getattr(text_page, "close", None)
+                    if callable(close_text_page):
+                        close_text_page()
+                if page is not None:
+                    close_page = getattr(page, "close", None)
+                    if callable(close_page):
+                        close_page()
 
             if page_text:
                 sections.append(f"## Page {i + 1}\n\n{page_text}")
