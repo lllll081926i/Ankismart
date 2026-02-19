@@ -1,0 +1,94 @@
+{
+    "specVersion":  "1.0.0",
+    "styleId":  "single-choice-card",
+    "displayName":  "Single Choice Card",
+    "rootClass":  "card",
+    "classes":  {
+                    "badge":  "badge badge--quad",
+                    "body":  "card__body",
+                    "content":  "content",
+                    "head":  "card__head",
+                    "label":  "label",
+                    "option":  "option",
+                    "optionActive":  "option option--active",
+                    "options":  "options",
+                    "title":  "card__title"
+                },
+    "dataSchema":  {
+                       "required":  [
+                                        "title",
+                                        "badgeText",
+                                        "urgencyQuadrant",
+                                        "question",
+                                        "options"
+                                    ],
+                       "properties":  {
+                                          "badgeText":  "string",
+                                          "options":  "array<option>",
+                                          "question":  "string",
+                                          "selectedKey":  "string",
+                                          "title":  "string",
+                                          "urgencyQuadrant":  "enum<q1|q2|q3|q4>"
+                                      },
+                       "optionSchema":  {
+                                            "required":  [
+                                                             "key",
+                                                             "text"
+                                                         ],
+                                            "properties":  {
+                                                               "key":  "string",
+                                                               "text":  "string"
+                                                           }
+                                        }
+                   },
+    "renderMap":  [
+                      {
+                          "target":  "card__title",
+                          "source":  "title"
+                      },
+                      {
+                          "target":  "badge",
+                          "source":  "badgeText"
+                      },
+                      {
+                          "target":  "card.@data-urgency",
+                          "source":  "urgencyQuadrant"
+                      },
+                      {
+                          "target":  "content",
+                          "source":  "question"
+                      },
+                      {
+                          "target":  "options",
+                          "source":  "options",
+                          "repeat":  true,
+                          "itemTemplate":  "{key}. {text}",
+                          "stateRule":  "if item.key == selectedKey then class=optionActive else class=option"
+                      }
+                  ],
+    "sampleData":  {
+                       "badgeText":  "Question",
+                       "options":  [
+                                       {
+                                           "key":  "A",
+                                           "text":  "302 Found"
+                                       },
+                                       {
+                                           "key":  "B",
+                                           "text":  "301 Moved Permanently"
+                                       },
+                                       {
+                                           "key":  "C",
+                                           "text":  "307 Temporary Redirect"
+                                       },
+                                       {
+                                           "key":  "D",
+                                           "text":  "308 Permanent Redirect"
+                                       }
+                                   ],
+                       "question":  "Which status code means permanent redirect?",
+                       "selectedKey":  "B",
+                       "title":  "Single Choice",
+                       "urgencyQuadrant":  "q1"
+                   }
+}

@@ -1,0 +1,88 @@
+{
+    "specVersion":  "1.0.0",
+    "styleId":  "flow-steps-card",
+    "displayName":  "Flow Steps Card",
+    "rootClass":  "card",
+    "classes":  {
+                    "badge":  "badge badge--quad",
+                    "body":  "card__body",
+                    "head":  "card__head",
+                    "label":  "label",
+                    "stepItem":  "timeline-item",
+                    "timeline":  "timeline",
+                    "title":  "card__title"
+                },
+    "dataSchema":  {
+                       "required":  [
+                                        "title",
+                                        "badgeText",
+                                        "urgencyQuadrant",
+                                        "topic",
+                                        "steps"
+                                    ],
+                       "properties":  {
+                                          "badgeText":  "string",
+                                          "steps":  "array<stepItem>",
+                                          "title":  "string",
+                                          "topic":  "string",
+                                          "urgencyQuadrant":  "enum<q1|q2|q3|q4>"
+                                      },
+                       "stepItemSchema":  {
+                                              "required":  [
+                                                               "title",
+                                                               "text"
+                                                           ],
+                                              "properties":  {
+                                                                 "text":  "string",
+                                                                 "title":  "string"
+                                                             }
+                                          }
+                   },
+    "renderMap":  [
+                      {
+                          "target":  "card__title",
+                          "source":  "title"
+                      },
+                      {
+                          "target":  "badge",
+                          "source":  "badgeText"
+                      },
+                      {
+                          "target":  "card.@data-urgency",
+                          "source":  "urgencyQuadrant"
+                      },
+                      {
+                          "target":  "label",
+                          "source":  "topic"
+                      },
+                      {
+                          "target":  "timeline",
+                          "source":  "steps",
+                          "repeat":  true,
+                          "itemTemplate":  {
+                                               "text":  "{text}",
+                                               "title":  "{title}"
+                                           }
+                      }
+                  ],
+    "sampleData":  {
+                       "badgeText":  "Flow",
+                       "steps":  [
+                                     {
+                                         "text":  "Resolve domain to IP via DNS.",
+                                         "title":  "Step 1"
+                                     },
+                                     {
+                                         "text":  "Open TCP/TLS and send request.",
+                                         "title":  "Step 2"
+                                     },
+                                     {
+                                         "text":  "Receive response and render result.",
+                                         "title":  "Step 3"
+                                     }
+                                 ],
+                       "title":  "Flow Steps",
+                       "topic":  "HTTP Request Path",
+                       "urgencyQuadrant":  "q2"
+                   }
+}

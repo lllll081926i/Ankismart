@@ -1,0 +1,68 @@
+{
+    "specVersion":  "1.0.0",
+    "styleId":  "quote-keypoint-card",
+    "displayName":  "Quote Keypoint Card",
+    "rootClass":  "card",
+    "classes":  {
+                    "badge":  "badge badge--quad",
+                    "body":  "card__body",
+                    "head":  "card__head",
+                    "label":  "label",
+                    "quotePanel":  "quote-panel",
+                    "quoteSource":  "quote-source",
+                    "quoteText":  "quote-text",
+                    "title":  "card__title"
+                },
+    "dataSchema":  {
+                       "required":  [
+                                        "title",
+                                        "badgeText",
+                                        "urgencyQuadrant",
+                                        "topic",
+                                        "quote",
+                                        "source"
+                                    ],
+                       "properties":  {
+                                          "badgeText":  "string",
+                                          "quote":  "string",
+                                          "source":  "string",
+                                          "title":  "string",
+                                          "topic":  "string",
+                                          "urgencyQuadrant":  "enum<q1|q2|q3|q4>"
+                                      }
+                   },
+    "renderMap":  [
+                      {
+                          "target":  "card__title",
+                          "source":  "title"
+                      },
+                      {
+                          "target":  "badge",
+                          "source":  "badgeText"
+                      },
+                      {
+                          "target":  "card.@data-urgency",
+                          "source":  "urgencyQuadrant"
+                      },
+                      {
+                          "target":  "label",
+                          "source":  "topic"
+                      },
+                      {
+                          "target":  "quoteText",
+                          "source":  "quote"
+                      },
+                      {
+                          "target":  "quoteSource",
+                          "source":  "source"
+                      }
+                  ],
+    "sampleData":  {
+                       "badgeText":  "Quote",
+                       "quote":  "Premature optimization is the root of all evil.",
+                       "source":  "Donald Knuth",
+                       "title":  "Quote Keypoint",
+                       "topic":  "Key Principle",
+                       "urgencyQuadrant":  "q4"
+                   }
+}

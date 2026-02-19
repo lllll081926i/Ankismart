@@ -1,0 +1,31 @@
+{
+  "specVersion": "1.0.0",
+  "defaultPalette": "default",
+  "paletteOrder": ["default", "sunset", "forest"],
+  "quadrants": {
+    "q1": "important_and_urgent",
+    "q2": "important_not_urgent",
+    "q3": "urgent_not_important",
+    "q4": "not_urgent_not_important"
+  },
+  "palettes": {
+    "default": {
+      "q1": { "border": "#d14343", "head": "#fff2f2", "badgeBg": "#d14343", "badgeText": "#ffffff" },
+      "q2": { "border": "#e38a17", "head": "#fff7eb", "badgeBg": "#e38a17", "badgeText": "#ffffff" },
+      "q3": { "border": "#2d7fd3", "head": "#edf6ff", "badgeBg": "#2d7fd3", "badgeText": "#ffffff" },
+      "q4": { "border": "#3b8f4f", "head": "#eefaf1", "badgeBg": "#3b8f4f", "badgeText": "#ffffff" }
+    },
+    "sunset": {
+      "q1": { "border": "#bb2a2a", "head": "#fff0f0", "badgeBg": "#bb2a2a", "badgeText": "#ffffff" },
+      "q2": { "border": "#b66809", "head": "#fff5e7", "badgeBg": "#b66809", "badgeText": "#ffffff" },
+      "q3": { "border": "#8556d8", "head": "#f4efff", "badgeBg": "#8556d8", "badgeText": "#ffffff" },
+      "q4": { "border": "#2b8a7f", "head": "#e9faf7", "badgeBg": "#2b8a7f", "badgeText": "#ffffff" }
+    },
+    "forest": {
+      "q1": { "border": "#9b2f2f", "head": "#fff1f1", "badgeBg": "#9b2f2f", "badgeText": "#ffffff" },
+      "q2": { "border": "#7d6a16", "head": "#f9f8eb", "badgeBg": "#7d6a16", "badgeText": "#ffffff" },
+      "q3": { "border": "#1c6fa8", "head": "#ebf7ff", "badgeBg": "#1c6fa8", "badgeText": "#ffffff" },
+      "q4": { "border": "#2f7d3f", "head": "#ecf9ef", "badgeBg": "#2f7d3f", "badgeText": "#ffffff" }
+    }
+  }
+}

@@ -1,0 +1,99 @@
+{
+    "specVersion":  "1.0.0",
+    "styleId":  "compare-memory-card",
+    "displayName":  "Compare Memory Card",
+    "rootClass":  "card",
+    "classes":  {
+                    "badge":  "badge badge--quad",
+                    "body":  "card__body",
+                    "content":  "content",
+                    "grid":  "compare-grid",
+                    "head":  "card__head",
+                    "label":  "label",
+                    "leftBox":  "compare-box compare-box--good",
+                    "rightBox":  "compare-box compare-box--risk",
+                    "title":  "card__title"
+                },
+    "dataSchema":  {
+                       "required":  [
+                                        "title",
+                                        "badgeText",
+                                        "urgencyQuadrant",
+                                        "topic",
+                                        "left",
+                                        "right"
+                                    ],
+                       "properties":  {
+                                          "badgeText":  "string",
+                                          "left":  "compareItem",
+                                          "right":  "compareItem",
+                                          "summary":  "string",
+                                          "title":  "string",
+                                          "topic":  "string",
+                                          "urgencyQuadrant":  "enum<q1|q2|q3|q4>"
+                                      },
+                       "compareItemSchema":  {
+                                                 "required":  [
+                                                                  "title",
+                                                                  "text"
+                                                              ],
+                                                 "properties":  {
+                                                                    "text":  "string",
+                                                                    "title":  "string"
+                                                                }
+                                             }
+                   },
+    "renderMap":  [
+                      {
+                          "target":  "card__title",
+                          "source":  "title"
+                      },
+                      {
+                          "target":  "badge",
+                          "source":  "badgeText"
+                      },
+                      {
+                          "target":  "card.@data-urgency",
+                          "source":  "urgencyQuadrant"
+                      },
+                      {
+                          "target":  "label",
+                          "source":  "topic"
+                      },
+                      {
+                          "target":  "content",
+                          "source":  "summary"
+                      },
+                      {
+                          "target":  "leftBox.title",
+                          "source":  "left.title"
+                      },
+                      {
+                          "target":  "leftBox.text",
+                          "source":  "left.text"
+                      },
+                      {
+                          "target":  "rightBox.title",
+                          "source":  "right.title"
+                      },
+                      {
+                          "target":  "rightBox.text",
+                          "source":  "right.text"
+                      }
+                  ],
+    "sampleData":  {
+                       "badgeText":  "Compare",
+                       "left":  {
+                                    "text":  "Read resource, cache-friendly, parameters usually in URL.",
+                                    "title":  "GET"
+                                },
+                       "right":  {
+                                     "text":  "Submit payload, usually non-idempotent, often used for create.",
+                                     "title":  "POST"
+                                 },
+                       "summary":  "Use side-by-side blocks to reduce confusion between similar terms.",
+                       "title":  "Compare Card",
+                       "topic":  "GET vs POST",
+                       "urgencyQuadrant":  "q4"
+                   }
+}

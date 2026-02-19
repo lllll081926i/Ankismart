@@ -1,0 +1,44 @@
+{
+  "specVersion": "1.0.0",
+  "renderer": "html",
+  "standardFile": "spec-standard.json",
+  "urgencyPaletteFile": "urgency-palettes.json",
+  "styles": [
+    {
+      "styleId": "single-choice-card",
+      "file": "single-choice-card.json"
+    },
+    {
+      "styleId": "answer-explanation-card",
+      "file": "answer-explanation-card.json"
+    },
+    {
+      "styleId": "fill-blank-card",
+      "file": "fill-blank-card.json"
+    },
+    {
+      "styleId": "compare-memory-card",
+      "file": "compare-memory-card.json"
+    },
+    {
+      "styleId": "flow-steps-card",
+      "file": "flow-steps-card.json"
+    },
+    {
+      "styleId": "reverse-preview-card",
+      "file": "reverse-preview-card.json"
+    },
+    {
+      "styleId": "code-snippet-card",
+      "file": "code-snippet-card.json"
+    },
+    {
+      "styleId": "quote-keypoint-card",
+      "file": "quote-keypoint-card.json"
+    },
+    {
+      "styleId": "checklist-task-card",
+      "file": "checklist-task-card.json"
+    }
+  ]
+}

@@ -1,0 +1,1601 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Card CSS Style Spec Demo</title>
+  <style>
+    :root {
+      --font-sans: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+      --bg: #f3f7fc;
+      --bg-grad-a: #d9e9ff;
+      --bg-grad-b: #dff7ec;
+      --surface: #ffffff;
+      --text-primary: #0f1c2e;
+      --text-secondary: #4b5a72;
+      --brand: #1f6fd6;
+      --brand-soft: #eaf2ff;
+      --success: #16824f;
+      --success-soft: #e8f7ee;
+      --warning: #ad5b08;
+      --warning-soft: #fff3e5;
+      --border: #d8e2f0;
+      --shadow-sm: 0 8px 20px rgba(16, 39, 72, 0.08);
+      --shadow-md: 0 14px 30px rgba(16, 39, 72, 0.12);
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --radius-pill: 999px;
+      --space-1: 6px;
+      --space-2: 10px;
+      --space-3: 14px;
+      --space-4: 18px;
+      --space-5: 24px;
+      --space-6: 30px;
+      --max-width: 1120px;
+
+      --q1-border: #d14343;
+      --q1-head: #fff2f2;
+      --q1-badge-bg: #d14343;
+      --q1-badge-text: #ffffff;
+
+      --q2-border: #e38a17;
+      --q2-head: #fff7eb;
+      --q2-badge-bg: #e38a17;
+      --q2-badge-text: #ffffff;
+
+      --q3-border: #2d7fd3;
+      --q3-head: #edf6ff;
+      --q3-badge-bg: #2d7fd3;
+      --q3-badge-text: #ffffff;
+
+      --q4-border: #3b8f4f;
+      --q4-head: #eefaf1;
+      --q4-badge-bg: #3b8f4f;
+      --q4-badge-text: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      color: var(--text-primary);
+      background:
+        radial-gradient(900px 560px at -10% -10%, var(--bg-grad-a) 0%, rgba(217, 233, 255, 0) 60%),
+        radial-gradient(800px 500px at 110% 20%, var(--bg-grad-b) 0%, rgba(223, 247, 236, 0) 58%),
+        var(--bg);
+      line-height: 1.55;
+    }
+
+    body[data-palette="sunset"] {
+      --bg-grad-a: #ffd9d9;
+      --bg-grad-b: #ffeccd;
+      --q1-border: #bb2a2a;
+      --q1-head: #fff0f0;
+      --q1-badge-bg: #bb2a2a;
+      --q2-border: #b66809;
+      --q2-head: #fff5e7;
+      --q2-badge-bg: #b66809;
+      --q3-border: #8556d8;
+      --q3-head: #f4efff;
+      --q3-badge-bg: #8556d8;
+      --q4-border: #2b8a7f;
+      --q4-head: #e9faf7;
+      --q4-badge-bg: #2b8a7f;
+    }
+
+    body[data-palette="forest"] {
+      --bg-grad-a: #d5f0e0;
+      --bg-grad-b: #d8ebff;
+      --q1-border: #9b2f2f;
+      --q1-head: #fff1f1;
+      --q1-badge-bg: #9b2f2f;
+      --q2-border: #7d6a16;
+      --q2-head: #f9f8eb;
+      --q2-badge-bg: #7d6a16;
+      --q3-border: #1c6fa8;
+      --q3-head: #ebf7ff;
+      --q3-badge-bg: #1c6fa8;
+      --q4-border: #2f7d3f;
+      --q4-head: #ecf9ef;
+      --q4-badge-bg: #2f7d3f;
+    }
+
+    .page {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 36px 20px 48px;
+    }
+
+    .hero {
+      margin-bottom: 28px;
+      padding: var(--space-5);
+      background: linear-gradient(135deg, #1453aa 0%, #1f6fd6 58%, #2994f4 100%);
+      color: #fff;
+      border-radius: 22px;
+      box-shadow: var(--shadow-md);
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(1.45rem, 1.1rem + 1.2vw, 2rem);
+      line-height: 1.25;
+      letter-spacing: 0.2px;
+    }
+
+    .palette-bar {
+      margin: 0 0 22px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.8);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    .quadrant-legend {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .quad-tag {
+      border-radius: 999px;
+      padding: 2px 10px;
+      border: 1px solid transparent;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .quad-tag[data-q="q1"] { border-color: var(--q1-border); color: var(--q1-border); background: var(--q1-head); }
+    .quad-tag[data-q="q2"] { border-color: var(--q2-border); color: var(--q2-border); background: var(--q2-head); }
+    .quad-tag[data-q="q3"] { border-color: var(--q3-border); color: var(--q3-border); background: var(--q3-head); }
+    .quad-tag[data-q="q4"] { border-color: var(--q4-border); color: var(--q4-border); background: var(--q4-head); }
+
+    .palette-toggle {
+      border: 1px solid #9bb9df;
+      border-radius: 10px;
+      background: #edf5ff;
+      color: #1d4f87;
+      font-weight: 700;
+      padding: 7px 12px;
+      cursor: pointer;
+    }
+
+    .palette-toggle:hover {
+      background: #e2f0ff;
+    }
+
+    .palette-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: #3d5677;
+      margin-left: 6px;
+    }
+
+
+    .spec-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: var(--space-3);
+      margin-bottom: var(--space-5);
+    }
+
+    .section-title {
+      margin: 0 0 var(--space-3);
+      font-size: 1.14rem;
+      color: #163f6e;
+      letter-spacing: 0.2px;
+    }
+
+    .spec {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .spec h2 {
+      margin: 0 0 var(--space-2);
+      font-size: 1rem;
+      color: #113761;
+    }
+
+
+    .layer-demo {
+      margin-bottom: var(--space-5);
+    }
+
+    .layer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: var(--space-3);
+      margin-bottom: var(--space-4);
+    }
+
+    .layer {
+      padding: var(--space-3);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .layer--l1 {
+      border-left: 6px solid #2f79dd;
+    }
+
+    .layer--l2 {
+      border-left: 6px solid #16824f;
+    }
+
+    .layer--l3 {
+      border-left: 6px solid #ad5b08;
+    }
+
+    .layer h3 {
+      margin: 0 0 var(--space-1);
+      font-size: 1rem;
+      color: #163f6e;
+    }
+
+
+    .layer-stack {
+      background: #f8fbff;
+      border: 1px dashed #bbcee7;
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
+    }
+
+    .stack-l1,
+    .stack-l2,
+    .stack-l3 {
+      border-radius: 12px;
+      padding: var(--space-3);
+    }
+
+    .stack-l1 {
+      background: #eaf2ff;
+      border: 1px solid #b9d3f7;
+      color: #184c90;
+      font-weight: 700;
+    }
+
+    .stack-l2 {
+      margin-top: var(--space-2);
+      background: #e8f7ee;
+      border: 1px solid #bbe2c9;
+      color: #16663f;
+      font-weight: 700;
+    }
+
+    .stack-l3 {
+      margin-top: var(--space-2);
+      background: #fff3e5;
+      border: 1px solid #f3d2b0;
+      color: #8d4a0c;
+      font-weight: 700;
+    }
+
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: var(--space-4);
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+      border-color: #bfd1ea;
+    }
+
+    .card__head {
+      padding: var(--space-3) var(--space-4);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      background: #f9fbff;
+    }
+
+    .card__title {
+      margin: 0;
+      font-size: 1.02rem;
+      font-weight: 700;
+      color: #1a3760;
+    }
+
+    .badge {
+      padding: 2px 10px;
+      border-radius: var(--radius-pill);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .badge--q {
+      color: #174d90;
+      background: #eaf2ff;
+      border-color: #bfd5f6;
+    }
+
+    .badge--a {
+      color: #126b40;
+      background: var(--success-soft);
+      border-color: #b4e4ca;
+    }
+
+    .badge--warn {
+      color: #8a4a0b;
+      background: var(--warning-soft);
+      border-color: #f7d4b0;
+    }
+
+    .badge--quad {
+      background: var(--urg-badge-bg, #eaf2ff);
+      color: var(--urg-badge-text, #174d90);
+      border-color: var(--urg-border, #bfd5f6);
+    }
+
+    .card__body {
+      padding: var(--space-4);
+    }
+
+    .card[data-urgency] {
+      border-color: var(--urg-border, var(--border));
+    }
+
+    .card[data-urgency] .card__head {
+      background: var(--urg-head, #f9fbff);
+      border-bottom-color: var(--urg-border, var(--border));
+    }
+
+    .card[data-urgency="q1"] {
+      --urg-border: var(--q1-border);
+      --urg-head: var(--q1-head);
+      --urg-badge-bg: var(--q1-badge-bg);
+      --urg-badge-text: var(--q1-badge-text);
+    }
+
+    .card[data-urgency="q2"] {
+      --urg-border: var(--q2-border);
+      --urg-head: var(--q2-head);
+      --urg-badge-bg: var(--q2-badge-bg);
+      --urg-badge-text: var(--q2-badge-text);
+    }
+
+    .card[data-urgency="q3"] {
+      --urg-border: var(--q3-border);
+      --urg-head: var(--q3-head);
+      --urg-badge-bg: var(--q3-badge-bg);
+      --urg-badge-text: var(--q3-badge-text);
+    }
+
+    .card[data-urgency="q4"] {
+      --urg-border: var(--q4-border);
+      --urg-head: var(--q4-head);
+      --urg-badge-bg: var(--q4-badge-bg);
+      --urg-badge-text: var(--q4-badge-text);
+    }
+
+    .label {
+      display: inline-block;
+      margin: 0 0 var(--space-2);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      color: #5a6f8c;
+      text-transform: uppercase;
+    }
+
+    .content {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .options {
+      margin: var(--space-3) 0 0;
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .option {
+      border: 1px solid var(--border);
+      background: #fbfdff;
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: #243750;
+      font-size: 0.96rem;
+      cursor: pointer;
+      transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+    }
+
+    .option:hover {
+      border-color: #a9c8ee;
+      background: #f4f9ff;
+    }
+
+    .option--active {
+      border-color: #9cc3f6;
+      background: var(--brand-soft);
+      box-shadow: inset 0 0 0 1px #8bb7f1;
+    }
+
+    .option--selected {
+      border-color: #8ab6e8;
+      background: #eef6ff;
+      box-shadow: inset 0 0 0 1px #82aee0;
+    }
+
+    .option--correct {
+      border-color: #8fd1ac;
+      background: var(--success-soft);
+      color: #155f3a;
+      font-weight: 600;
+    }
+
+    .option--wrong {
+      border-color: #f1b6b6;
+      background: #fff2f2;
+      color: #8b2c2c;
+    }
+
+    .is-hidden {
+      display: none !important;
+    }
+
+    .anki-input-row {
+      margin-top: var(--space-3);
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .anki-input {
+      flex: 1 1 180px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 10px;
+      font-size: 0.94rem;
+      color: #1f3655;
+      background: #fff;
+    }
+
+    .anki-judge {
+      margin-top: 8px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #4b5a72;
+    }
+
+    .anki-judge--ok {
+      color: #1b7c4b;
+    }
+
+    .anki-judge--bad {
+      color: #a34a12;
+    }
+
+    .anki-controls {
+      margin-top: var(--space-3);
+      border-top: 1px dashed #c5d6eb;
+      padding-top: var(--space-3);
+    }
+
+    .anki-status {
+      font-size: 0.88rem;
+      color: #3f5878;
+      margin-bottom: 8px;
+      min-height: 1.4em;
+    }
+
+    .anki-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .anki-btn {
+      border: 1px solid #8ab4e4;
+      border-radius: 10px;
+      background: #eaf3ff;
+      color: #164d88;
+      font-weight: 700;
+      font-size: 0.88rem;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+
+    .anki-btn:hover {
+      background: #deecff;
+    }
+
+    .anki-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .anki-btn--ghost {
+      border-color: #c6d7eb;
+      background: #f6f9fc;
+      color: #456284;
+    }
+
+    .anki-grade-bar {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .anki-grade-btn {
+      border: 1px solid #c9d8ea;
+      border-radius: 10px;
+      background: #f8fbff;
+      color: #243f61;
+      padding: 8px 6px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      line-height: 1.2;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .anki-grade-btn small {
+      display: block;
+      margin-top: 2px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #4d6787;
+    }
+
+    .anki-grade-btn[data-grade="again"] {
+      background: #fff1f1;
+      border-color: #edc4c4;
+      color: #8b2f2f;
+    }
+
+    .anki-grade-btn[data-grade="hard"] {
+      background: #fff6ea;
+      border-color: #f0d0a7;
+      color: #8f5716;
+    }
+
+    .anki-grade-btn[data-grade="good"] {
+      background: #edf7ff;
+      border-color: #bdd9f8;
+      color: #205a95;
+    }
+
+    .anki-grade-btn[data-grade="easy"] {
+      background: #ecfaf2;
+      border-color: #b9e3cb;
+      color: #1e7246;
+    }
+
+
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: var(--space-3) 0;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+      margin-top: var(--space-2);
+    }
+
+    .chip {
+      padding: 2px 10px;
+      border-radius: var(--radius-pill);
+      border: 1px solid #c9daef;
+      background: #f1f7ff;
+      color: #235289;
+      font-size: 12px;
+    }
+
+    .kbd {
+      display: inline-block;
+      min-width: 1.6em;
+      padding: 1px 6px;
+      border: 1px solid #c8d8eb;
+      border-bottom-width: 2px;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 12px;
+      background: #fff;
+      color: #385574;
+      font-weight: 600;
+    }
+
+
+    .section-block {
+      margin-top: 34px;
+    }
+
+
+    .ext-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: var(--space-4);
+    }
+
+    .compare-grid {
+      margin-top: var(--space-3);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-2);
+    }
+
+    .compare-box {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fbfdff;
+    }
+
+    .compare-box h3 {
+      margin: 0 0 6px;
+      font-size: 0.9rem;
+      color: #2f4f76;
+    }
+
+    .compare-box p {
+      margin: 0;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    .compare-box--good {
+      background: #eefaf3;
+      border-color: #b8e4cd;
+    }
+
+    .compare-box--risk {
+      background: #fff5eb;
+      border-color: #f3d4b2;
+    }
+
+    .timeline {
+      list-style: none;
+      margin: var(--space-3) 0 0;
+      padding: 0 0 0 4px;
+      position: relative;
+    }
+
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 8px;
+      top: 2px;
+      bottom: 2px;
+      width: 2px;
+      background: #c5d8f2;
+    }
+
+    .timeline li {
+      position: relative;
+      margin: 0 0 14px 16px;
+      padding: 0 0 0 10px;
+      color: #314965;
+      font-size: 0.93rem;
+    }
+
+    .timeline li:last-child {
+      margin-bottom: 0;
+    }
+
+    .timeline li::before {
+      content: "";
+      position: absolute;
+      left: -13px;
+      top: 5px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #2f79dd;
+      box-shadow: 0 0 0 3px #e9f2ff;
+    }
+
+    .timeline strong {
+      display: block;
+      margin-bottom: 2px;
+      color: #1f3f67;
+      font-size: 0.9rem;
+    }
+
+    .flip-preview {
+      margin-top: var(--space-3);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-2);
+    }
+
+    .face {
+      border-radius: 10px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      background: #fbfdff;
+      min-height: 110px;
+    }
+
+    .face h3 {
+      margin: 0 0 8px;
+      font-size: 0.86rem;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: #506683;
+    }
+
+    .face p {
+      margin: 0;
+      font-size: 0.93rem;
+      color: #243a57;
+    }
+
+    .face--front {
+      background: #edf5ff;
+      border-color: #bfd5f6;
+    }
+
+    .face--back {
+      background: #eefaf3;
+      border-color: #b6e2c9;
+    }
+
+    .code-box {
+      margin-top: var(--space-3);
+      border-radius: 12px;
+      border: 1px solid #c2d5ee;
+      overflow: hidden;
+      background: #f5f9ff;
+    }
+
+    .code-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: #e7f0ff;
+      border-bottom: 1px solid #c2d5ee;
+      color: #33557f;
+      font-size: 0.84rem;
+      font-weight: 700;
+    }
+
+    .code-lang {
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid #9dc0eb;
+      background: #f5f9ff;
+      font-size: 12px;
+    }
+
+    .code-body {
+      margin: 0;
+      padding: 12px;
+      font-family: "JetBrains Mono", "Consolas", "Courier New", monospace;
+      font-size: 0.84rem;
+      line-height: 1.6;
+      color: #17365f;
+      white-space: pre;
+    }
+
+    .quote-panel {
+      margin-top: var(--space-3);
+      border-radius: 12px;
+      border: 1px solid #cfddee;
+      background: linear-gradient(165deg, #ffffff 0%, #f8fbff 100%);
+      padding: 14px 14px 12px;
+      position: relative;
+    }
+
+    .quote-panel::before {
+      content: "“";
+      position: absolute;
+      left: 10px;
+      top: -6px;
+      color: #bfd2ec;
+      font-size: 2.1rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .quote-text {
+      margin: 0;
+      color: #243a57;
+      font-size: 0.95rem;
+      padding-left: 12px;
+    }
+
+    .quote-source {
+      margin-top: 8px;
+      color: #55708f;
+      font-size: 0.82rem;
+      text-align: right;
+    }
+
+    .todo-list {
+      list-style: none;
+      margin: var(--space-3) 0 0;
+      padding: 0;
+      display: grid;
+      gap: 8px;
+    }
+
+    .todo-item {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--border);
+      background: #fbfdff;
+      border-radius: 10px;
+      padding: 9px 10px;
+      color: #2a4262;
+      font-size: 0.92rem;
+    }
+
+    .todo-item__check {
+      width: 18px;
+      height: 18px;
+      border-radius: 6px;
+      border: 1px solid #a8c3e6;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #1f6fd6;
+      background: #eef5ff;
+      flex: 0 0 18px;
+    }
+
+    .todo-item--done {
+      border-color: #b8e4cd;
+      background: #eefaf3;
+      color: #1c5f40;
+    }
+
+    .todo-item--done .todo-item__check {
+      border-color: #7ec8a1;
+      background: #e1f5ea;
+      color: #1a7a4a;
+    }
+
+    @media (max-width: 640px) {
+      .page {
+        padding: 20px 14px 30px;
+      }
+
+      .hero {
+        padding: 18px 16px;
+      }
+
+      .card__head,
+      .card__body {
+        padding-left: 14px;
+        padding-right: 14px;
+      }
+
+      .compare-grid,
+      .flip-preview {
+        grid-template-columns: 1fr;
+      }
+
+      .anki-grade-bar {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <h1>标准 CSS 样式规范卡牌演示</h1>
+    </section>
+
+    <section class="palette-bar" aria-label="紧急度色板">
+      <div class="quadrant-legend">
+        <span class="quad-tag" data-q="q1">Q1 重要且紧急</span>
+        <span class="quad-tag" data-q="q2">Q2 重要不紧急</span>
+        <span class="quad-tag" data-q="q3">Q3 紧急不重要</span>
+        <span class="quad-tag" data-q="q4">Q4 不紧急不重要</span>
+      </div>
+      <div>
+        <button id="palette-toggle" class="palette-toggle" type="button">切换色板</button>
+        <span id="palette-name" class="palette-name">默认</span>
+      </div>
+    </section>
+
+    <section class="spec-grid" aria-label="规范要点">
+      <article class="spec">
+        <h2>01. 设计 Token</h2>
+      </article>
+      <article class="spec">
+        <h2>02. 结构分层</h2>
+      </article>
+      <article class="spec">
+        <h2>03. 状态可视化</h2>
+      </article>
+      <article class="spec">
+        <h2>04. 响应式适配</h2>
+      </article>
+    </section>
+
+    <section class="layer-demo" aria-label="分层级演示">
+      <h2 class="section-title">分层级演示（L1 / L2 / L3）</h2>
+      <div class="layer-grid">
+        <article class="layer layer--l1">
+          <h3>L1 页面规范层</h3>
+        </article>
+        <article class="layer layer--l2">
+          <h3>L2 卡片结构层</h3>
+        </article>
+        <article class="layer layer--l3">
+          <h3>L3 内容状态层</h3>
+        </article>
+      </div>
+      <div class="layer-stack" role="group" aria-label="层级嵌套示意">
+        <div class="stack-l1">
+          L1: 全局样式基线
+          <div class="stack-l2">
+            L2: 卡片组件结构
+            <div class="stack-l3">L3: 题目与答案状态</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cards" aria-label="卡牌示例">
+      <article class="card anki-card" data-urgency="q1" data-anki-type="single-choice" data-state="new" data-ease="2.5" data-interval-days="0" data-correct="B">
+        <header class="card__head">
+          <h2 class="card__title">单选题卡</h2>
+          <span class="badge badge--quad">Q1</span>
+        </header>
+        <div class="card__body">
+          <div class="anki-front">
+            <span class="label">问题</span>
+            <p class="content">HTTP 状态码中，哪个表示资源已永久重定向？</p>
+            <div class="options">
+              <button class="option" type="button" data-choice="A">A. 302 Found</button>
+              <button class="option" type="button" data-choice="B">B. 301 Moved Permanently</button>
+              <button class="option" type="button" data-choice="C">C. 307 Temporary Redirect</button>
+              <button class="option" type="button" data-choice="D">D. 308 Permanent Redirect</button>
+            </div>
+          </div>
+          <div class="anki-back is-hidden">
+            <span class="label">答案</span>
+            <p class="content"><strong>B. 301 Moved Permanently</strong></p>
+            <div class="divider"></div>
+            <span class="label">解析</span>
+            <p class="content">301 表示永久重定向，适合 URL 结构长期变更；SEO 场景通常优先使用 301。</p>
+          </div>
+          <div class="anki-controls">
+              <div class="anki-status">Anki 流程：先作答，再显示答案，然后选择 Again / Hard / Good / Easy（快捷键：Space, 1-4）。</div>
+            <div class="anki-actions">
+              <button class="anki-btn" type="button" data-action="show-answer">显示答案</button>
+              <div class="anki-grade-bar is-hidden">
+                <button class="anki-grade-btn" type="button" data-grade="again">Again<small>--</small></button>
+                <button class="anki-grade-btn" type="button" data-grade="hard">Hard<small>--</small></button>
+                <button class="anki-grade-btn" type="button" data-grade="good">Good<small>--</small></button>
+                <button class="anki-grade-btn" type="button" data-grade="easy">Easy<small>--</small></button>
+              </div>
+              <button class="anki-btn anki-btn--ghost" type="button" data-action="reset-card">重置本卡</button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card" data-urgency="q2">
+        <header class="card__head">
+          <h2 class="card__title">答案解析卡</h2>
+          <span class="badge badge--quad">Q2</span>
+        </header>
+        <div class="card__body">
+          <span class="label">答案</span>
+          <p class="content"><strong>B. 301 Moved Permanently</strong></p>
+          <div class="divider"></div>
+          <span class="label">解析</span>
+          <p class="content">301 表示永久重定向，适合 URL 结构长期变更；SEO 场景通常优先使用 301。</p>
+          <div class="chips">
+            <span class="chip">HTTP</span>
+            <span class="chip">Status Code</span>
+            <span class="chip">SEO</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="card anki-card" data-urgency="q3" data-anki-type="fill-blank" data-state="new" data-ease="2.4" data-interval-days="0" data-answers="--token-name,--brand-color,--space-4">
+        <header class="card__head">
+          <h2 class="card__title">填空题卡</h2>
+          <span class="badge badge--quad">Q3</span>
+        </header>
+        <div class="card__body">
+          <div class="anki-front">
+            <span class="label">填空</span>
+            <p class="content">CSS 中用于定义自定义属性的语法前缀是 <span class="kbd">--</span>。</p>
+            <div class="anki-input-row">
+              <input class="anki-input" type="text" placeholder="输入你的答案（例如 --token-name）">
+            </div>
+          </div>
+          <div class="anki-back is-hidden">
+            <span class="label">参考答案</span>
+            <div class="options">
+              <div class="option option--correct">标准答案：<strong>--token-name</strong></div>
+            </div>
+            <div class="divider"></div>
+            <p class="content">可选答案：<code>--brand-color</code> / <code>--space-4</code></p>
+            <p class="anki-judge" data-role="judge"></p>
+          </div>
+          <div class="anki-controls">
+              <div class="anki-status">与 Anki 的 type-in 逻辑一致：先输入再自检评分（快捷键：Space, 1-4）。</div>
+            <div class="anki-actions">
+              <button class="anki-btn" type="button" data-action="show-answer">显示答案</button>
+              <div class="anki-grade-bar is-hidden">
+                <button class="anki-grade-btn" type="button" data-grade="again">Again<small>--</small></button>
+                <button class="anki-grade-btn" type="button" data-grade="hard">Hard<small>--</small></button>
+                <button class="anki-grade-btn" type="button" data-grade="good">Good<small>--</small></button>
+                <button class="anki-grade-btn" type="button" data-grade="easy">Easy<small>--</small></button>
+              </div>
+              <button class="anki-btn anki-btn--ghost" type="button" data-action="reset-card">重置本卡</button>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="section-block" aria-label="扩展卡片样式">
+      <h2 class="section-title">扩展卡片样式演示</h2>
+      <div class="ext-cards">
+        <article class="card" data-urgency="q4">
+          <header class="card__head">
+            <h2 class="card__title">对比记忆卡</h2>
+            <span class="badge badge--quad">Q4</span>
+          </header>
+          <div class="card__body">
+            <span class="label">GET vs POST</span>
+            <p class="content">通过并列分栏快速区分相似概念。</p>
+            <div class="compare-grid">
+              <div class="compare-box compare-box--good">
+                <h3>GET</h3>
+                <p>读取资源、可缓存、参数常在 URL。</p>
+              </div>
+              <div class="compare-box compare-box--risk">
+                <h3>POST</h3>
+                <p>提交数据、默认不幂等、常用于创建。</p>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card" data-urgency="q2">
+          <header class="card__head">
+            <h2 class="card__title">流程步骤卡</h2>
+            <span class="badge badge--quad">Q2</span>
+          </header>
+          <div class="card__body">
+            <span class="label">HTTP 请求链路</span>
+            <ul class="timeline">
+              <li><strong>Step 1</strong>DNS 解析域名到 IP 地址。</li>
+              <li><strong>Step 2</strong>建立 TCP/TLS 连接并发送请求。</li>
+              <li><strong>Step 3</strong>服务端返回响应并渲染结果。</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="card anki-card" data-urgency="q3" data-anki-type="flip" data-state="review" data-ease="2.5" data-interval-days="5">
+          <header class="card__head">
+            <h2 class="card__title">翻转预览卡</h2>
+            <span class="badge badge--quad">Q3</span>
+          </header>
+          <div class="card__body">
+            <div class="anki-front">
+              <span class="label">Front</span>
+              <div class="flip-preview">
+                <div class="face face--front">
+                  <h3>Front</h3>
+                  <p>术语：Idempotent API</p>
+                </div>
+              </div>
+            </div>
+            <div class="anki-back is-hidden">
+              <span class="label">Back</span>
+              <div class="flip-preview">
+                <div class="face face--back">
+                  <h3>Back</h3>
+                  <p>重复请求结果一致，不会额外产生副作用。</p>
+                </div>
+              </div>
+            </div>
+            <div class="anki-controls">
+                <div class="anki-status">翻面后再评分，符合 Anki「先看前面、再揭示答案」流程（快捷键：Space, 1-4）。</div>
+              <div class="anki-actions">
+                <button class="anki-btn" type="button" data-action="show-answer">显示答案</button>
+                <div class="anki-grade-bar is-hidden">
+                  <button class="anki-grade-btn" type="button" data-grade="again">Again<small>--</small></button>
+                  <button class="anki-grade-btn" type="button" data-grade="hard">Hard<small>--</small></button>
+                  <button class="anki-grade-btn" type="button" data-grade="good">Good<small>--</small></button>
+                  <button class="anki-grade-btn" type="button" data-grade="easy">Easy<small>--</small></button>
+                </div>
+                <button class="anki-btn anki-btn--ghost" type="button" data-action="reset-card">重置本卡</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card" data-urgency="q1">
+        <header class="card__head">
+          <h2 class="card__title">代码片段卡</h2>
+          <span class="badge badge--quad">Q1</span>
+        </header>
+        <div class="card__body">
+          <span class="label">代码示例</span>
+          <div class="code-box">
+            <div class="code-head">
+              <span>Snippet</span>
+              <span class="code-lang">JavaScript</span>
+              </div>
+              <pre class="code-body">fetch("/api/cards")
+  .then((res) =&gt; res.json())
+  .then((data) =&gt; render(data));</pre>
+            </div>
+          </div>
+        </article>
+
+        <article class="card" data-urgency="q4">
+        <header class="card__head">
+          <h2 class="card__title">引用要点卡</h2>
+          <span class="badge badge--quad">Q4</span>
+        </header>
+        <div class="card__body">
+          <span class="label">核心句</span>
+          <div class="quote-panel">
+            <p class="quote-text">Premature optimization is the root of all evil.</p>
+            <p class="quote-source">Donald Knuth</p>
+          </div>
+        </div>
+        </article>
+
+        <article class="card" data-urgency="q2">
+          <header class="card__head">
+            <h2 class="card__title">清单任务卡</h2>
+            <span class="badge badge--quad">Q2</span>
+          </header>
+          <div class="card__body">
+            <span class="label">发布前检查</span>
+            <ul class="todo-list">
+              <li class="todo-item todo-item--done"><span class="todo-item__check">✓</span><span>完成接口联调</span></li>
+              <li class="todo-item todo-item--done"><span class="todo-item__check">✓</span><span>完成回归测试</span></li>
+              <li class="todo-item"><span class="todo-item__check"></span><span>更新变更日志</span></li>
+            </ul>
+          </div>
+        </article>
+      </div>
+    </section>
+
+  </main>
+  <script>
+    (function () {
+      var palettes = [
+        { key: "default", name: "默认" },
+        { key: "sunset", name: "日落" },
+        { key: "forest", name: "森林" }
+      ];
+      var idx = 0;
+      var btn = document.getElementById("palette-toggle");
+      var name = document.getElementById("palette-name");
+      if (!btn || !name) return;
+      btn.addEventListener("click", function () {
+        idx = (idx + 1) % palettes.length;
+        var item = palettes[idx];
+        if (item.key === "default") {
+          document.body.removeAttribute("data-palette");
+        } else {
+          document.body.setAttribute("data-palette", item.key);
+        }
+        name.textContent = item.name;
+      });
+    })();
+
+    (function () {
+      var MS_MINUTE = 60 * 1000;
+      var MS_DAY = 24 * 60 * 60 * 1000;
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function parseNum(value, fallback) {
+        var n = Number(value);
+        return isNaN(n) ? fallback : n;
+      }
+
+      function formatDelay(ms) {
+        if (ms < 60 * MS_MINUTE) {
+          return Math.max(1, Math.round(ms / MS_MINUTE)) + "m";
+        }
+        if (ms < MS_DAY) {
+          return Math.max(1, Math.round(ms / (60 * MS_MINUTE))) + "h";
+        }
+        return Math.max(1, Math.round(ms / MS_DAY)) + "d";
+      }
+
+      function formatDue(ts) {
+        return new Date(ts).toLocaleString("zh-CN", {
+          month: "numeric",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+      }
+
+      function isLearningPhase(phase) {
+        return phase === "new" || phase === "learning" || phase === "relearning";
+      }
+
+      function normalizeValue(value) {
+        return String(value || "").trim().toLowerCase();
+      }
+
+      function getDelaysByGrade(state) {
+        if (isLearningPhase(state.phase)) {
+          if (state.stepIndex <= 0) {
+            return {
+              again: 1 * MS_MINUTE,
+              hard: 6 * MS_MINUTE,
+              good: 10 * MS_MINUTE,
+              easy: 4 * MS_DAY
+            };
+          }
+          return {
+            again: 1 * MS_MINUTE,
+            hard: 10 * MS_MINUTE,
+            good: 1 * MS_DAY,
+            easy: 4 * MS_DAY
+          };
+        }
+        var interval = Math.max(1, state.intervalDays || 1);
+        return {
+          again: 10 * MS_MINUTE,
+          hard: Math.max(1, Math.round(interval * 1.2)) * MS_DAY,
+          good: Math.max(1, Math.round(interval * state.ease)) * MS_DAY,
+          easy: Math.max(2, Math.round(interval * state.ease * 1.3)) * MS_DAY
+        };
+      }
+
+      function applyGrade(state, grade) {
+        var delay;
+        if (isLearningPhase(state.phase)) {
+          if (grade === "again") {
+            state.phase = state.phase === "new" ? "learning" : state.phase;
+            state.stepIndex = 0;
+            state.intervalDays = 0;
+            state.ease = clamp(state.ease - 0.2, 1.3, 3.5);
+            delay = 1 * MS_MINUTE;
+          } else if (grade === "hard") {
+            state.phase = "learning";
+            state.stepIndex = 0;
+            state.intervalDays = 0;
+            delay = 6 * MS_MINUTE;
+          } else if (grade === "good") {
+            if (state.stepIndex <= 0) {
+              state.phase = "learning";
+              state.stepIndex = 1;
+              state.intervalDays = 0;
+              delay = 10 * MS_MINUTE;
+            } else {
+              state.phase = "review";
+              state.stepIndex = 0;
+              state.intervalDays = 1;
+              delay = 1 * MS_DAY;
+            }
+          } else {
+            state.phase = "review";
+            state.stepIndex = 0;
+            state.intervalDays = 4;
+            state.ease = clamp(state.ease + 0.15, 1.3, 3.5);
+            delay = 4 * MS_DAY;
+          }
+          state.dueAt = Date.now() + delay;
+          return delay;
+        }
+
+        var interval = Math.max(1, state.intervalDays || 1);
+        if (grade === "again") {
+          state.phase = "relearning";
+          state.stepIndex = 0;
+          state.intervalDays = 0;
+          state.ease = clamp(state.ease - 0.2, 1.3, 3.5);
+          delay = 10 * MS_MINUTE;
+        } else if (grade === "hard") {
+          state.phase = "review";
+          state.intervalDays = Math.max(1, Math.round(interval * 1.2));
+          state.ease = clamp(state.ease - 0.15, 1.3, 3.5);
+          delay = state.intervalDays * MS_DAY;
+        } else if (grade === "good") {
+          state.phase = "review";
+          state.intervalDays = Math.max(1, Math.round(interval * state.ease));
+          delay = state.intervalDays * MS_DAY;
+        } else {
+          state.phase = "review";
+          state.intervalDays = Math.max(2, Math.round(interval * state.ease * 1.3));
+          state.ease = clamp(state.ease + 0.1, 1.3, 3.5);
+          delay = state.intervalDays * MS_DAY;
+        }
+        state.dueAt = Date.now() + delay;
+        return delay;
+      }
+
+      function clearChoiceStyles(card) {
+        var options = card.querySelectorAll(".option[data-choice]");
+        Array.prototype.forEach.call(options, function (option) {
+          option.classList.remove("option--selected", "option--correct", "option--wrong");
+        });
+      }
+
+      function updateChoiceSelection(card, selected) {
+        var options = card.querySelectorAll(".option[data-choice]");
+        Array.prototype.forEach.call(options, function (option) {
+          option.classList.toggle("option--selected", option.getAttribute("data-choice") === selected);
+        });
+      }
+
+      function resetFront(card, state, initialStatusText) {
+        var front = card.querySelector(".anki-front");
+        var back = card.querySelector(".anki-back");
+        var showBtn = card.querySelector('[data-action="show-answer"]');
+        var gradeBar = card.querySelector(".anki-grade-bar");
+        var judge = card.querySelector('[data-role="judge"]');
+        var input = card.querySelector(".anki-input");
+        var status = card.querySelector(".anki-status");
+
+        if (front) front.classList.remove("is-hidden");
+        if (back) back.classList.add("is-hidden");
+        if (showBtn) showBtn.disabled = false;
+        if (gradeBar) gradeBar.classList.add("is-hidden");
+        clearChoiceStyles(card);
+
+        if (judge) {
+          judge.textContent = "";
+          judge.classList.remove("anki-judge--ok", "anki-judge--bad");
+        }
+
+        if (input) {
+          input.value = "";
+        }
+
+        state.selectedChoice = "";
+        if (status) {
+          status.textContent = initialStatusText;
+        }
+      }
+
+      function buildGradeHints(card, state) {
+        var delays = getDelaysByGrade(state);
+        var buttons = card.querySelectorAll(".anki-grade-btn");
+        Array.prototype.forEach.call(buttons, function (button) {
+          var grade = button.getAttribute("data-grade");
+          var hint = button.querySelector("small");
+          if (hint && delays[grade]) {
+            hint.textContent = formatDelay(delays[grade]);
+          }
+        });
+      }
+
+      function judgeFillBlank(card) {
+        var answersRaw = card.getAttribute("data-answers") || "";
+        var answers = answersRaw.split(",").map(normalizeValue).filter(Boolean);
+        var input = card.querySelector(".anki-input");
+        var judge = card.querySelector('[data-role="judge"]');
+        if (!input || !judge) return;
+
+        var userValue = normalizeValue(input.value);
+        var isRight = userValue && answers.indexOf(userValue) > -1;
+        if (!userValue) {
+          judge.textContent = "你未输入答案；在 Anki 中也可先看答案再自评。";
+          judge.classList.remove("anki-judge--ok", "anki-judge--bad");
+        } else if (isRight) {
+          judge.textContent = "你的输入与参考答案匹配。";
+          judge.classList.remove("anki-judge--bad");
+          judge.classList.add("anki-judge--ok");
+        } else {
+          judge.textContent = "你的输入与参考答案不一致，请结合解析自评。";
+          judge.classList.remove("anki-judge--ok");
+          judge.classList.add("anki-judge--bad");
+        }
+      }
+
+      function revealAnswer(card, state, initialStatusText) {
+        var front = card.querySelector(".anki-front");
+        var back = card.querySelector(".anki-back");
+        var gradeBar = card.querySelector(".anki-grade-bar");
+        var status = card.querySelector(".anki-status");
+        var correct = card.getAttribute("data-correct");
+
+        if (front) front.classList.add("is-hidden");
+        if (back) back.classList.remove("is-hidden");
+        if (gradeBar) gradeBar.classList.remove("is-hidden");
+        buildGradeHints(card, state);
+
+        if (card.getAttribute("data-anki-type") === "single-choice") {
+          var selected = state.selectedChoice;
+          var options = card.querySelectorAll(".option[data-choice]");
+          Array.prototype.forEach.call(options, function (option) {
+            var key = option.getAttribute("data-choice");
+            option.classList.remove("option--selected", "option--correct", "option--wrong");
+            if (key === correct) {
+              option.classList.add("option--correct");
+            }
+            if (key === selected) {
+              option.classList.add("option--selected");
+            }
+            if (selected && selected !== correct && key === selected) {
+              option.classList.add("option--wrong");
+            }
+          });
+          if (status) {
+            status.textContent = selected ? ("你选择了 " + selected + "，现在请根据掌握程度评分。") : "你未选择选项，请根据掌握程度评分。";
+          }
+        } else if (card.getAttribute("data-anki-type") === "fill-blank") {
+          judgeFillBlank(card);
+          if (status) {
+            status.textContent = "已显示参考答案，请按回忆质量评分。";
+          }
+        } else if (status) {
+          status.textContent = "已显示背面，请按回忆质量评分。";
+        }
+
+        var showBtn = card.querySelector('[data-action="show-answer"]');
+        if (showBtn) {
+          showBtn.disabled = true;
+        }
+
+        if (!status && initialStatusText) {
+          card.querySelector(".anki-status").textContent = initialStatusText;
+        }
+      }
+
+      function phaseLabel(phase) {
+        if (phase === "new") return "New";
+        if (phase === "learning") return "Learning";
+        if (phase === "relearning") return "Relearning";
+        return "Review";
+      }
+
+      var activeCard = null;
+      var cards = document.querySelectorAll(".anki-card");
+      Array.prototype.forEach.call(cards, function (card) {
+        var state = {
+          phase: card.getAttribute("data-state") || "new",
+          ease: parseNum(card.getAttribute("data-ease"), 2.5),
+          intervalDays: parseNum(card.getAttribute("data-interval-days"), 0),
+          stepIndex: 0,
+          dueAt: Date.now(),
+          selectedChoice: ""
+        };
+        var initialState = JSON.parse(JSON.stringify(state));
+        var status = card.querySelector(".anki-status");
+        var initialStatusText = status ? status.textContent : "";
+
+        if (!activeCard) {
+          activeCard = card;
+        }
+        card.addEventListener("pointerdown", function () {
+          activeCard = card;
+        });
+
+        var options = card.querySelectorAll(".option[data-choice]");
+        Array.prototype.forEach.call(options, function (option) {
+          option.addEventListener("click", function () {
+            var key = option.getAttribute("data-choice");
+            state.selectedChoice = key;
+            updateChoiceSelection(card, key);
+            if (status) {
+              status.textContent = "已选择 " + key + "，可以显示答案。";
+            }
+          });
+        });
+
+        var showBtn = card.querySelector('[data-action="show-answer"]');
+        if (showBtn) {
+          showBtn.addEventListener("click", function () {
+            revealAnswer(card, state, initialStatusText);
+          });
+        }
+
+        var gradeButtons = card.querySelectorAll(".anki-grade-btn");
+        Array.prototype.forEach.call(gradeButtons, function (button) {
+          button.addEventListener("click", function () {
+            var grade = button.getAttribute("data-grade");
+            var delay = applyGrade(state, grade);
+            if (status) {
+              status.textContent = "评分 " + grade.toUpperCase() + "，阶段 " + phaseLabel(state.phase) + "，下次约 " + formatDelay(delay) + " 后（" + formatDue(state.dueAt) + "）。";
+            }
+            var front = card.querySelector(".anki-front");
+            var back = card.querySelector(".anki-back");
+            var gradeBar = card.querySelector(".anki-grade-bar");
+            var showAnswerButton = card.querySelector('[data-action="show-answer"]');
+            clearChoiceStyles(card);
+            if (front) front.classList.remove("is-hidden");
+            if (back) back.classList.add("is-hidden");
+            if (gradeBar) gradeBar.classList.add("is-hidden");
+            if (showAnswerButton) showAnswerButton.disabled = false;
+            state.selectedChoice = "";
+
+            var judge = card.querySelector('[data-role="judge"]');
+            if (judge) {
+              judge.classList.remove("anki-judge--ok", "anki-judge--bad");
+              judge.textContent = "";
+            }
+          });
+        });
+
+        var resetBtn = card.querySelector('[data-action="reset-card"]');
+        if (resetBtn) {
+          resetBtn.addEventListener("click", function () {
+            state.phase = initialState.phase;
+            state.ease = initialState.ease;
+            state.intervalDays = initialState.intervalDays;
+            state.stepIndex = 0;
+            state.selectedChoice = "";
+            state.dueAt = Date.now();
+            resetFront(card, state, initialStatusText);
+          });
+        }
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (!activeCard) return;
+        var target = event.target;
+        if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+
+        var showBtn = activeCard.querySelector('[data-action="show-answer"]');
+        var gradeBar = activeCard.querySelector(".anki-grade-bar");
+        var canGrade = gradeBar && !gradeBar.classList.contains("is-hidden");
+
+        if ((event.code === "Space" || event.key === " ") && showBtn && !showBtn.disabled) {
+          event.preventDefault();
+          showBtn.click();
+          return;
+        }
+
+        var gradeMap = {
+          "1": "again",
+          "2": "hard",
+          "3": "good",
+          "4": "easy"
+        };
+        var grade = gradeMap[event.key];
+        if (!grade || !canGrade) return;
+
+        var gradeBtn = activeCard.querySelector('.anki-grade-btn[data-grade="' + grade + '"]');
+        if (gradeBtn) {
+          event.preventDefault();
+          gradeBtn.click();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

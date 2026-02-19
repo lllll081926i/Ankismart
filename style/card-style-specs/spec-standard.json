@@ -1,0 +1,39 @@
+﻿{
+    "standardVersion":  "1.0.0",
+    "purpose":  "Unified JSON contract for card style rendering across programs.",
+    "requiredTopLevelFields":  [
+                                   "specVersion",
+                                   "styleId",
+                                   "displayName",
+                                   "rootClass",
+                                   "classes",
+                                   "dataSchema",
+                                   "renderMap",
+                                   "sampleData"
+                               ],
+    "fieldConventions":  {
+                             "specVersion":  "Semver string, example: 1.0.0",
+                             "styleId":  "kebab-case unique id",
+                             "displayName":  "Human readable style name",
+                             "rootClass":  "Root CSS class for component mount",
+                             "classes":  "Map of semantic part -\u003e CSS class string",
+                             "dataSchema":  "Input data contract with required and properties",
+                             "urgencyQuadrant":  "Use in dataSchema.properties, enum q1|q2|q3|q4",
+                             "renderMap":  "Mapping instructions from data source to target part",
+                             "sampleData":  "Minimal renderable example payload"
+                         },
+    "schemaRules":  {
+                        "requiredListMustExist":  true,
+                        "allRequiredKeysMustExistInProperties":  true,
+                        "urgencyQuadrantEnum":  "q1|q2|q3|q4",
+                        "arrayTypeNotation":  "array\u003citemType\u003e",
+                        "booleanTypeNotation":  "boolean",
+                        "stringTypeNotation":  "string"
+                    },
+    "renderRules":  {
+                        "supportsRepeat":  true,
+                        "supportsStateRule":  true,
+                        "supportsItemTemplate":  true,
+                        "unknownTargetsShouldBeIgnored":  true
+                    }
+}

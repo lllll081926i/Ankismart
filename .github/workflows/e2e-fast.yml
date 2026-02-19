@@ -1,0 +1,50 @@
+name: E2E Fast
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  fast-e2e:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Dependencies
+        run: uv sync --group dev
+
+      - name: Verify PyQt6 Stack
+        run: >
+          uv run python -c
+          "import importlib.util as u, importlib.metadata as m;
+          assert u.find_spec('PyQt6') is not None, 'PyQt6 not found';
+          assert u.find_spec('PySide6') is None, 'PySide6 should not be installed';
+          print('PyQt6', m.version('PyQt6'));
+          print('pyqt6-fluent-widgets', m.version('pyqt6-fluent-widgets'))"
+
+      - name: Run Fast E2E
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run pytest tests/e2e/scenarios -m "fast" -q --maxfail=1
+
+      - name: Run Gate-Real P0 Smoke
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run pytest tests/e2e/gate -m "p0 and gate_real" -q --maxfail=1

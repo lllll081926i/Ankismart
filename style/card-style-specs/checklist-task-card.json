@@ -1,0 +1,91 @@
+{
+    "specVersion":  "1.0.0",
+    "styleId":  "checklist-task-card",
+    "displayName":  "Checklist Task Card",
+    "rootClass":  "card",
+    "classes":  {
+                    "badge":  "badge badge--quad",
+                    "body":  "card__body",
+                    "check":  "todo-item__check",
+                    "head":  "card__head",
+                    "item":  "todo-item",
+                    "itemDone":  "todo-item todo-item--done",
+                    "label":  "label",
+                    "list":  "todo-list",
+                    "title":  "card__title"
+                },
+    "dataSchema":  {
+                       "required":  [
+                                        "title",
+                                        "badgeText",
+                                        "urgencyQuadrant",
+                                        "topic",
+                                        "items"
+                                    ],
+                       "properties":  {
+                                          "badgeText":  "string",
+                                          "items":  "array<checkItem>",
+                                          "title":  "string",
+                                          "topic":  "string",
+                                          "urgencyQuadrant":  "enum<q1|q2|q3|q4>"
+                                      },
+                       "checkItemSchema":  {
+                                               "required":  [
+                                                                "text",
+                                                                "done"
+                                                            ],
+                                               "properties":  {
+                                                                  "done":  "boolean",
+                                                                  "text":  "string"
+                                                              }
+                                           }
+                   },
+    "renderMap":  [
+                      {
+                          "target":  "card__title",
+                          "source":  "title"
+                      },
+                      {
+                          "target":  "badge",
+                          "source":  "badgeText"
+                      },
+                      {
+                          "target":  "card.@data-urgency",
+                          "source":  "urgencyQuadrant"
+                      },
+                      {
+                          "target":  "label",
+                          "source":  "topic"
+                      },
+                      {
+                          "target":  "todo-list",
+                          "source":  "items",
+                          "repeat":  true,
+                          "itemTemplate":  {
+                                               "check":  "if done then 鉁?else empty",
+                                               "text":  "{text}"
+                                           },
+                          "stateRule":  "if item.done then class=itemDone else class=item"
+                      }
+                  ],
+    "sampleData":  {
+                       "badgeText":  "Checklist",
+                       "items":  [
+                                     {
+                                         "done":  true,
+                                         "text":  "Finish API integration"
+                                     },
+                                     {
+                                         "done":  true,
+                                         "text":  "Complete regression tests"
+                                     },
+                                     {
+                                         "done":  false,
+                                         "text":  "Update changelog"
+                                     }
+                                 ],
+                       "title":  "Checklist Task",
+                       "topic":  "Pre-release Checklist",
+                       "urgencyQuadrant":  "q2"
+                   }
+}

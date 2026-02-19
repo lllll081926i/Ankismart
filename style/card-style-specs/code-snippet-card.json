@@ -1,0 +1,77 @@
+{
+    "specVersion":  "1.0.0",
+    "styleId":  "code-snippet-card",
+    "displayName":  "Code Snippet Card",
+    "rootClass":  "card",
+    "classes":  {
+                    "badge":  "badge badge--quad",
+                    "body":  "card__body",
+                    "codeBody":  "code-body",
+                    "codeBox":  "code-box",
+                    "codeHead":  "code-head",
+                    "codeLang":  "code-lang",
+                    "content":  "content",
+                    "head":  "card__head",
+                    "label":  "label",
+                    "title":  "card__title"
+                },
+    "dataSchema":  {
+                       "required":  [
+                                        "title",
+                                        "badgeText",
+                                        "urgencyQuadrant",
+                                        "topic",
+                                        "summary",
+                                        "language",
+                                        "snippet"
+                                    ],
+                       "properties":  {
+                                          "badgeText":  "string",
+                                          "language":  "string",
+                                          "snippet":  "string",
+                                          "summary":  "string",
+                                          "title":  "string",
+                                          "topic":  "string",
+                                          "urgencyQuadrant":  "enum<q1|q2|q3|q4>"
+                                      }
+                   },
+    "renderMap":  [
+                      {
+                          "target":  "card__title",
+                          "source":  "title"
+                      },
+                      {
+                          "target":  "badge",
+                          "source":  "badgeText"
+                      },
+                      {
+                          "target":  "card.@data-urgency",
+                          "source":  "urgencyQuadrant"
+                      },
+                      {
+                          "target":  "label",
+                          "source":  "topic"
+                      },
+                      {
+                          "target":  "content",
+                          "source":  "summary"
+                      },
+                      {
+                          "target":  "codeLang",
+                          "source":  "language"
+                      },
+                      {
+                          "target":  "codeBody",
+                          "source":  "snippet"
+                      }
+                  ],
+    "sampleData":  {
+                       "badgeText":  "Code",
+                       "language":  "JavaScript",
+                       "snippet":  "fetch(\"/api/cards\")\n  .then((res) => res.json())\n  .then((data) => render(data));",
+                       "summary":  "Memorize request skeleton and key chain calls.",
+                       "title":  "Code Snippet",
+                       "topic":  "Fetch Example",
+                       "urgencyQuadrant":  "q1"
+                   }
+}

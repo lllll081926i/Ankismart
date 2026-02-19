@@ -1,0 +1,74 @@
+{
+    "specVersion":  "1.0.0",
+    "styleId":  "answer-explanation-card",
+    "displayName":  "Answer Explanation Card",
+    "rootClass":  "card",
+    "classes":  {
+                    "badge":  "badge badge--quad",
+                    "body":  "card__body",
+                    "chip":  "chip",
+                    "chips":  "chips",
+                    "content":  "content",
+                    "divider":  "divider",
+                    "head":  "card__head",
+                    "label":  "label",
+                    "title":  "card__title"
+                },
+    "dataSchema":  {
+                       "required":  [
+                                        "title",
+                                        "badgeText",
+                                        "urgencyQuadrant",
+                                        "correctAnswer",
+                                        "explanation"
+                                    ],
+                       "properties":  {
+                                          "badgeText":  "string",
+                                          "correctAnswer":  "string",
+                                          "explanation":  "string",
+                                          "tags":  "array<string>",
+                                          "title":  "string",
+                                          "urgencyQuadrant":  "enum<q1|q2|q3|q4>"
+                                      }
+                   },
+    "renderMap":  [
+                      {
+                          "target":  "card__title",
+                          "source":  "title"
+                      },
+                      {
+                          "target":  "badge",
+                          "source":  "badgeText"
+                      },
+                      {
+                          "target":  "card.@data-urgency",
+                          "source":  "urgencyQuadrant"
+                      },
+                      {
+                          "target":  "content.correct-answer",
+                          "source":  "correctAnswer"
+                      },
+                      {
+                          "target":  "content.explanation",
+                          "source":  "explanation"
+                      },
+                      {
+                          "target":  "chips",
+                          "source":  "tags",
+                          "repeat":  true,
+                          "itemClass":  "chip"
+                      }
+                  ],
+    "sampleData":  {
+                       "badgeText":  "Answer",
+                       "correctAnswer":  "B. 301 Moved Permanently",
+                       "explanation":  "301 is used for permanent URL changes and generally preferred for SEO migration.",
+                       "tags":  [
+                                    "HTTP",
+                                    "Status Code",
+                                    "SEO"
+                                ],
+                       "title":  "Answer Review",
+                       "urgencyQuadrant":  "q2"
+                   }
+}

@@ -1,0 +1,74 @@
+{
+    "specVersion":  "1.0.0",
+    "styleId":  "fill-blank-card",
+    "displayName":  "Fill Blank Card",
+    "rootClass":  "card",
+    "classes":  {
+                    "answer":  "option option--correct",
+                    "badge":  "badge badge--quad",
+                    "body":  "card__body",
+                    "content":  "content",
+                    "divider":  "divider",
+                    "head":  "card__head",
+                    "label":  "label",
+                    "options":  "options",
+                    "title":  "card__title"
+                },
+    "dataSchema":  {
+                       "required":  [
+                                        "title",
+                                        "badgeText",
+                                        "urgencyQuadrant",
+                                        "question",
+                                        "correctAnswer"
+                                    ],
+                       "properties":  {
+                                          "acceptedAnswers":  "array<string>",
+                                          "badgeText":  "string",
+                                          "correctAnswer":  "string",
+                                          "question":  "string",
+                                          "title":  "string",
+                                          "urgencyQuadrant":  "enum<q1|q2|q3|q4>"
+                                      }
+                   },
+    "renderMap":  [
+                      {
+                          "target":  "card__title",
+                          "source":  "title"
+                      },
+                      {
+                          "target":  "badge",
+                          "source":  "badgeText"
+                      },
+                      {
+                          "target":  "card.@data-urgency",
+                          "source":  "urgencyQuadrant"
+                      },
+                      {
+                          "target":  "content.question",
+                          "source":  "question"
+                      },
+                      {
+                          "target":  "answer",
+                          "source":  "correctAnswer",
+                          "itemTemplate":  "Standard answer: {value}"
+                      },
+                      {
+                          "target":  "content.accepted",
+                          "source":  "acceptedAnswers",
+                          "joinWith":  " / ",
+                          "prefix":  "Accepted answers: "
+                      }
+                  ],
+    "sampleData":  {
+                       "acceptedAnswers":  [
+                                               "--brand-color",
+                                               "--space-4"
+                                           ],
+                       "badgeText":  "Practice",
+                       "correctAnswer":  "--token-name",
+                       "question":  "In CSS, custom properties start with --.",
+                       "title":  "Fill in the Blank",
+                       "urgencyQuadrant":  "q3"
+                   }
+}

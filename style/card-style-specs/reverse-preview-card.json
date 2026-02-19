@@ -1,0 +1,92 @@
+{
+    "specVersion":  "1.0.0",
+    "styleId":  "reverse-preview-card",
+    "displayName":  "Reverse Preview Card",
+    "rootClass":  "card",
+    "classes":  {
+                    "backFace":  "face face--back",
+                    "badge":  "badge badge--quad",
+                    "body":  "card__body",
+                    "frontFace":  "face face--front",
+                    "head":  "card__head",
+                    "label":  "label",
+                    "previewGrid":  "flip-preview",
+                    "title":  "card__title"
+                },
+    "dataSchema":  {
+                       "required":  [
+                                        "title",
+                                        "badgeText",
+                                        "urgencyQuadrant",
+                                        "topic",
+                                        "front",
+                                        "back"
+                                    ],
+                       "properties":  {
+                                          "back":  "faceItem",
+                                          "badgeText":  "string",
+                                          "front":  "faceItem",
+                                          "title":  "string",
+                                          "topic":  "string",
+                                          "urgencyQuadrant":  "enum<q1|q2|q3|q4>"
+                                      },
+                       "faceItemSchema":  {
+                                              "required":  [
+                                                               "label",
+                                                               "text"
+                                                           ],
+                                              "properties":  {
+                                                                 "label":  "string",
+                                                                 "text":  "string"
+                                                             }
+                                          }
+                   },
+    "renderMap":  [
+                      {
+                          "target":  "card__title",
+                          "source":  "title"
+                      },
+                      {
+                          "target":  "badge",
+                          "source":  "badgeText"
+                      },
+                      {
+                          "target":  "card.@data-urgency",
+                          "source":  "urgencyQuadrant"
+                      },
+                      {
+                          "target":  "label",
+                          "source":  "topic"
+                      },
+                      {
+                          "target":  "frontFace.label",
+                          "source":  "front.label"
+                      },
+                      {
+                          "target":  "frontFace.text",
+                          "source":  "front.text"
+                      },
+                      {
+                          "target":  "backFace.label",
+                          "source":  "back.label"
+                      },
+                      {
+                          "target":  "backFace.text",
+                          "source":  "back.text"
+                      }
+                  ],
+    "sampleData":  {
+                       "back":  {
+                                    "label":  "Back",
+                                    "text":  "Repeated requests return stable results without extra side effects."
+                                },
+                       "badgeText":  "Reverse",
+                       "front":  {
+                                     "label":  "Front",
+                                     "text":  "Term: Idempotent API"
+                                 },
+                       "title":  "Reverse Preview",
+                       "topic":  "Front / Back",
+                       "urgencyQuadrant":  "q3"
+                   }
+}
