@@ -24,8 +24,29 @@ _BASIC_MODEL = genanki.Model(
     templates=[
         {
             "name": "Card 1",
-            "qfmt": "{{Front}}",
-            "afmt": '{{FrontSide}}<hr id="answer">{{Back}}',
+            "qfmt": (
+                '<div class="as-wrap as-wrap-front">'
+                '<div class="as-head"><span class="as-chip">Question</span></div>'
+                '<section class="as-section">'
+                '<span class="as-label">Front</span>'
+                '<div class="as-box">{{Front}}</div>'
+                "</section>"
+                "</div>"
+            ),
+            "afmt": (
+                '<div class="as-wrap as-wrap-back">'
+                '<div class="as-head"><span class="as-chip">Review</span></div>'
+                '<section class="as-section">'
+                '<span class="as-label">Front</span>'
+                '<div class="as-box">{{FrontSide}}</div>'
+                "</section>"
+                '<hr id="answer">'
+                '<section class="as-section">'
+                '<span class="as-label">Back</span>'
+                '<div class="as-box as-answer-box">{{Back}}</div>'
+                "</section>"
+                "</div>"
+            ),
         },
     ],
     css=MODERN_CARD_CSS,
@@ -38,8 +59,28 @@ _CLOZE_MODEL = genanki.Model(
     templates=[
         {
             "name": "Cloze",
-            "qfmt": "{{cloze:Text}}",
-            "afmt": "{{cloze:Text}}<br>{{Extra}}",
+            "qfmt": (
+                '<div class="as-wrap as-wrap-front">'
+                '<div class="as-head"><span class="as-chip">Cloze</span></div>'
+                '<section class="as-section">'
+                '<span class="as-label">Question</span>'
+                '<div class="as-box">{{cloze:Text}}</div>'
+                "</section>"
+                "</div>"
+            ),
+            "afmt": (
+                '<div class="as-wrap as-wrap-back">'
+                '<div class="as-head"><span class="as-chip">Cloze Review</span></div>'
+                '<section class="as-section">'
+                '<span class="as-label">Answer</span>'
+                '<div class="as-box as-answer-box">{{cloze:Text}}</div>'
+                "</section>"
+                '{{#Extra}}<section class="as-section">'
+                '<span class="as-label">Extra</span>'
+                '<div class="as-box as-extra">{{Extra}}</div>'
+                "</section>{{/Extra}}"
+                "</div>"
+            ),
         },
     ],
     model_type=genanki.Model.CLOZE,

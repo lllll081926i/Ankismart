@@ -1,47 +1,174 @@
 """
 Modern card styling for Anki cards.
 
-This module provides CSS styling that works across Anki Desktop, AnkiDroid, and AnkiWeb.
-Designed with responsiveness, readability, and dark mode support in mind.
+This stylesheet is embedded into generated APKG models and is also reused by
+in-app preview pages to keep visual language consistent.
 """
 
 MODERN_CARD_CSS = """
-/* ===== Base Styles ===== */
+/* ===== Theme Tokens ===== */
 .card {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Microsoft YaHei', sans-serif;
-    font-size: 18px;
-    line-height: 1.8;
-    color: #2c3e50;
-    background-color: transparent;
-    padding: 24px;
-    max-width: 100%;
+    --as-bg: #f3f7fc;
+    --as-bg-grad-a: #d9e9ff;
+    --as-bg-grad-b: #dff7ec;
+    --as-surface: #ffffff;
+    --as-text: #0f1c2e;
+    --as-text-soft: #4b5a72;
+    --as-border: #d8e2f0;
+    --as-shadow: 0 10px 24px rgba(16, 39, 72, 0.12);
+    --as-radius-lg: 16px;
+    --as-radius-md: 12px;
+    --as-primary: #1f6fd6;
+    --as-primary-soft: #edf5ff;
+    --as-success: #16824f;
+    --as-success-soft: #e8f7ee;
+    --as-warn: #ad5b08;
+    --as-warn-soft: #fff3e5;
+
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 19px;
+    line-height: 1.7;
+    color: var(--as-text);
+    background:
+        radial-gradient(900px 540px at -10% -10%, var(--as-bg-grad-a) 0%, rgba(217, 233, 255, 0) 60%),
+        radial-gradient(760px 420px at 110% 15%, var(--as-bg-grad-b) 0%, rgba(223, 247, 236, 0) 60%),
+        var(--as-bg);
     margin: 0;
+    padding: 16px;
     text-align: left;
+}
+
+.card.nightMode,
+.nightMode .card {
+    --as-bg: #0f1724;
+    --as-bg-grad-a: #1a2a40;
+    --as-bg-grad-b: #1b3345;
+    --as-surface: #111b2b;
+    --as-text: #e5edf7;
+    --as-text-soft: #95a3b8;
+    --as-border: #2a3951;
+    --as-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    --as-primary: #88c0ff;
+    --as-primary-soft: rgba(53, 93, 142, 0.5);
+    --as-success: #88d0ab;
+    --as-success-soft: rgba(34, 73, 56, 0.78);
+    --as-warn: #f1b876;
+    --as-warn-soft: rgba(73, 49, 27, 0.78);
+}
+
+/* ===== Layout Containers ===== */
+.as-wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    border: 1px solid var(--as-border);
+    border-radius: var(--as-radius-lg);
+    background: var(--as-surface);
+    box-shadow: var(--as-shadow);
+    overflow: hidden;
+}
+
+.as-head {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--as-border);
+    background: #f8fbff;
+}
+
+.card.nightMode .as-head,
+.nightMode .as-head {
+    background: rgba(20, 32, 48, 0.92);
+}
+
+.as-chip {
+    display: inline-block;
+    border-radius: 999px;
+    border: 1px solid #bdd1eb;
+    background: #edf5ff;
+    color: #265083;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.25px;
+    padding: 3px 11px;
+}
+
+.card.nightMode .as-chip,
+.nightMode .as-chip {
+    border-color: #4d6f97;
+    background: rgba(36, 71, 110, 0.55);
+    color: #cbe2ff;
+}
+
+.as-section {
+    padding: 12px 16px;
+}
+
+.as-section + .as-section {
+    padding-top: 6px;
+}
+
+.as-label {
+    display: inline-block;
+    margin: 0 0 7px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--as-border);
+    background: #f5f9ff;
+    color: var(--as-text-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.35px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.as-box {
+    border: 1px solid var(--as-border);
+    background: #fbfdff;
+    border-radius: var(--as-radius-md);
+    padding: 10px 12px;
+    color: var(--as-text);
+}
+
+.card.nightMode .as-box,
+.nightMode .as-box {
+    background: rgba(18, 29, 44, 0.9);
+}
+
+.as-answer-box {
+    border-color: #b7e1c7;
+    background: #f3fcf6;
+}
+
+.card.nightMode .as-answer-box,
+.nightMode .as-answer-box {
+    border-color: #3d6e58;
+    background: rgba(24, 53, 43, 0.9);
+}
+
+.as-extra {
+    border-color: var(--as-border);
+    background: #f9fbff;
+    color: var(--as-text-soft);
+}
+
+.card.nightMode .as-extra,
+.nightMode .as-extra {
+    background: rgba(22, 35, 53, 0.9);
 }
 
 /* ===== Typography ===== */
 h1, h2, h3, h4, h5, h6 {
-    margin-top: 1.2em;
-    margin-bottom: 0.6em;
-    font-weight: 600;
-    line-height: 1.4;
-    color: #1a252f;
+    margin-top: 0.85em;
+    margin-bottom: 0.45em;
+    line-height: 1.35;
+    color: var(--as-text);
+    font-weight: 700;
 }
 
-h1 { font-size: 2em; }
-h2 { font-size: 1.7em; }
-h3 { font-size: 1.5em; }
-h4 { font-size: 1.3em; }
-h5 { font-size: 1.1em; }
-h6 { font-size: 1em; }
-
 p {
-    margin: 0.8em 0;
+    margin: 0.65em 0;
 }
 
 strong, b {
-    font-weight: 600;
-    color: #1a252f;
+    font-weight: 700;
 }
 
 em, i {
@@ -50,7 +177,7 @@ em, i {
 
 /* ===== Links ===== */
 a {
-    color: #0078d4;
+    color: var(--as-primary);
     text-decoration: none;
 }
 
@@ -58,225 +185,135 @@ a:hover {
     text-decoration: underline;
 }
 
-/* ===== Code Blocks ===== */
+/* ===== Code ===== */
 code {
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    font-size: 0.95em;
-    background-color: transparent;
-    padding: 2px 4px;
-    border-radius: 3px;
-    color: #d73a49;
-    border: 1px solid rgba(0, 0, 0, 0.1);
+    font-family: "JetBrains Mono", "Consolas", "Courier New", monospace;
+    font-size: 0.9em;
+    border: 1px solid var(--as-border);
+    background: var(--as-primary-soft);
+    border-radius: 6px;
+    padding: 2px 6px;
 }
 
 pre {
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    font-size: 0.9em;
-    background-color: transparent;
-    padding: 16px 20px;
-    border-radius: 8px;
+    margin: 0.9em 0;
+    border: 1px solid var(--as-border);
+    background: #f7faff;
+    border-radius: 10px;
+    padding: 10px 12px;
     overflow-x: auto;
-    margin: 1.2em 0;
-    border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 pre code {
-    background-color: transparent;
-    padding: 0;
-    color: #24292e;
-    border-radius: 0;
     border: none;
+    background: transparent;
+    padding: 0;
 }
 
-/* ===== Lists ===== */
+.card.nightMode pre,
+.nightMode pre {
+    background: rgba(25, 39, 58, 0.88);
+}
+
+/* ===== Lists & Quotes ===== */
 ul, ol {
-    margin: 0.8em 0;
-    padding-left: 2em;
+    margin: 0.6em 0;
+    padding-left: 1.5em;
 }
 
 li {
-    margin: 0.4em 0;
+    margin: 0.28em 0;
 }
 
-ul ul, ol ol, ul ol, ol ul {
-    margin: 0.2em 0;
-}
-
-/* ===== Blockquotes ===== */
 blockquote {
-    margin: 1.2em 0;
-    padding: 0.8em 1.2em;
-    border-left: 4px solid #0078d4;
-    background-color: transparent;
-    color: #495057;
-    font-style: italic;
+    margin: 0.85em 0;
+    border-left: 4px solid var(--as-primary);
+    background: #f4f9ff;
+    border-radius: 0 8px 8px 0;
+    padding: 8px 12px;
+    color: var(--as-text-soft);
 }
 
-blockquote p {
-    margin: 0.5em 0;
-}
-
-/* ===== Horizontal Rules ===== */
-hr {
-    border: none;
-    border-top: 2px solid #e1e4e8;
-    margin: 1.5em 0;
+.card.nightMode blockquote,
+.nightMode blockquote {
+    background: rgba(33, 56, 85, 0.55);
 }
 
 /* ===== Tables ===== */
 table {
     border-collapse: collapse;
     width: 100%;
-    margin: 1.2em 0;
+    margin: 0.85em 0;
 }
 
 th, td {
-    border: 1px solid #d0d7de;
-    padding: 10px 14px;
+    border: 1px solid var(--as-border);
+    padding: 8px 10px;
     text-align: left;
 }
 
 th {
-    background-color: transparent;
-    font-weight: 600;
-    border-bottom: 2px solid #d0d7de;
+    background: #f5f9ff;
 }
 
-tr:nth-child(even) {
-    background-color: transparent;
+.card.nightMode th,
+.nightMode th {
+    background: rgba(30, 48, 72, 0.7);
 }
 
-/* ===== Images ===== */
+/* ===== Media ===== */
 img {
     max-width: 100%;
     height: auto;
     display: block;
-    margin: 1em auto;
-    border-radius: 8px;
+    margin: 0.8em auto;
+    border-radius: 10px;
 }
 
-/* ===== Math (MathJax/KaTeX) ===== */
-.MathJax, .katex {
-    font-size: 1.1em !important;
+/* ===== Cloze ===== */
+.cloze,
+.as-cloze {
+    display: inline-block;
+    border-radius: 6px;
+    border: 1px solid rgba(31, 111, 214, 0.35);
+    background: rgba(31, 111, 214, 0.12);
+    color: #225ea8;
+    font-weight: 700;
+    padding: 2px 8px;
 }
 
-.MathJax_Display {
-    margin: 1em 0 !important;
+.card.nightMode .cloze,
+.nightMode .cloze,
+.card.nightMode .as-cloze,
+.nightMode .as-cloze {
+    border-color: rgba(137, 191, 255, 0.55);
+    background: rgba(42, 87, 141, 0.5);
+    color: #b7d9ff;
 }
 
-/* ===== Cloze Deletions ===== */
-.cloze {
-    font-weight: 600;
-    color: #0078d4;
-}
-
-/* ===== Dark Mode ===== */
-.night_mode .card {
-    color: #e4e4e4;
-    background-color: transparent;
-}
-
-.night_mode h1,
-.night_mode h2,
-.night_mode h3,
-.night_mode h4,
-.night_mode h5,
-.night_mode h6 {
-    color: #ffffff;
-}
-
-.night_mode strong,
-.night_mode b {
-    color: #ffffff;
-}
-
-.night_mode a {
-    color: #4db8ff;
-}
-
-.night_mode code {
-    background-color: transparent;
-    color: #ff7b72;
-    border-color: rgba(255, 255, 255, 0.15);
-}
-
-.night_mode pre {
-    background-color: transparent;
-    border-color: rgba(255, 255, 255, 0.15);
-}
-
-.night_mode pre code {
-    color: #e4e4e4;
+/* ===== Answer Divider ===== */
+hr#answer {
     border: none;
+    border-top: 1px solid var(--as-border);
+    margin: 4px 16px 0;
 }
 
-.night_mode blockquote {
-    border-left-color: #4db8ff;
-    background-color: transparent;
-    color: #c9d1d9;
+/* ===== Utility ===== */
+.as-muted {
+    color: var(--as-text-soft);
 }
 
-.night_mode hr {
-    border-top-color: rgba(255, 255, 255, 0.15);
-}
-
-.night_mode th {
-    background-color: transparent;
-    border-bottom: 2px solid rgba(255, 255, 255, 0.15);
-}
-
-.night_mode th, .night_mode td {
-    border-color: rgba(255, 255, 255, 0.15);
-}
-
-.night_mode tr:nth-child(even) {
-    background-color: transparent;
-}
-
-.night_mode .cloze {
-    color: #4db8ff;
-}
-
-/* ===== Mobile Optimization ===== */
+/* ===== Mobile ===== */
 @media (max-width: 600px) {
     .card {
-        padding: 12px;
-        font-size: 16px;
+        font-size: 17px;
+        padding: 10px;
     }
 
-    h1 { font-size: 1.5em; }
-    h2 { font-size: 1.3em; }
-    h3 { font-size: 1.2em; }
-    h4 { font-size: 1.1em; }
-
-    pre {
-        padding: 8px 12px;
-        font-size: 0.8em;
-    }
-
-    table {
-        font-size: 0.9em;
-    }
-
-    th, td {
-        padding: 6px 8px;
-    }
-
-    ul, ol {
-        padding-left: 1.5em;
-    }
-}
-
-/* ===== Print Styles ===== */
-@media print {
-    .card {
-        color: #000000;
-        background-color: #ffffff;
-    }
-
-    a {
-        color: #000000;
-        text-decoration: underline;
+    .as-head,
+    .as-section {
+        padding-left: 12px;
+        padding-right: 12px;
     }
 }
 """.strip()

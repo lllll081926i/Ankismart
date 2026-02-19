@@ -51,6 +51,12 @@ logger = get_logger(__name__)
 class CardRenderer:
     """Generates HTML for different Anki note types."""
 
+    _OPTION_LINE_PATTERN = re.compile(r"^\s*([A-Ea-e])[\.、\):：\-]\s*(.+?)\s*$")
+    _ANSWER_LINE_PATTERN = re.compile(
+        r"^(?:答案|正确答案|answer)?\s*[:：]?\s*([A-Ea-e](?:\s*[,，、/]\s*[A-Ea-e])*)\s*$",
+        re.IGNORECASE,
+    )
+
     @staticmethod
     def render_card(card: CardDraft) -> str:
         """Generate HTML for card preview - always show both question and answer."""
@@ -58,17 +64,18 @@ class CardRenderer:
 
         # Detect card strategy from tags or content
         tags = card.tags or []
+        lower_tags = {tag.lower() for tag in tags}
 
         # Check for specific strategies
-        if "concept" in tags or "概念" in str(card.fields.get("Front", "")).lower()[:50]:
+        if "concept" in lower_tags or "概念" in str(card.fields.get("Front", ""))[:50]:
             return CardRenderer._render_concept(card)
-        elif "key_terms" in tags or "术语" in tags:
+        elif "key_terms" in lower_tags or "术语" in tags:
             return CardRenderer._render_key_terms(card)
-        elif "single_choice" in tags or "单选" in tags:
+        elif "single_choice" in lower_tags or "单选" in tags:
             return CardRenderer._render_single_choice(card)
-        elif "multiple_choice" in tags or "多选" in tags:
+        elif "multiple_choice" in lower_tags or "多选" in tags:
             return CardRenderer._render_multiple_choice(card)
-        elif "image" in tags:
+        elif "image" in lower_tags:
             return CardRenderer._render_image_qa(card)
         elif note_type == "Basic":
             return CardRenderer._render_basic(card)
@@ -80,10 +87,85 @@ class CardRenderer:
             return CardRenderer._render_generic(card)
 
     @staticmethod
+    def _format_text_block(text: str, *, empty_text: str = "（空）") -> str:
+        """Format raw field text for HTML display."""
+        value = text.strip()
+        if not value:
+            return f'<span class="empty-placeholder">{empty_text}</span>'
+        return value.replace("\r\n", "\n").replace("\n", "<br>")
+
+    @staticmethod
+    def _extract_plain_lines(text: str) -> list[str]:
+        """Extract plain text lines from html/plain content."""
+        if not text:
+            return []
+        plain = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+        plain = re.sub(r"</p\s*>", "\n", plain, flags=re.IGNORECASE)
+        plain = re.sub(r"<[^>]+>", "", plain)
+        return [line.strip() for line in plain.splitlines() if line.strip()]
+
+    @staticmethod
+    def _extract_answer_keys(raw: str) -> list[str]:
+        """Extract unique answer keys in stable order."""
+        keys: list[str] = []
+        for key in re.findall(r"[A-Ea-e]", raw):
+            key = key.upper()
+            if key not in keys:
+                keys.append(key)
+        return keys
+
+    @staticmethod
+    def _parse_choice_front(front: str) -> tuple[str, list[tuple[str, str]]]:
+        """Parse question/options from front field."""
+        lines = CardRenderer._extract_plain_lines(front)
+        options: list[tuple[str, str]] = []
+        question_lines: list[str] = []
+
+        for line in lines:
+            match = CardRenderer._OPTION_LINE_PATTERN.match(line)
+            if match:
+                options.append((match.group(1).upper(), match.group(2).strip()))
+            elif not options:
+                question_lines.append(line)
+
+        if not options:
+            return front, []
+        question = "\n".join(question_lines) if question_lines else lines[0]
+        return question, options
+
+    @staticmethod
+    def _parse_choice_back(back: str) -> tuple[list[str], str]:
+        """Parse answer keys and explanation from back field."""
+        lines = CardRenderer._extract_plain_lines(back)
+        if not lines:
+            return [], ""
+
+        first = lines[0]
+        match = CardRenderer._ANSWER_LINE_PATTERN.match(first)
+        if match:
+            return CardRenderer._extract_answer_keys(match.group(1)), "\n".join(lines[1:]).strip()
+
+        if re.fullmatch(r"[A-Ea-e](?:\s*[,，、/]\s*[A-Ea-e])*", first):
+            return CardRenderer._extract_answer_keys(first), "\n".join(lines[1:]).strip()
+
+        whole = "\n".join(lines)
+        inline = re.search(
+            r"(?:答案|正确答案|answer)\s*[:：]?\s*([A-Ea-e](?:\s*[,，、/]\s*[A-Ea-e])*)",
+            whole,
+            re.IGNORECASE,
+        )
+        if inline:
+            keys = CardRenderer._extract_answer_keys(inline.group(1))
+            explanation = whole.replace(inline.group(0), "", 1).strip(" \n:：")
+            return keys, explanation
+
+        return [], whole
+
+    @staticmethod
     def _render_basic(card: CardDraft) -> str:
         """Render Basic note type - standard Q&A format."""
-        front = card.fields.get("Front", "")
-        back = card.fields.get("Back", "")
+        front = CardRenderer._format_text_block(card.fields.get("Front", ""))
+        back = CardRenderer._format_text_block(card.fields.get("Back", ""))
 
         content = f"""
         <div class="card-basic">
@@ -110,8 +192,8 @@ class CardRenderer:
     @staticmethod
     def _render_basic_reversed(card: CardDraft) -> str:
         """Render Basic (and reversed card) note type."""
-        front = card.fields.get("Front", "")
-        back = card.fields.get("Back", "")
+        front = CardRenderer._format_text_block(card.fields.get("Front", ""))
+        back = CardRenderer._format_text_block(card.fields.get("Back", ""))
 
         content = f"""
         <div class="card-reversed">
@@ -150,6 +232,7 @@ class CardRenderer:
             r'<span class="cloze" data-cloze="\1"><span class="cloze-bracket">[</span><span class="cloze-content">\2</span><span class="cloze-bracket">]</span></span>',
             text
         )
+        processed = CardRenderer._format_text_block(processed, empty_text="（无填空内容）")
 
         content = f"""
         <div class="card-cloze">
@@ -168,8 +251,8 @@ class CardRenderer:
     @staticmethod
     def _render_concept(card: CardDraft) -> str:
         """Render concept explanation cards."""
-        front = card.fields.get("Front", "")
-        back = card.fields.get("Back", "")
+        front = CardRenderer._format_text_block(card.fields.get("Front", ""))
+        back = CardRenderer._format_text_block(card.fields.get("Back", ""))
 
         content = f"""
         <div class="card-concept">
@@ -194,8 +277,8 @@ class CardRenderer:
     @staticmethod
     def _render_key_terms(card: CardDraft) -> str:
         """Render key terms cards."""
-        front = card.fields.get("Front", "")
-        back = card.fields.get("Back", "")
+        front = CardRenderer._format_text_block(card.fields.get("Front", ""))
+        back = CardRenderer._format_text_block(card.fields.get("Back", ""))
 
         content = f"""
         <div class="card-keyterm">
@@ -220,8 +303,32 @@ class CardRenderer:
     @staticmethod
     def _render_single_choice(card: CardDraft) -> str:
         """Render single choice question cards."""
-        front = card.fields.get("Front", "")
-        back = card.fields.get("Back", "")
+        question, options = CardRenderer._parse_choice_front(card.fields.get("Front", ""))
+        keys, explanation = CardRenderer._parse_choice_back(card.fields.get("Back", ""))
+        if keys:
+            keys = keys[:1]
+
+        options_html = ""
+        if options:
+            items = []
+            for key, text in options:
+                cls = "choice-option"
+                if key in keys:
+                    cls += " is-correct"
+                items.append(
+                    f'<div class="{cls}">'
+                    f'<span class="choice-option-key">{key}</span>'
+                    f'<span class="choice-option-text">{CardRenderer._format_text_block(text)}</span>'
+                    "</div>"
+                )
+            options_html = f'<div class="choice-options">{"".join(items)}</div>'
+
+        answer_text = ", ".join(keys) if keys else card.fields.get("Back", "")
+        explanation_html = (
+            f'<div class="choice-explain">{CardRenderer._format_text_block(explanation)}</div>'
+            if explanation
+            else ""
+        )
 
         content = f"""
         <div class="card-choice">
@@ -231,12 +338,14 @@ class CardRenderer:
             </div>
             <div class="choice-question">
                 <div class="section-label">题目</div>
-                <div class="section-content">{front}</div>
+                <div class="section-content">{CardRenderer._format_text_block(question)}</div>
+                {options_html}
             </div>
             <div class="divider"></div>
             <div class="choice-answer">
                 <div class="section-label">答案</div>
-                <div class="section-content">{back}</div>
+                <div class="section-content choice-answer-box">{CardRenderer._format_text_block(answer_text)}</div>
+                {explanation_html}
             </div>
         </div>
         """
@@ -246,8 +355,30 @@ class CardRenderer:
     @staticmethod
     def _render_multiple_choice(card: CardDraft) -> str:
         """Render multiple choice question cards."""
-        front = card.fields.get("Front", "")
-        back = card.fields.get("Back", "")
+        question, options = CardRenderer._parse_choice_front(card.fields.get("Front", ""))
+        keys, explanation = CardRenderer._parse_choice_back(card.fields.get("Back", ""))
+
+        options_html = ""
+        if options:
+            items = []
+            for key, text in options:
+                cls = "choice-option"
+                if key in keys:
+                    cls += " is-correct"
+                items.append(
+                    f'<div class="{cls}">'
+                    f'<span class="choice-option-key">{key}</span>'
+                    f'<span class="choice-option-text">{CardRenderer._format_text_block(text)}</span>'
+                    "</div>"
+                )
+            options_html = f'<div class="choice-options">{"".join(items)}</div>'
+
+        answer_text = ", ".join(keys) if keys else card.fields.get("Back", "")
+        explanation_html = (
+            f'<div class="choice-explain">{CardRenderer._format_text_block(explanation)}</div>'
+            if explanation
+            else ""
+        )
 
         content = f"""
         <div class="card-choice">
@@ -257,12 +388,14 @@ class CardRenderer:
             </div>
             <div class="choice-question">
                 <div class="section-label">题目</div>
-                <div class="section-content">{front}</div>
+                <div class="section-content">{CardRenderer._format_text_block(question)}</div>
+                {options_html}
             </div>
             <div class="divider"></div>
             <div class="choice-answer">
                 <div class="section-label">答案</div>
-                <div class="section-content">{back}</div>
+                <div class="section-content choice-answer-box">{CardRenderer._format_text_block(answer_text)}</div>
+                {explanation_html}
             </div>
         </div>
         """
@@ -272,8 +405,8 @@ class CardRenderer:
     @staticmethod
     def _render_image_qa(card: CardDraft) -> str:
         """Render image-based Q&A cards."""
-        front = card.fields.get("Front", "")
-        back = card.fields.get("Back", "")
+        front = CardRenderer._format_text_block(card.fields.get("Front", ""))
+        back = CardRenderer._format_text_block(card.fields.get("Back", ""))
 
         content = f"""
         <div class="card-image">
@@ -300,10 +433,11 @@ class CardRenderer:
         """Render generic card with all fields."""
         content = '<div class="card-generic">'
         for field_name, field_value in card.fields.items():
+            rendered_value = CardRenderer._format_text_block(field_value)
             content += f"""
             <div class="field">
                 <div class="field-name">{field_name}</div>
-                <div class="field-content">{field_value}</div>
+                <div class="field-content">{rendered_value}</div>
             </div>
             """
         content += '</div>'
@@ -531,6 +665,291 @@ class CardRenderer:
             .field-content {{
                 font-size: 20px;
                 line-height: 2;
+            }}
+
+            /* Visual refresh from style demos (local copy, no runtime dependency) */
+            .card[data-card-type] {{
+                --bg: #f3f7fc;
+                --bg-grad-a: #d9e9ff;
+                --bg-grad-b: #dff7ec;
+                --surface: #ffffff;
+                --text-primary: #0f1c2e;
+                --text-secondary: #4b5a72;
+                --border: #d8e2f0;
+                --shadow-sm: 0 10px 24px rgba(16, 39, 72, 0.12);
+                --radius-lg: 16px;
+                --radius-md: 12px;
+                --q1-border: #d14343;
+                --q1-head: #fff2f2;
+                --q2-border: #e38a17;
+                --q2-head: #fff7eb;
+                --q3-border: #2d7fd3;
+                --q3-head: #edf6ff;
+                --q4-border: #3b8f4f;
+                --q4-head: #eefaf1;
+                background:
+                    radial-gradient(900px 540px at -10% -10%, var(--bg-grad-a) 0%, rgba(217, 233, 255, 0) 60%),
+                    radial-gradient(760px 420px at 110% 15%, var(--bg-grad-b) 0%, rgba(223, 247, 236, 0) 60%),
+                    var(--bg);
+                color: var(--text-primary);
+                padding: 18px;
+            }}
+
+            .night_mode .card[data-card-type] {{
+                --bg: #0f1724;
+                --bg-grad-a: #1a2a40;
+                --bg-grad-b: #1b3345;
+                --surface: #111b2b;
+                --text-primary: #e5edf7;
+                --text-secondary: #95a3b8;
+                --border: #2a3951;
+                --shadow-sm: 0 10px 24px rgba(0, 0, 0, 0.32);
+                --q1-border: #be6464;
+                --q1-head: #2e1f2a;
+                --q2-border: #c18a46;
+                --q2-head: #322a22;
+                --q3-border: #4f89bf;
+                --q3-head: #1f2d42;
+                --q4-border: #4b8a60;
+                --q4-head: #1d2f28;
+            }}
+
+            .card-basic, .card-reversed, .card-cloze, .card-concept,
+            .card-keyterm, .card-choice, .card-image, .card-generic {{
+                max-width: 960px;
+                margin: 0 auto;
+                border: 1px solid var(--border);
+                border-radius: var(--radius-lg);
+                box-shadow: var(--shadow-sm);
+                background: var(--surface);
+                overflow: hidden;
+                padding: 16px 18px 20px;
+            }}
+
+            .card[data-card-type="basic"] .card-basic,
+            .card[data-card-type="choice"] .card-choice {{
+                border-top: 4px solid var(--q1-border);
+            }}
+
+            .card[data-card-type="concept"] .card-concept,
+            .card[data-card-type="image"] .card-image {{
+                border-top: 4px solid var(--q2-border);
+            }}
+
+            .card[data-card-type="cloze"] .card-cloze,
+            .card[data-card-type="reversed"] .card-reversed {{
+                border-top: 4px solid var(--q3-border);
+            }}
+
+            .card[data-card-type="keyterm"] .card-keyterm,
+            .card[data-card-type="generic"] .card-generic {{
+                border-top: 4px solid var(--q4-border);
+            }}
+
+            .reversed-notice, .cloze-notice, .concept-notice,
+            .keyterm-notice, .choice-notice, .image-notice {{
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 4px 12px;
+                border-radius: 999px;
+                border: 1px solid var(--border);
+                background: #f5f9ff;
+                color: var(--text-secondary);
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.3px;
+                margin-bottom: 14px;
+            }}
+
+            .notice-icon {{
+                font-size: 14px;
+            }}
+
+            .question-section, .answer-section,
+            .concept-term, .concept-explanation,
+            .keyterm-term, .keyterm-definition,
+            .choice-question, .choice-answer,
+            .image-question, .image-answer {{
+                margin: 0;
+            }}
+
+            .section-label {{
+                display: inline-block;
+                margin: 0 0 8px;
+                border-radius: 999px;
+                padding: 2px 10px;
+                border: 1px solid var(--border);
+                background: #f5f9ff;
+                color: var(--text-secondary);
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.4px;
+                text-transform: uppercase;
+            }}
+
+            .label-icon {{
+                display: none;
+            }}
+
+            .section-content {{
+                font-size: 17px;
+                line-height: 1.7;
+                padding: 12px;
+                border: 1px solid var(--border);
+                background: #fbfdff;
+                border-radius: var(--radius-md);
+                color: var(--text-primary);
+            }}
+
+            .night_mode .section-content {{
+                background: rgba(18, 29, 44, 0.9);
+                border-color: var(--border);
+            }}
+
+            .concept-name,
+            .keyterm-name {{
+                font-size: 19px;
+                color: #1f6fd6;
+            }}
+
+            .night_mode .concept-name,
+            .night_mode .keyterm-name {{
+                color: #8cc2ff;
+            }}
+
+            .choice-options {{
+                margin-top: 10px;
+                display: grid;
+                gap: 8px;
+            }}
+
+            .choice-option {{
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                padding: 8px 10px;
+                background: #fbfdff;
+                display: grid;
+                grid-template-columns: 22px 1fr;
+                gap: 8px;
+                align-items: start;
+            }}
+
+            .choice-option.is-correct {{
+                border-color: #8fd1ac;
+                background: #eaf8ef;
+            }}
+
+            .night_mode .choice-option {{
+                background: rgba(20, 31, 47, 0.88);
+            }}
+
+            .night_mode .choice-option.is-correct {{
+                background: rgba(29, 64, 49, 0.85);
+            }}
+
+            .choice-option-key {{
+                width: 22px;
+                height: 22px;
+                border-radius: 6px;
+                border: 1px solid #bdd1eb;
+                background: #eef5ff;
+                color: #245189;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 12px;
+                font-weight: 700;
+            }}
+
+            .choice-option-text {{
+                line-height: 1.65;
+            }}
+
+            .choice-answer-box {{
+                border: 1px solid #b7e1c7;
+                background: #f3fcf6;
+            }}
+
+            .choice-explain {{
+                margin-top: 10px;
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                background: #f9fbff;
+                padding: 10px 12px;
+                font-size: 15px;
+                line-height: 1.6;
+                color: var(--text-secondary);
+            }}
+
+            .night_mode .choice-explain {{
+                background: rgba(22, 35, 53, 0.9);
+            }}
+
+            .cloze-content-wrapper {{
+                background: #eef5ff;
+                border: 1px solid #bdd4f5;
+                border-radius: var(--radius-md);
+                font-size: 17px;
+                line-height: 1.8;
+                padding: 12px;
+            }}
+
+            .cloze {{
+                font-size: 17px;
+                font-weight: 700;
+                color: #225ea8;
+                background: rgba(31, 111, 214, 0.12);
+                border: 1px solid rgba(31, 111, 214, 0.35);
+                border-radius: 6px;
+                box-shadow: none;
+                margin: 0 2px;
+                padding: 2px 8px;
+            }}
+
+            .divider {{
+                height: 1px;
+                background: var(--border);
+                margin: 14px 2px;
+                box-shadow: none;
+            }}
+
+            .field {{
+                margin-bottom: 12px;
+                padding: 0;
+                border: none;
+                background: transparent;
+            }}
+
+            .field-name {{
+                font-size: 12px;
+                color: var(--text-secondary);
+                margin-bottom: 6px;
+            }}
+
+            .field-content {{
+                font-size: 16px;
+                line-height: 1.65;
+                border: 1px solid var(--border);
+                background: #fbfdff;
+                border-radius: 10px;
+                padding: 10px 12px;
+            }}
+
+            .empty-placeholder {{
+                color: var(--text-secondary);
+                font-style: italic;
+            }}
+
+            @media (max-width: 640px) {{
+                .card[data-card-type] {{
+                    padding: 10px;
+                }}
+
+                .card-basic, .card-reversed, .card-cloze, .card-concept,
+                .card-keyterm, .card-choice, .card-image, .card-generic {{
+                    padding: 12px;
+                }}
             }}
             </style>
         </head>
