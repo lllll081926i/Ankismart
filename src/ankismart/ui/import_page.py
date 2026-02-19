@@ -39,6 +39,7 @@ from qfluentwidgets import (
     StateToolTip,
     SubtitleLabel,
     TitleLabel,
+    isDarkTheme,
 )
 
 from ankismart.converter.converter import DocumentConverter
@@ -961,8 +962,8 @@ class ImportPage(ProgressMixin, QWidget):
                 self._file_status[file_path.name] = "pending"
                 item = QListWidgetItem(file_path.name)
                 item.setData(Qt.ItemDataRole.UserRole, str(file_path))
-                # Set gray color for pending files
-                item.setForeground(QColor(150, 150, 150))
+                # Pending items use muted color and must stay theme-aware.
+                item.setForeground(self._get_pending_item_color())
                 self._file_list.addItem(item)
 
         self._update_file_count()
@@ -1654,12 +1655,7 @@ class ImportPage(ProgressMixin, QWidget):
         for i in range(self._file_list.count()):
             item = self._file_list.item(i)
             if item and item.text() == filename:
-                # Set normal color (use default text color)
-                from qfluentwidgets import isDarkTheme
-                if isDarkTheme():
-                    item.setForeground(QColor(255, 255, 255))
-                else:
-                    item.setForeground(QColor(0, 0, 0))
+                item.setForeground(self._get_completed_item_color())
                 break
 
         # Update preview page if it's already showing
@@ -2133,6 +2129,26 @@ class ImportPage(ProgressMixin, QWidget):
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""
-        # ImportPage uses QFluentWidgets components that handle theme automatically
-        # No custom styling that needs manual updates
-        pass
+        for i in range(self._file_list.count()):
+            item = self._file_list.item(i)
+            if item is None:
+                continue
+            status = self._file_status.get(item.text(), "pending")
+            if status == "completed":
+                item.setForeground(self._get_completed_item_color())
+            else:
+                item.setForeground(self._get_pending_item_color())
+
+    @staticmethod
+    def _get_pending_item_color() -> QColor:
+        """Muted color for pending/converting items in current theme."""
+        if isDarkTheme():
+            return QColor(160, 160, 160)
+        return QColor(150, 150, 150)
+
+    @staticmethod
+    def _get_completed_item_color() -> QColor:
+        """Readable normal text color for completed items in current theme."""
+        if isDarkTheme():
+            return QColor(255, 255, 255)
+        return QColor(0, 0, 0)

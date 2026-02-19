@@ -58,6 +58,7 @@ from ankismart.ui.styles import (
     SPACING_SMALL,
     MARGIN_STANDARD,
     MARGIN_SMALL,
+    get_list_widget_palette,
     get_page_background_color,
 )
 
@@ -360,10 +361,23 @@ class SettingsPage(ScrollArea):
     def _apply_theme_styles(self) -> None:
         """Apply theme-aware styles for non-Fluent labels in settings page."""
         self._apply_background_style()
+        self._apply_provider_table_style()
         if hasattr(self, "_ocr_model_recommend_label"):
             self._ocr_model_recommend_label.setStyleSheet("")
         if hasattr(self, "_provider_list_widget") and self._provider_list_widget:
             self._provider_list_widget.update_theme()
+
+    def _apply_provider_table_style(self) -> None:
+        """Keep provider table border consistent with current light/dark theme."""
+        if not hasattr(self, "_provider_table"):
+            return
+        palette = get_list_widget_palette(dark=isDarkTheme())
+        self._provider_table.setStyleSheet(
+            "QTableWidget {"
+            f"border: 1px solid {palette.border};"
+            "border-radius: 8px;"
+            "}"
+        )
 
     def __initLayout(self):
         """Initialize layout and add all setting cards."""
@@ -387,7 +401,7 @@ class SettingsPage(ScrollArea):
 
         # Provider table (standalone widget below the group, reduced spacing)
         self._provider_table = QTableWidget(self.scrollWidget)
-        self._provider_table.setStyleSheet("QTableWidget { border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; }")
+        self._apply_provider_table_style()
         self._provider_table.setWordWrap(False)
         self._provider_table.setColumnCount(6)
         self._provider_table.setHorizontalHeaderLabels(['状态', '名称', '模型', '地址', 'RPM', '操作'])
