@@ -41,7 +41,7 @@ from ankismart.anki_gateway.gateway import AnkiGateway
 from ankismart.core.models import CardDraft, CardPushStatus, PushResult
 from ankismart.ui.card_edit_widget import CardEditDialog
 from ankismart.ui.i18n import t
-from ankismart.ui.workers import ExportWorker, PushWorker
+from ankismart.ui.workers import PushWorker
 from ankismart.ui.styles import (
     SPACING_MEDIUM,
     SPACING_SMALL,
@@ -700,66 +700,6 @@ class ResultPage(QWidget):
             isClosable=True,
             position=InfoBarPosition.TOP,
             duration=5000,
-            parent=self,
-        )
-
-    def _export_failed(self) -> None:
-        """导出失败的卡片为 APKG。"""
-        is_zh = getattr(self._main.config, "language", "zh") == "zh"
-        if not self._push_result or not self._cards:
-            return
-
-        # Collect failed cards
-        failed_cards = []
-        for status in self._push_result.results:
-            if not status.success and 0 <= status.index < len(self._cards):
-                failed_cards.append(self._cards[status.index])
-
-        if not failed_cards:
-            InfoBar.info(
-                title="提示" if is_zh else "Info",
-                content="没有失败的卡片需要导出" if is_zh else "No failed cards to export",
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=2000,
-                parent=self,
-            )
-            return
-
-        # Show save dialog
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "导出失败卡片" if is_zh else "Export Failed Cards",
-            "ankismart_failed.apkg",
-            "Anki Package (*.apkg)",
-        )
-        if not path:
-            return
-
-        # Disable buttons during export
-        self._btn_export_apkg.setEnabled(False)
-
-        # Start export worker
-        exporter = ApkgExporter()
-        worker = ExportWorker(
-            exporter=exporter,
-            cards=failed_cards,
-            output_path=Path(path),
-        )
-        worker.finished.connect(self._on_export_done)
-        worker.error.connect(self._on_export_error)
-        worker.start()
-        self._worker = worker
-
-        InfoBar.info(
-            title="导出中" if is_zh else "Exporting",
-            content=f"正在导出 {len(failed_cards)} 张失败卡片..."
-            if is_zh else f"Exporting {len(failed_cards)} failed cards...",
-            orient=Qt.Orientation.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP,
-            duration=2000,
             parent=self,
         )
 

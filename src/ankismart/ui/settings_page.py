@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from PyQt6.QtCore import QEvent, Qt, pyqtSignal, QUrl, QTimer
 from PyQt6.QtGui import QWheelEvent, QDesktopServices
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -14,6 +15,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QTableWidgetItem,
+    QTableWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -42,7 +44,6 @@ from qfluentwidgets import (
     SubtitleLabel,
     SwitchButton,
     SwitchSettingCard,
-    TableWidget,
     isDarkTheme,
 )
 
@@ -259,7 +260,6 @@ class SettingsPage(ScrollArea):
         self.setObjectName("settingsPage")
         self.verticalScrollBar().setSingleStep(64)
         self.verticalScrollBar().setPageStep(360)
-        self.verticalScrollBar().rangeChanged.connect(self._enforce_scroll_steps)
 
         self.scrollWidget.setObjectName("scrollWidget")
 
@@ -287,6 +287,11 @@ class SettingsPage(ScrollArea):
             scroll_bar.setSingleStep(64)
         if scroll_bar.pageStep() != 360:
             scroll_bar.setPageStep(360)
+
+    def resizeEvent(self, event):  # noqa: N802
+        """Re-apply tuned scroll steps after layout/viewport size changes."""
+        super().resizeEvent(event)
+        self._enforce_scroll_steps()
 
     def _init_shortcuts(self):
         """Initialize page-specific keyboard shortcuts."""
@@ -381,16 +386,15 @@ class SettingsPage(ScrollArea):
         self.expandLayout.addWidget(self._llm_group)
 
         # Provider table (standalone widget below the group, reduced spacing)
-        self._provider_table = TableWidget(self.scrollWidget)
-        self._provider_table.setBorderVisible(True)
-        self._provider_table.setBorderRadius(8)
+        self._provider_table = QTableWidget(self.scrollWidget)
+        self._provider_table.setStyleSheet("QTableWidget { border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; }")
         self._provider_table.setWordWrap(False)
         self._provider_table.setColumnCount(6)
         self._provider_table.setHorizontalHeaderLabels(['状态', '名称', '模型', '地址', 'RPM', '操作'])
         self._provider_table.verticalHeader().hide()
-        self._provider_table.setEditTriggers(TableWidget.EditTrigger.NoEditTriggers)
-        self._provider_table.setSelectionBehavior(TableWidget.SelectionBehavior.SelectRows)
-        self._provider_table.setSelectionMode(TableWidget.SelectionMode.SingleSelection)
+        self._provider_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._provider_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._provider_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._provider_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         # Set fixed row height (36px per row)
