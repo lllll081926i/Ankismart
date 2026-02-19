@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QScreen
+from PyQt6.QtWidgets import QApplication
 from qfluentwidgets import BodyLabel, isDarkTheme
 
 # Color constants
@@ -26,7 +27,7 @@ ANIMATION_DURATION_LONG = 500
 DEFAULT_WINDOW_WIDTH = 1200
 DEFAULT_WINDOW_HEIGHT = 900
 MIN_WINDOW_WIDTH = 800
-MIN_WINDOW_HEIGHT = 600
+MIN_WINDOW_HEIGHT = 540
 
 # File drag-drop area style
 DRAG_DROP_AREA_STYLE = """
@@ -76,14 +77,91 @@ FONT_SIZE_LARGE = 16
 FONT_SIZE_XLARGE = 20
 FONT_SIZE_TITLE = 24
 FONT_SIZE_PAGE_TITLE = 22
+TEXT_SCALE_FACTOR = 0.78
+
+
+def get_display_scale(*, screen: QScreen | None = None) -> float:
+    """Get a stable UI scale factor based on current screen DPI."""
+    app = QApplication.instance()
+    target_screen = screen
+    if target_screen is None and app is not None:
+        active_window = app.activeWindow()
+        if active_window is not None and active_window.screen() is not None:
+            target_screen = active_window.screen()
+        else:
+            target_screen = app.primaryScreen()
+
+    if target_screen is None:
+        return 1.0
+
+    logical_dpi = float(target_screen.logicalDotsPerInch() or 96.0)
+    dpr = float(target_screen.devicePixelRatio() or 1.0)
+
+    scale = max(logical_dpi / 96.0, dpr)
+    return max(0.85, min(scale, 1.8))
+
+
+def scale_px(value: int, *, scale: float | None = None, min_value: int = 0) -> int:
+    """Scale pixel value using current display scale with optional lower bound."""
+    factor = scale if scale is not None else get_display_scale()
+    scaled = int(round(value * factor))
+    return max(min_value, scaled)
+
+
+def scale_text_px(value: int, *, scale: float | None = None, min_value: int = 1) -> int:
+    """Scale text size with DPI and global text scale factor."""
+    base = scale_px(value, scale=scale, min_value=min_value)
+    return max(min_value, int(round(base * TEXT_SCALE_FACTOR)))
 
 
 def apply_page_title_style(label: BodyLabel) -> None:
     """Apply unified style for top-level page titles."""
     font = label.font()
-    font.setPixelSize(FONT_SIZE_PAGE_TITLE)
-    font.setWeight(QFont.Weight.DemiBold)
+    base_title_px = scale_text_px(FONT_SIZE_PAGE_TITLE, min_value=1)
+    title_px = max(int(round(base_title_px * 0.6)), scale_text_px(FONT_SIZE_SMALL, min_value=1))
+    font.setPixelSize(title_px)
+    font.setWeight(QFont.Weight.Bold)
     label.setFont(font)
+
+
+def apply_compact_combo_metrics(
+    combo: object,
+    *,
+    control_height: int | None = None,
+    popup_item_height: int | None = None,
+) -> None:
+    """Apply compact size metrics to QFluent ComboBox-like widgets.
+
+    This helper also patches popup menu creation so dropdown items are lower.
+    """
+    scale = get_display_scale()
+    target_control_height = control_height or scale_px(24, scale=scale, min_value=22)
+    target_popup_item_height = popup_item_height or scale_px(26, scale=scale, min_value=22)
+
+    set_fixed_height = getattr(combo, "setFixedHeight", None)
+    if callable(set_fixed_height):
+        set_fixed_height(target_control_height)
+
+    setattr(combo, "_ankismart_combo_item_height", target_popup_item_height)
+
+    create_menu = getattr(combo, "_createComboMenu", None)
+    if not callable(create_menu):
+        return
+
+    if getattr(combo, "_ankismart_original_create_combo_menu", None) is None:
+        setattr(combo, "_ankismart_original_create_combo_menu", create_menu)
+
+        def _create_compact_menu():
+            base_create_menu = getattr(combo, "_ankismart_original_create_combo_menu", None)
+            menu = base_create_menu() if callable(base_create_menu) else create_menu()
+            try:
+                item_height = int(getattr(combo, "_ankismart_combo_item_height", target_popup_item_height))
+                menu.setItemHeight(item_height)
+            except Exception:
+                pass
+            return menu
+
+        setattr(combo, "_createComboMenu", _create_compact_menu)
 
 
 class Colors:
@@ -100,12 +178,12 @@ class Colors:
 class DarkColors:
     """Dark theme color palette."""
 
-    BACKGROUND = "#111827"
-    SURFACE = "#1f2937"
-    BORDER = "#374151"
-    TEXT_PRIMARY = "#f3f4f6"
-    TEXT_SECONDARY = "#9ca3af"
-    ACCENT = "#60a5fa"
+    BACKGROUND = "#202020"
+    SURFACE = "#2b2b2b"
+    BORDER = "#3a3a3a"
+    TEXT_PRIMARY = "#e6e6e6"
+    TEXT_SECONDARY = "#a6a6a6"
+    ACCENT = "#8a8a8a"
 
 
 @dataclass(frozen=True)
@@ -130,18 +208,18 @@ def get_list_widget_palette(*, dark: bool | None = None) -> ListWidgetPalette:
         return ListWidgetPalette(
             background="rgba(39, 39, 39, 1)",
             border="rgba(255, 255, 255, 0.08)",
-            text="rgba(255, 255, 255, 0.9)",
-            text_disabled="rgba(255, 255, 255, 0.3)",
+            text="rgba(255, 255, 255, 1)",
+            text_disabled="rgba(255, 255, 255, 0.42)",
             hover="rgba(255, 255, 255, 0.06)",
-            selected_background="rgba(37, 99, 235, 0.4)",
+            selected_background="rgba(255, 255, 255, 0.14)",
             selected_text="rgba(255, 255, 255, 1)",
         )
 
     return ListWidgetPalette(
         background="rgba(249, 249, 249, 1)",
         border="rgba(0, 0, 0, 0.08)",
-        text="rgba(0, 0, 0, 0.9)",
-        text_disabled="rgba(0, 0, 0, 0.3)",
+        text="rgba(0, 0, 0, 1)",
+        text_disabled="rgba(0, 0, 0, 0.42)",
         hover="rgba(0, 0, 0, 0.04)",
         selected_background="rgba(37, 99, 235, 0.15)",
         selected_text="rgba(0, 0, 0, 1)",
@@ -158,11 +236,44 @@ def get_page_background_color(*, dark: bool | None = None) -> str:
 def get_stylesheet(*, dark: bool = False) -> str:
     """Build the main app stylesheet for light/dark mode."""
     palette = DarkColors if dark else Colors
+    scale = get_display_scale()
+    combo_text_px = scale_text_px(FONT_SIZE_MEDIUM, scale=scale, min_value=12)
+    input_radius = scale_px(8, scale=scale, min_value=8)
+    input_padding_v = scale_px(6, scale=scale, min_value=6)
+    input_padding_h = scale_px(8, scale=scale, min_value=8)
+    combo_radius = scale_px(5, scale=scale, min_value=5)
+    combo_padding_top = scale_px(2, scale=scale, min_value=1)
+    combo_padding_bottom = scale_px(2, scale=scale, min_value=1)
+    combo_padding_left = scale_px(10, scale=scale, min_value=8)
+    combo_padding_right = scale_px(28, scale=scale, min_value=22)
+    combo_min_height = max(scale_px(22, scale=scale, min_value=20), combo_text_px + scale_px(8, scale=scale, min_value=6))
+    menu_border_radius = scale_px(9, scale=scale, min_value=7)
+    menu_item_radius = scale_px(5, scale=scale, min_value=4)
+    menu_item_padding_h = scale_px(10, scale=scale, min_value=8)
+    menu_item_margin_h = scale_px(6, scale=scale, min_value=4)
+    menu_item_margin_top = scale_px(2, scale=scale, min_value=1)
+    menu_scroll_width = scale_px(8, scale=scale, min_value=6)
+    menu_scroll_handle_min_height = scale_px(24, scale=scale, min_value=18)
+    button_padding_v = scale_px(6, scale=scale, min_value=6)
+    button_padding_h = scale_px(12, scale=scale, min_value=12)
+    card_radius = scale_px(10, scale=scale, min_value=10)
     return f"""
 QWidget {{
-    background-color: {palette.BACKGROUND};
     color: {palette.TEXT_PRIMARY};
-    font-size: {FONT_SIZE_MEDIUM}px;
+}}
+
+QWidget#importPage,
+QWidget#previewPage,
+QWidget#cardPreviewPage,
+QWidget#resultPage,
+QWidget#performancePage,
+QScrollArea#settingsPage,
+QWidget#scrollWidget {{
+    background-color: {palette.BACKGROUND};
+}}
+
+QLabel, BodyLabel, CaptionLabel, TitleLabel, SubtitleLabel {{
+    background: transparent;
 }}
 
 #settingsPage QWidget#contentWidget,
@@ -170,15 +281,15 @@ QWidget {{
 QFrame#providerListContainer {{
     background-color: {palette.SURFACE};
     border: 1px solid {palette.BORDER};
-    border-radius: 10px;
+    border-radius: {card_radius}px;
 }}
 
-QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QListWidget {{
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox {{
     background-color: {palette.SURFACE};
     color: {palette.TEXT_PRIMARY};
     border: 1px solid {palette.BORDER};
-    border-radius: 8px;
-    padding: 6px 8px;
+    border-radius: {input_radius}px;
+    padding: {input_padding_v}px {input_padding_h}px;
 }}
 
 QLabel#caption, QLabel[role="secondary"] {{
@@ -188,12 +299,87 @@ QLabel#caption, QLabel[role="secondary"] {{
 QPushButton, QToolButton {{
     border: 1px solid {palette.BORDER};
     background-color: {palette.SURFACE};
-    border-radius: 8px;
-    padding: 6px 12px;
+    border-radius: {input_radius}px;
+    padding: {button_padding_v}px {button_padding_h}px;
 }}
 
 QPushButton:hover, QToolButton:hover {{
     border-color: {palette.ACCENT};
+}}
+
+ComboBox, ModelComboBox, EditableComboBox {{
+    border: 1px solid {palette.BORDER};
+    border-radius: {combo_radius}px;
+    padding: {combo_padding_top}px {combo_padding_right}px {combo_padding_bottom}px {combo_padding_left}px;
+    color: {palette.TEXT_PRIMARY};
+    background-color: {palette.SURFACE};
+    text-align: left;
+    min-height: {combo_min_height}px;
+}}
+
+ComboBox:hover, ModelComboBox:hover, EditableComboBox:hover {{
+    background-color: {"rgba(255, 255, 255, 0.085)" if dark else "rgba(0, 0, 0, 0.035)"};
+}}
+
+ComboBox:pressed, ModelComboBox:pressed, EditableComboBox:pressed {{
+    background-color: {"rgba(255, 255, 255, 0.045)" if dark else "rgba(0, 0, 0, 0.025)"};
+}}
+
+MenuActionListWidget {{
+    border: 1px solid {palette.BORDER};
+    border-radius: {menu_border_radius}px;
+    background-color: {palette.SURFACE};
+    outline: none;
+    padding: 0px;
+}}
+
+MenuActionListWidget::item {{
+    padding-left: {menu_item_padding_h}px;
+    padding-right: {menu_item_padding_h}px;
+    border-radius: {menu_item_radius}px;
+    margin-left: {menu_item_margin_h}px;
+    margin-right: {menu_item_margin_h}px;
+    border: none;
+    color: {palette.TEXT_PRIMARY};
+}}
+
+MenuActionListWidget::item:disabled {{
+    color: {palette.TEXT_SECONDARY};
+}}
+
+MenuActionListWidget::item:hover {{
+    background-color: {"rgba(255, 255, 255, 0.08)" if dark else "rgba(0, 0, 0, 0.06)"};
+}}
+
+MenuActionListWidget::item:selected {{
+    background-color: {"rgba(255, 255, 255, 0.12)" if dark else "rgba(0, 0, 0, 0.08)"};
+    color: {palette.TEXT_PRIMARY};
+}}
+
+#comboListWidget::item {{
+    margin-top: {menu_item_margin_top}px;
+}}
+
+MenuActionListWidget QScrollBar:vertical {{
+    background: transparent;
+    width: {menu_scroll_width}px;
+    margin: 0px;
+    border: none;
+}}
+
+MenuActionListWidget QScrollBar::handle:vertical {{
+    background: {"rgba(255, 255, 255, 0.35)" if dark else "rgba(0, 0, 0, 0.25)"};
+    border-radius: {menu_scroll_width // 2}px;
+    min-height: {menu_scroll_handle_min_height}px;
+}}
+
+MenuActionListWidget QScrollBar::add-line:vertical,
+MenuActionListWidget QScrollBar::sub-line:vertical,
+MenuActionListWidget QScrollBar::add-page:vertical,
+MenuActionListWidget QScrollBar::sub-page:vertical {{
+    background: transparent;
+    border: none;
+    height: 0px;
 }}
 
 QScrollBar:vertical {{

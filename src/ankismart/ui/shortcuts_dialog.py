@@ -31,7 +31,7 @@ class ShortcutsHelpDialog(QDialog):
 
         # Title
         title = BodyLabel(t("shortcuts.help_title", self._language))
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        title.setStyleSheet("font-weight: 700;")
         layout.addWidget(title)
 
         # Description

@@ -15,13 +15,14 @@ from pathlib import Path
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "1")
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QFont, QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
-from qfluentwidgets import setTheme, Theme
+from qfluentwidgets import setTheme, Theme, isDarkTheme
 
-from ankismart.core.config import load_config, save_config
+from ankismart.core.config import load_config
 from ankismart.core.logging import get_logger, setup_logging
 from ankismart.ui.main_window import MainWindow
+from ankismart.ui.styles import get_stylesheet
 
 logger = get_logger("app")
 
@@ -53,7 +54,20 @@ def _apply_theme(theme_name: str) -> None:
         theme = Theme.LIGHT  # Default fallback
 
     setTheme(theme)
+    app = QApplication.instance()
+    if app is not None:
+        app.setStyleSheet(get_stylesheet(dark=isDarkTheme()))
     logger.info(f"Applied theme: {theme_name}")
+
+
+def _apply_text_clarity_profile(app: QApplication) -> None:
+    """Improve glyph sharpness without changing layout/font sizing."""
+    font = app.font()
+    font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
+    font.setStyleStrategy(
+        QFont.StyleStrategy.PreferQuality | QFont.StyleStrategy.PreferAntialias
+    )
+    app.setFont(font)
 
 
 def _restore_window_geometry(window: MainWindow, geometry_hex: str) -> None:
@@ -90,6 +104,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Ankismart")
     app.setOrganizationName("Ankismart")
+    _apply_text_clarity_profile(app)
 
     # Set application icon
     icon_path = _get_icon_path()

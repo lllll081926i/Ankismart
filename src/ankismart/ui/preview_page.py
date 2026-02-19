@@ -37,6 +37,8 @@ from ankismart.ui.styles import (
     MARGIN_SMALL,
     apply_page_title_style,
     get_list_widget_palette,
+    get_display_scale,
+    scale_px,
 )
 
 if TYPE_CHECKING:
@@ -60,7 +62,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         # Heading format
         heading_fmt = QTextCharFormat()
-        heading_fmt.setForeground(QColor("#60A5FA" if is_dark else "#0078D4"))
+        heading_fmt.setForeground(QColor("#D1D5DB" if is_dark else "#0078D4"))
         heading_fmt.setFontWeight(QFont.Weight.Bold)
         self._rules.append((re.compile(r"^#{1,6}\s+.*$", re.MULTILINE), heading_fmt))
 
@@ -84,13 +86,13 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         # Link format
         link_fmt = QTextCharFormat()
-        link_fmt.setForeground(QColor("#60A5FA" if is_dark else "#0366D6"))
+        link_fmt.setForeground(QColor("#C5CCD6" if is_dark else "#0366D6"))
         link_fmt.setFontUnderline(True)
         self._rules.append((re.compile(r"\[([^\]]+)\]\(([^)]+)\)"), link_fmt))
 
         # Image format
         image_fmt = QTextCharFormat()
-        image_fmt.setForeground(QColor("#34D399" if is_dark else "#22863A"))
+        image_fmt.setForeground(QColor("#AEB7C4" if is_dark else "#22863A"))
         self._rules.append((re.compile(r"!\[([^\]]*)\]\(([^)]+)\)"), image_fmt))
 
         # Blockquote format
@@ -100,7 +102,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         # List format
         list_fmt = QTextCharFormat()
-        list_fmt.setForeground(QColor("#60A5FA" if is_dark else "#005A9E"))
+        list_fmt.setForeground(QColor("#C8CFD9" if is_dark else "#005A9E"))
         self._rules.append((re.compile(r"^[\*\-\+]\s+.*$", re.MULTILINE), list_fmt))
         self._rules.append((re.compile(r"^\d+\.\s+.*$", re.MULTILINE), list_fmt))
 
@@ -239,7 +241,6 @@ class PreviewPage(ProgressMixin, QWidget):
             "}"
             "QListWidget::item {"
             f"color: {palette.text};"
-            "font-size: 15px;"
             "padding: 8px 14px;"
             "border-radius: 6px;"
             "border: none;"
@@ -827,7 +828,18 @@ class PreviewPage(ProgressMixin, QWidget):
 
         dialog = QDialog(self)
         dialog.setWindowTitle("样本卡片预览" if is_zh else "Sample Cards Preview")
-        dialog.setMinimumSize(600, 400)
+        screen = self.window().screen() if self.window() is not None else None
+        available = screen.availableGeometry() if screen is not None else None
+        scale = get_display_scale(screen=screen)
+        base_w = scale_px(600, scale=scale, min_value=560)
+        base_h = scale_px(400, scale=scale, min_value=360)
+        if available is not None:
+            max_w = max(520, available.width() - scale_px(120, scale=scale, min_value=120))
+            max_h = max(320, available.height() - scale_px(160, scale=scale, min_value=160))
+            dialog.setMinimumSize(min(base_w, max_w), min(base_h, max_h))
+            dialog.resize(min(base_w, max_w), min(base_h, max_h))
+        else:
+            dialog.setMinimumSize(base_w, base_h)
 
         layout = QVBoxLayout(dialog)
 
