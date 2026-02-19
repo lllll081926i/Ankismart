@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Intelligent Anki flashcard generation from documents"
 requires-python = ">=3.11"
 dependencies = [
-    "pyqt6>=6.6",
+    "pyqt6==6.10.2",
     "openai>=1.0",
     "python-docx>=1.0",
     "python-pptx>=0.6",
@@ -23,7 +23,7 @@ dependencies = [
     "numpy>=1.26",
     "pillow>=10.0",
     "pypdfium2>=4.30",
-    "pyqt6-fluent-widgets>=1.5",
+    "pyqt6-fluent-widgets==1.11.1",
 ]
 
 [project.scripts]
@@ -48,6 +48,13 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "p0: 发布门禁必须通过的 E2E 场景",
+    "p1: 建议通过的 E2E 场景",
+    "fast: 快速回归 E2E 场景",
+    "gate: 发布门禁 E2E 场景",
+    "gate_real: 更少 mock 的发布门禁 E2E 场景",
+]
 
 [tool.coverage.run]
 branch = true
