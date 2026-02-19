@@ -6,7 +6,17 @@ import logging
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from ankismart.core.logging import JsonFormatter, get_logger, setup_logging
+
+
+@pytest.fixture(autouse=True)
+def _reset_ankismart_logging() -> None:
+    """Keep global logger handlers isolated across tests."""
+    setup_logging()
+    yield
+    setup_logging()
 
 
 class TestJsonFormatter:

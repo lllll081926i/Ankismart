@@ -1,0 +1,6 @@
+{
+  "case_id": "E2E-MAIN-DOCX-001",
+  "expected_source_format": "docx",
+  "minimum_cards": 1,
+  "expected_push_failed": 0
+}

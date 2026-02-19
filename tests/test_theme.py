@@ -1,65 +1,59 @@
-"""Test script for theme switching functionality."""
+"""Theme switching smoke tests."""
 
-import sys
-from pathlib import Path
-
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+from __future__ import annotations
 
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import Qt, QTimer
-from qfluentwidgets import Theme, setTheme, isDarkTheme, qconfig
+from qfluentwidgets import Theme, setTheme
 
+from ankismart.anki_gateway.styling import PREVIEW_CARD_EXTRA_CSS
+from ankismart.core.config import AppConfig
+from ankismart.ui.card_preview_page import CardRenderer
 from ankismart.ui.main_window import MainWindow
+from ankismart.ui.styles import Colors, DarkColors
+
+_APP = QApplication.instance() or QApplication([])
 
 
-def test_theme_switching():
-    """Test theme switching functionality."""
-    app = QApplication(sys.argv)
-    app.setApplicationName("Ankismart Theme Test")
+def _get_app() -> QApplication:
+    return _APP
 
-    # Enable High DPI
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-    )
 
-    window = MainWindow()
+def test_theme_switching(monkeypatch) -> None:
+    monkeypatch.setattr("ankismart.ui.main_window.save_config", lambda _cfg: None)
+
+    app = _get_app()
+    window = MainWindow(config=AppConfig(theme="light", language="zh"))
     window.show()
+    app.processEvents()
 
-    print(f"Initial theme: {window.config.theme}")
-    print(f"Is dark theme: {isDarkTheme()}")
+    window.switch_theme("dark")
+    app.processEvents()
+    assert window.config.theme == "dark"
+    assert DarkColors.BACKGROUND in app.styleSheet()
 
-    # Test theme switching after 2 seconds
-    def switch_to_dark():
-        print("\n=== Switching to DARK theme ===")
-        window.switch_theme("dark")
-        print(f"Current theme: {window.config.theme}")
-        print(f"Is dark theme: {isDarkTheme()}")
+    window.switch_theme("light")
+    app.processEvents()
+    assert window.config.theme == "light"
+    assert Colors.BACKGROUND in app.styleSheet()
 
-        # Switch to light after 2 more seconds
-        QTimer.singleShot(2000, switch_to_light)
+    window.switch_theme("auto")
+    app.processEvents()
+    assert window.config.theme == "auto"
 
-    def switch_to_light():
-        print("\n=== Switching to LIGHT theme ===")
-        window.switch_theme("light")
-        print(f"Current theme: {window.config.theme}")
-        print(f"Is dark theme: {isDarkTheme()}")
-
-        # Switch to auto after 2 more seconds
-        QTimer.singleShot(2000, switch_to_auto)
-
-    def switch_to_auto():
-        print("\n=== Switching to AUTO theme ===")
-        window.switch_theme("auto")
-        print(f"Current theme: {window.config.theme}")
-        print(f"Is dark theme: {isDarkTheme()}")
-        print("\nAuto mode will follow system theme")
-
-    # Start the test sequence
-    QTimer.singleShot(2000, switch_to_dark)
-
-    return app.exec()
+    window.close()
+    app.processEvents()
 
 
-if __name__ == "__main__":
-    sys.exit(test_theme_switching())
+def test_card_preview_uses_shared_preview_css() -> None:
+    setTheme(Theme.LIGHT)
+    html = CardRenderer._wrap_html("<div>demo</div>", "basic")
+    assert ".card[data-card-type]" in PREVIEW_CARD_EXTRA_CSS
+    assert ".card[data-card-type]" in html
+    assert "Visual refresh from style demos" not in html
+
+
+def test_card_preview_dark_class_keeps_compatibility() -> None:
+    setTheme(Theme.DARK)
+    html = CardRenderer._wrap_html("<div>demo</div>", "basic")
+    assert '<body class="night_mode nightMode">' in html
+    setTheme(Theme.LIGHT)
