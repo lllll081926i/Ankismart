@@ -291,6 +291,7 @@ class MainWindow(FluentWindow):
         return {
             "import": t("nav.import", lang),
             "preview": t("nav.preview", lang),
+            "card_preview": t("nav.card_preview", lang),
             "result": t("nav.result", lang),
             "performance": t("nav.performance", lang),
             "settings": t("nav.settings", lang)
@@ -318,6 +319,8 @@ class MainWindow(FluentWindow):
             self.preview_page.retranslate_ui()
         if hasattr(self.result_page, "retranslate_ui"):
             self.result_page.retranslate_ui()
+        if hasattr(self.card_preview_page, "retranslate_ui"):
+            self.card_preview_page.retranslate_ui()
         if hasattr(self.performance_page, "retranslate_ui"):
             self.performance_page.retranslate_ui()
         if hasattr(self.settings_page, "retranslate_ui"):
@@ -384,12 +387,23 @@ class MainWindow(FluentWindow):
     def _refresh_navigation(self):
         """Refresh navigation labels after language change."""
         labels = self._get_navigation_labels()
+        set_item_text = getattr(self.navigationInterface, "setItemText", None)
+        if not callable(set_item_text):
+            return
 
-        # Update navigation item text
-        # Note: FluentWindow doesn't provide direct API to update navigation text
-        # We need to recreate navigation items
-        # For now, we'll just update the window title
-        # A full implementation would require recreating the navigation interface
+        route_to_label = {
+            self.import_page.objectName(): labels["import"],
+            self.preview_page.objectName(): labels["preview"],
+            self.card_preview_page.objectName(): labels["card_preview"],
+            self.result_page.objectName(): labels["result"],
+            self.performance_page.objectName(): labels["performance"],
+            self.settings_page.objectName(): labels["settings"],
+        }
+        for route_key, text in route_to_label.items():
+            try:
+                set_item_text(route_key, text)
+            except Exception:
+                continue
 
     def _switch_page(self, index: int) -> None:
         """Switch page by index for backward compatibility."""

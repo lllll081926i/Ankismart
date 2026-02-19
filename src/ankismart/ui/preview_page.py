@@ -156,10 +156,10 @@ class PreviewPage(ProgressMixin, QWidget):
         title_bar = QHBoxLayout()
         title_bar.setSpacing(MARGIN_SMALL)
 
-        title = BodyLabel()
-        title.setText("文档预览与编辑")
-        apply_page_title_style(title)
-        title_bar.addWidget(title)
+        self._title_label = BodyLabel()
+        self._title_label.setText("文档预览与编辑")
+        apply_page_title_style(self._title_label)
+        title_bar.addWidget(self._title_label)
 
         title_bar.addStretch()
 
@@ -288,6 +288,7 @@ class PreviewPage(ProgressMixin, QWidget):
             if self._documents:  # Only enable if we have documents
                 self._btn_save.setEnabled(True)
                 self._btn_generate.setEnabled(True)
+                self._btn_preview.setEnabled(True)
 
     def _hide_progress(self) -> None:
         """Hide all progress indicators (override from ProgressMixin)."""
@@ -316,6 +317,10 @@ class PreviewPage(ProgressMixin, QWidget):
         save_text = "保存编辑" if is_zh else "Save Edit"
         save_shortcut = get_shortcut_text(ShortcutKeys.SAVE_EDIT, self._main.config.language)
         self._btn_save.setToolTip(f"{save_text} ({save_shortcut})")
+
+        generate_text = "开始制作卡片" if is_zh else "Generate Cards"
+        generate_shortcut = get_shortcut_text(ShortcutKeys.START_GENERATION, self._main.config.language)
+        self._btn_generate.setToolTip(f"{generate_text} ({generate_shortcut})")
 
     def load_documents(self, batch_result: BatchConvertResult, pending_files_count: int = 0, total_expected: int = 0):
         """Load documents from batch conversion result.
@@ -588,6 +593,7 @@ class PreviewPage(ProgressMixin, QWidget):
         # Show progress
         self._btn_generate.setEnabled(False)
         self._btn_save.setEnabled(False)
+        self._btn_preview.setEnabled(False)
         self._progress_bar.show()
 
         # Create LLM client
@@ -722,35 +728,49 @@ class PreviewPage(ProgressMixin, QWidget):
                 except Exception as e:
                     self.error.emit(str(e))
 
-        # Create LLM client
-        llm_client = LLMClient(
-            api_key=provider.api_key,
-            base_url=provider.base_url,
-            model=provider.model,
-            rpm_limit=provider.rpm_limit,
-            temperature=self._main.config.llm_temperature,
-            max_tokens=self._main.config.llm_max_tokens,
-            proxy_url=self._main.config.proxy_url,
-        )
+        try:
+            # Create LLM client
+            llm_client = LLMClient(
+                api_key=provider.api_key,
+                base_url=provider.base_url,
+                model=provider.model,
+                rpm_limit=provider.rpm_limit,
+                temperature=self._main.config.llm_temperature,
+                max_tokens=self._main.config.llm_max_tokens,
+                proxy_url=self._main.config.proxy_url,
+            )
 
-        # Get deck and tags
-        deck_name = self._main.import_page._deck_combo.currentText().strip() or "Default"
-        tags_text = self._main.import_page._tags_input.text().strip()
-        from ankismart.ui.utils import split_tags_text
-        tags = split_tags_text(tags_text)
+            # Get deck and tags
+            deck_name = self._main.import_page._deck_combo.currentText().strip() or "Default"
+            tags_text = self._main.import_page._tags_input.text().strip()
+            from ankismart.ui.utils import split_tags_text
+            tags = split_tags_text(tags_text)
 
-        # Start worker
-        self._cleanup_sample_worker()
-        self._sample_worker = SampleGenerateWorker(
-            document, strategy_mix, llm_client, deck_name, tags
-        )
-        self._sample_worker.finished.connect(self._on_sample_finished)
-        self._sample_worker.error.connect(self._on_sample_error)
-        self._sample_worker.start()
+            # Start worker and prevent duplicate sample requests.
+            self._cleanup_sample_worker()
+            self._sample_worker = SampleGenerateWorker(
+                document, strategy_mix, llm_client, deck_name, tags
+            )
+            self._sample_worker.finished.connect(self._on_sample_finished)
+            self._sample_worker.error.connect(self._on_sample_error)
+            self._btn_preview.setEnabled(False)
+            self._sample_worker.start()
+        except Exception as e:
+            self._btn_preview.setEnabled(True)
+            InfoBar.error(
+                title="错误" if is_zh else "Error",
+                content=f"样本生成初始化失败：{e}" if is_zh else f"Failed to initialize sample generation: {e}",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=5000,
+                parent=self,
+            )
 
     def _on_sample_finished(self, cards):
         """Handle sample generation completion."""
         self._cleanup_sample_worker()
+        self._btn_preview.setEnabled(True)
         is_zh = self._main.config.language == "zh"
 
         if not cards:
@@ -784,12 +804,16 @@ class PreviewPage(ProgressMixin, QWidget):
         text_edit.setReadOnly(True)
 
         card_texts = []
+        card_title_prefix = "卡片" if is_zh else "Card"
+        front_label = "正面" if is_zh else "Front"
+        back_label = "背面" if is_zh else "Back"
+        extra_label = "额外信息" if is_zh else "Extra"
         for i, card in enumerate(cards, 1):
-            card_text = f"### 卡片 {i} ({card.card_type})\n\n"
-            card_text += f"**正面：**\n{card.front}\n\n"
-            card_text += f"**背面：**\n{card.back}\n\n"
+            card_text = f"### {card_title_prefix} {i} ({card.card_type})\n\n"
+            card_text += f"**{front_label}:**\n{card.front}\n\n"
+            card_text += f"**{back_label}:**\n{card.back}\n\n"
             if card.extra:
-                card_text += f"**额外信息：**\n{card.extra}\n\n"
+                card_text += f"**{extra_label}:**\n{card.extra}\n\n"
             card_text += "---\n\n"
             card_texts.append(card_text)
 
@@ -806,6 +830,7 @@ class PreviewPage(ProgressMixin, QWidget):
     def _on_sample_error(self, error: str):
         """Handle sample generation error."""
         self._cleanup_sample_worker()
+        self._btn_preview.setEnabled(True)
         is_zh = self._main.config.language == "zh"
         InfoBar.error(
             title="错误" if is_zh else "Error",
@@ -936,6 +961,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
+        self._btn_preview.setEnabled(True)
 
         if not cards:
             InfoBar.warning(
@@ -991,6 +1017,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
+        self._btn_preview.setEnabled(True)
         InfoBar.error(
             title=title,
             content=message,
@@ -1016,6 +1043,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
+        self._btn_preview.setEnabled(True)
 
         InfoBar.warning(
             title="已取消" if is_zh else "Cancelled",
@@ -1050,6 +1078,7 @@ class PreviewPage(ProgressMixin, QWidget):
         """Start pushing cards to Anki."""
         self._btn_generate.setEnabled(False)
         self._btn_save.setEnabled(False)
+        self._btn_preview.setEnabled(False)
         self._progress_bar.show()
 
         # Apply duplicate check settings to cards
@@ -1104,6 +1133,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
+        self._btn_preview.setEnabled(True)
 
         # Sync result data without automatic page navigation.
         self._main.result_page.load_result(result, self._main.cards)
@@ -1134,6 +1164,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
+        self._btn_preview.setEnabled(True)
         InfoBar.error(
             title="错误" if is_zh else "Error",
             content=error,
@@ -1155,6 +1186,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
+        self._btn_preview.setEnabled(True)
 
         InfoBar.warning(
             title="已取消" if is_zh else "Cancelled",
@@ -1171,8 +1203,10 @@ class PreviewPage(ProgressMixin, QWidget):
         """Retranslate UI elements when language changes."""
         is_zh = self._main.config.language == "zh"
 
-        # Update button text
+        # Update title and button text
+        self._title_label.setText("文档预览与编辑" if is_zh else "Document Preview & Edit")
         self._btn_save.setText("保存编辑" if is_zh else "Save Edit")
+        self._btn_preview.setText("生成样本卡片" if is_zh else "Preview Sample")
         self._btn_generate.setText("开始制作卡片" if is_zh else "Generate Cards")
 
         # Update tooltips with shortcuts

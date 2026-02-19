@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -43,9 +42,7 @@ from ankismart.core.models import CardDraft, CardPushStatus, PushResult
 from ankismart.ui.card_edit_widget import CardEditDialog
 from ankismart.ui.i18n import t
 from ankismart.ui.workers import ExportWorker, PushWorker
-from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
 from ankismart.ui.styles import (
-    SPACING_LARGE,
     SPACING_MEDIUM,
     SPACING_SMALL,
     MARGIN_STANDARD,
@@ -74,18 +71,19 @@ class ResultPage(QWidget):
         layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
 
         # Title
-        title = TitleLabel(t("result.title"))
-        apply_page_title_style(title)
-        layout.addWidget(title)
+        self._title_label = TitleLabel(t("result.title"))
+        apply_page_title_style(self._title_label)
+        layout.addWidget(self._title_label)
 
         # Statistics cards row
         stats_row = QHBoxLayout()
         stats_row.setSpacing(SPACING_MEDIUM)
 
-        self._card_total = self._create_stat_card("总卡片数", "0", "#409EFF")
-        self._card_success = self._create_stat_card("成功推送", "0", "#67C23A")
-        self._card_failed = self._create_stat_card("失败", "0", "#F56C6C")
-        self._card_skipped = self._create_stat_card("跳过", "0", "#E6A23C")
+        lang = getattr(self._main.config, "language", "zh")
+        self._card_total = self._create_stat_card(t("result.total_cards", lang), "0", "#409EFF")
+        self._card_success = self._create_stat_card(t("result.success_pushed", lang), "0", "#67C23A")
+        self._card_failed = self._create_stat_card(t("result.failed", lang), "0", "#F56C6C")
+        self._card_skipped = self._create_stat_card(t("result.skipped", lang), "0", "#E6A23C")
 
         stats_row.addWidget(self._card_total)
         stats_row.addWidget(self._card_success)
@@ -100,8 +98,8 @@ class ResultPage(QWidget):
         layout.addWidget(settings_card)
 
         # Results table
-        table_label = SubtitleLabel("详细结果")
-        layout.addWidget(table_label)
+        self._table_label = SubtitleLabel(t("result.detail_results", lang))
+        layout.addWidget(self._table_label)
 
         self._table = TableWidget()
         self._table.setBorderVisible(True)
@@ -114,7 +112,9 @@ class ResultPage(QWidget):
         self._header_checkbox = CheckBox()
         self._header_checkbox.stateChanged.connect(self._on_select_all_changed)
 
-        self._table.setHorizontalHeaderLabels(["", "卡片标题", "状态", "错误信息", "操作"])
+        self._table.setHorizontalHeaderLabels(
+            ["", t("result.card_title", lang), t("result.status", lang), t("result.error_message", lang), "操作" if lang == "zh" else "Action"]
+        )
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
@@ -142,19 +142,19 @@ class ResultPage(QWidget):
         self._btn_batch_edit_deck.setEnabled(False)
         all_buttons_row.addWidget(self._btn_batch_edit_deck)
 
-        self._btn_retry = PushButton("重试失败卡片" if self._language == "zh" else "Retry Failed")
+        self._btn_retry = PushButton(t("result.retry_failed", lang))
         self._btn_retry.setMinimumHeight(40)
         self._btn_retry.clicked.connect(self._retry_failed)
         self._btn_retry.setEnabled(False)
         all_buttons_row.addWidget(self._btn_retry)
 
-        self._btn_repush_all = PushButton("推送所有卡片" if self._language == "zh" else "Push All Cards")
+        self._btn_repush_all = PushButton("推送所有卡片" if lang == "zh" else "Push All Cards")
         self._btn_repush_all.setMinimumHeight(40)
         self._btn_repush_all.clicked.connect(self._repush_all_cards)
         self._btn_repush_all.setEnabled(False)
         all_buttons_row.addWidget(self._btn_repush_all)
 
-        self._btn_export_apkg = PushButton("导出为 APKG" if self._language == "zh" else "Export as APKG")
+        self._btn_export_apkg = PushButton("导出为 APKG" if lang == "zh" else "Export as APKG")
         self._btn_export_apkg.setMinimumHeight(40)
         self._btn_export_apkg.clicked.connect(self._export_apkg)
         self._btn_export_apkg.setEnabled(False)
@@ -410,6 +410,7 @@ class ResultPage(QWidget):
         card_layout.setContentsMargins(MARGIN_STANDARD, SPACING_MEDIUM, MARGIN_STANDARD, SPACING_MEDIUM)
 
         title_label = CaptionLabel(title)
+        title_label.setObjectName("stat_title")
         card_layout.addWidget(title_label)
 
         value_label = TitleLabel(value)
@@ -423,9 +424,15 @@ class ResultPage(QWidget):
 
     def _update_stat_card(self, card: CardWidget, value: str) -> None:
         """更新统计卡片的值。"""
-        value_label = card.findChild(BodyLabel, "stat_value")
+        value_label = card.findChild(TitleLabel, "stat_value")
         if value_label:
             value_label.setText(value)
+
+    def _set_stat_card_title(self, card: CardWidget, title: str) -> None:
+        """更新统计卡片的标题。"""
+        title_label = card.findChild(CaptionLabel, "stat_title")
+        if title_label:
+            title_label.setText(title)
 
     def showEvent(self, event: Any) -> None:  # noqa: N802
         """页面显示时刷新数据。"""
@@ -462,7 +469,7 @@ class ResultPage(QWidget):
         # Enable/disable buttons
         has_failed = result.failed > 0
         self._btn_retry.setEnabled(has_failed)
-        self._btn_export_apkg.setEnabled(has_failed)
+        self._btn_export_apkg.setEnabled(bool(cards))
 
         # Show info bar
         if result.succeeded == result.total:
@@ -503,7 +510,8 @@ class ResultPage(QWidget):
         self._table.setCellWidget(row, 0, checkbox_widget)
 
         # Card title (from first field)
-        card_title = "未知卡片"
+        lang = getattr(self._main.config, "language", "zh")
+        card_title = t("result.unknown_card", lang)
         if 0 <= status.index < len(cards):
             card = cards[status.index]
             if card.fields:
@@ -515,13 +523,13 @@ class ResultPage(QWidget):
 
         # Status with color
         if status.success:
-            status_text = "成功"
+            status_text = t("result.status_success", lang)
             status_color = "#67C23A"
         elif status.error:
-            status_text = "失败"
+            status_text = t("result.status_failed", lang)
             status_color = "#F56C6C"
         else:
-            status_text = "跳过"
+            status_text = t("result.status_skipped", lang)
             status_color = "#E6A23C"
 
         status_item = QTableWidgetItem(status_text)
@@ -1071,20 +1079,36 @@ class ResultPage(QWidget):
 
     def retranslate_ui(self):
         """Retranslate UI elements when language changes."""
-        is_zh = getattr(self._main.config, "language", "zh") == "zh"
+        lang = getattr(self._main.config, "language", "zh")
+        is_zh = lang == "zh"
 
-        # Update button text and tooltips
-        export_text = "导出失败卡片" if is_zh else "Export Failed Cards"
-        export_shortcut = get_shortcut_text(
-            ShortcutKeys.EXPORT_CARDS,
-            getattr(self._main.config, "language", "zh"),
+        self._title_label.setText(t("result.title", lang))
+        self._table_label.setText(t("result.detail_results", lang))
+        self._table.setHorizontalHeaderLabels(
+            ["", t("result.card_title", lang), t("result.status", lang), t("result.error_message", lang), "操作" if is_zh else "Action"]
         )
-        self._btn_export_failed.setText(export_text)
-        self._btn_export_failed.setToolTip(f"{export_text} ({export_shortcut})")
 
-        self._btn_retry.setText("重试失败卡片" if is_zh else "Retry Failed Cards")
+        self._set_stat_card_title(self._card_total, t("result.total_cards", lang))
+        self._set_stat_card_title(self._card_success, t("result.success_pushed", lang))
+        self._set_stat_card_title(self._card_failed, t("result.failed", lang))
+        self._set_stat_card_title(self._card_skipped, t("result.skipped", lang))
+
+        self._btn_batch_edit_tags.setText(t("result.batch_edit_tags", lang))
+        self._btn_batch_edit_deck.setText(t("result.batch_edit_deck", lang))
+        self._btn_retry.setText(t("result.retry_failed", lang))
         self._btn_repush_all.setText("推送所有卡片" if is_zh else "Push All Cards")
-        self._btn_back.setText("返回预览" if is_zh else "Back to Preview")
+        self._btn_export_apkg.setText("导出为 APKG" if is_zh else "Export as APKG")
+
+        self._update_combo.setItemText(0, t("result.create_only", lang))
+        self._update_combo.setItemText(1, t("result.update_only", lang))
+        self._update_combo.setItemText(2, t("result.create_or_update", lang))
+
+        self._duplicate_scope_combo.setItemText(0, t("result.duplicate_scope_deck", lang))
+        self._duplicate_scope_combo.setItemText(1, t("result.duplicate_scope_collection", lang))
+
+        # Refresh row content (status/error/action texts) with the active language.
+        if self._push_result:
+            self._display_result(self._push_result, self._cards)
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""

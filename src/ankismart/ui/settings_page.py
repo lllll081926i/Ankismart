@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QEvent, Qt, pyqtSignal, QUrl
+from PyQt6.QtCore import QEvent, Qt, pyqtSignal, QUrl, QTimer
 from PyQt6.QtGui import QWheelEvent, QDesktopServices
 from PyQt6.QtWidgets import (
     QDialog,
@@ -235,6 +235,10 @@ class SettingsPage(ScrollArea):
         self._provider_list_widget: ProviderListWidget | None = None
         self._provider_test_worker = None
         self._anki_test_worker = None
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.setInterval(400)
+        self._autosave_timer.timeout.connect(self._save_config_silent)
 
         # Create scroll widget
         self.scrollWidget = QWidget()
@@ -282,31 +286,35 @@ class SettingsPage(ScrollArea):
     def _connect_auto_save_signals(self):
         """Connect all control signals to auto-save configuration."""
         # LLM settings
-        self._temperature_slider.valueChanged.connect(self._save_config_silent)
-        self._max_tokens_spin.valueChanged.connect(self._save_config_silent)
-        self._concurrency_spin.valueChanged.connect(self._save_config_silent)
+        self._temperature_slider.valueChanged.connect(self._schedule_auto_save)
+        self._max_tokens_spin.valueChanged.connect(self._schedule_auto_save)
+        self._concurrency_spin.valueChanged.connect(self._schedule_auto_save)
 
         # Anki settings
-        self._anki_url_edit.textChanged.connect(self._save_config_silent)
-        self._anki_key_edit.textChanged.connect(self._save_config_silent)
-        self._default_deck_edit.textChanged.connect(self._save_config_silent)
-        self._default_tags_edit.textChanged.connect(self._save_config_silent)
+        self._anki_url_edit.textChanged.connect(self._schedule_auto_save)
+        self._anki_key_edit.textChanged.connect(self._schedule_auto_save)
+        self._default_deck_edit.textChanged.connect(self._schedule_auto_save)
+        self._default_tags_edit.textChanged.connect(self._schedule_auto_save)
 
         # Other settings
-        self._language_combo.currentIndexChanged.connect(self._save_config_silent)
-        self._proxy_mode_combo.currentIndexChanged.connect(self._save_config_silent)
-        self._proxy_edit.textChanged.connect(self._save_config_silent)
-        self._ocr_correction_switch.checkedChanged.connect(self._save_config_silent)
+        self._language_combo.currentIndexChanged.connect(self._schedule_auto_save)
+        self._proxy_mode_combo.currentIndexChanged.connect(self._schedule_auto_save)
+        self._proxy_edit.textChanged.connect(self._schedule_auto_save)
+        self._ocr_correction_switch.checkedChanged.connect(self._schedule_auto_save)
 
         # OCR settings
-        self._ocr_mode_combo.currentIndexChanged.connect(self._save_config_silent)
-        self._ocr_model_tier_combo.currentIndexChanged.connect(self._save_config_silent)
-        self._ocr_source_combo.currentIndexChanged.connect(self._save_config_silent)
-        self._ocr_cuda_auto_card.checkedChanged.connect(self._save_config_silent)
+        self._ocr_mode_combo.currentIndexChanged.connect(self._schedule_auto_save)
+        self._ocr_model_tier_combo.currentIndexChanged.connect(self._schedule_auto_save)
+        self._ocr_source_combo.currentIndexChanged.connect(self._schedule_auto_save)
+        self._ocr_cuda_auto_card.checkedChanged.connect(self._schedule_auto_save)
 
         # Experimental features
-        self._auto_split_switch.checkedChanged.connect(self._save_config_silent)
-        self._split_threshold_spinbox.valueChanged.connect(self._save_config_silent)
+        self._auto_split_switch.checkedChanged.connect(self._schedule_auto_save)
+        self._split_threshold_spinbox.valueChanged.connect(self._schedule_auto_save)
+
+    def _schedule_auto_save(self, *_args) -> None:
+        """Debounce auto-save to avoid frequent disk writes while typing."""
+        self._autosave_timer.start()
 
     def _show_info_bar(self, level: str, title: str, content: str, duration: int = 3000) -> None:
         """Show fluent InfoBar notifications consistently."""
@@ -1338,6 +1346,8 @@ class SettingsPage(ScrollArea):
             )
             return
 
+        if self._autosave_timer.isActive():
+            self._autosave_timer.stop()
         self._save_config_silent(show_feedback=True)
 
     @staticmethod
@@ -1454,6 +1464,8 @@ class SettingsPage(ScrollArea):
 
     def _reset_to_default(self) -> None:
         """Reset configuration to default values."""
+        if self._autosave_timer.isActive():
+            self._autosave_timer.stop()
         reply = QMessageBox.question(
             self,
             "确认重置",

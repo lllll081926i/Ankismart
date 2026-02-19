@@ -1039,8 +1039,18 @@ class ImportPage(ProgressMixin, QWidget):
             self._deck_combo.setCurrentText(current_text)
         self._cleanup_deck_loader_worker()
 
-    def _on_decks_load_error(self, _error: str):
-        """Handle deck loading error silently but release worker reference."""
+    def _on_decks_load_error(self, error: str):
+        """Handle deck loading error and release worker reference."""
+        is_zh = self._main.config.language == "zh"
+        InfoBar.warning(
+            title="牌组加载失败" if is_zh else "Failed to Load Decks",
+            content=f"无法从 Anki 读取牌组：{error}" if is_zh else f"Unable to load decks from Anki: {error}",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=3500,
+            parent=self,
+        )
         self._cleanup_deck_loader_worker()
 
     def _cleanup_batch_worker(self) -> None:

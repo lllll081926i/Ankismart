@@ -592,6 +592,8 @@ class CardPreviewPage(QWidget):
         layout.addWidget(self._progress_bar)
 
         self._apply_theme_styles()
+        self._set_total_count_text(0)
+        self._set_card_meta_labels(None)
 
     def _create_top_bar(self) -> QHBoxLayout:
         """Create top bar with title and filters."""
@@ -599,15 +601,15 @@ class CardPreviewPage(QWidget):
         layout.setSpacing(SPACING_MEDIUM)
 
         # Title
-        title = TitleLabel("卡片预览" if self._main.config.language == "zh" else "Card Preview")
-        apply_page_title_style(title)
-        layout.addWidget(title)
+        self._title_label = TitleLabel("卡片预览" if self._main.config.language == "zh" else "Card Preview")
+        apply_page_title_style(self._title_label)
+        layout.addWidget(self._title_label)
 
         layout.addStretch()
 
         # Filter by note type
-        filter_label = BodyLabel("筛选:" if self._main.config.language == "zh" else "Filter:")
-        layout.addWidget(filter_label)
+        self._filter_label = BodyLabel("筛选:" if self._main.config.language == "zh" else "Filter:")
+        layout.addWidget(self._filter_label)
 
         self._note_type_combo = ComboBox()
         self._note_type_combo.addItem("全部" if self._main.config.language == "zh" else "All", userData="all")
@@ -637,8 +639,8 @@ class CardPreviewPage(QWidget):
         layout.setSpacing(MARGIN_SMALL)
 
         # List title
-        list_title = BodyLabel("卡片列表" if self._main.config.language == "zh" else "Card List")
-        layout.addWidget(list_title)
+        self._list_title_label = BodyLabel("卡片列表" if self._main.config.language == "zh" else "Card List")
+        layout.addWidget(self._list_title_label)
 
         # Card list
         self._card_list = QListWidget()
@@ -722,6 +724,31 @@ class CardPreviewPage(QWidget):
         if self._filtered_cards:
             self._show_card(0)
 
+    def _set_total_count_text(self, count: int) -> None:
+        """Update total count text based on current language."""
+        is_zh = self._main.config.language == "zh"
+        self._count_label.setText(f"{count} 张卡片" if is_zh else f"{count} cards")
+
+    def _set_card_meta_labels(self, card: CardDraft | None = None) -> None:
+        """Update card metadata labels with localization."""
+        is_zh = self._main.config.language == "zh"
+        if card is None:
+            self._note_type_label.setText("类型: -" if is_zh else "Type: -")
+            self._deck_label.setText("牌组: -" if is_zh else "Deck: -")
+            self._tags_label.setText("标签: -" if is_zh else "Tags: -")
+            return
+
+        tags_text = ", ".join(card.tags) if card.tags else "-"
+        self._note_type_label.setText(
+            f"类型: {card.note_type}" if is_zh else f"Type: {card.note_type}"
+        )
+        self._deck_label.setText(
+            f"牌组: {card.deck_name}" if is_zh else f"Deck: {card.deck_name}"
+        )
+        self._tags_label.setText(
+            f"标签: {tags_text}" if is_zh else f"Tags: {tags_text}"
+        )
+
     def _apply_filters(self):
         """Apply current filter settings to card list."""
         filtered = self._all_cards
@@ -757,11 +784,13 @@ class CardPreviewPage(QWidget):
             self._card_list.addItem(item)
 
         # Update count label
-        self._count_label.setText(f"{len(self._filtered_cards)} 张卡片")
+        self._set_total_count_text(len(self._filtered_cards))
 
         # Select first card if available
         if self._filtered_cards:
             self._card_list.setCurrentRow(0)
+        else:
+            self._set_card_meta_labels(None)
 
     def _on_card_selected(self, index: int):
         """Handle card selection from list."""
@@ -780,9 +809,7 @@ class CardPreviewPage(QWidget):
         self._card_list.setCurrentRow(index)
 
         # Update info bar
-        self._note_type_label.setText(f"类型: {card.note_type}")
-        self._deck_label.setText(f"牌组: {card.deck_name}")
-        self._tags_label.setText(f"标签: {', '.join(card.tags) if card.tags else '-'}")
+        self._set_card_meta_labels(card)
 
         # Render card - always show both question and answer
         html = CardRenderer.render_card(card)
@@ -872,6 +899,26 @@ class CardPreviewPage(QWidget):
         self._apply_browser_theme()
         if 0 <= self._current_index < len(self._filtered_cards):
             self._show_card(self._current_index)
+
+    def retranslate_ui(self) -> None:
+        """Retranslate UI text when language changes."""
+        is_zh = self._main.config.language == "zh"
+        self._title_label.setText("卡片预览" if is_zh else "Card Preview")
+        self._filter_label.setText("筛选:" if is_zh else "Filter:")
+        self._note_type_combo.setItemText(0, "全部" if is_zh else "All")
+        self._search_input.setPlaceholderText(
+            "搜索卡片内容..." if is_zh else "Search card content..."
+        )
+        self._list_title_label.setText("卡片列表" if is_zh else "Card List")
+        self._btn_prev.setText("上一张" if is_zh else "Previous")
+        self._btn_next.setText("下一张" if is_zh else "Next")
+        self._btn_push.setText("推送到 Anki" if is_zh else "Push to Anki")
+
+        if 0 <= self._current_index < len(self._filtered_cards):
+            self._show_card(self._current_index)
+        else:
+            self._set_total_count_text(len(self._filtered_cards))
+            self._set_card_meta_labels(None)
 
     def _push_to_anki(self):
         """Push all cards to Anki."""

@@ -34,6 +34,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     # Navigation labels
     "nav.import": {"zh": "导入", "en": "Import"},
     "nav.preview": {"zh": "预览", "en": "Preview"},
+    "nav.card_preview": {"zh": "卡片预览", "en": "Card Preview"},
     "nav.result": {"zh": "结果", "en": "Result"},
     "nav.performance": {"zh": "性能统计", "en": "Performance"},
     "nav.settings": {"zh": "设置", "en": "Settings"},
