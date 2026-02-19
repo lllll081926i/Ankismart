@@ -38,6 +38,8 @@ from ankismart.ui.styles import (
     MARGIN_STANDARD,
     SPACING_LARGE,
     SPACING_MEDIUM,
+    SPACING_SMALL,
+    apply_compact_combo_metrics,
     apply_page_title_style,
     get_list_widget_palette,
 )
@@ -446,9 +448,10 @@ class CardRenderer:
     @staticmethod
     def _wrap_html(content: str, card_type: str = "basic") -> str:
         """Wrap content with CSS and card structure."""
-        from ankismart.anki_gateway.styling import MODERN_CARD_CSS
+        from ankismart.anki_gateway.styling import MODERN_CARD_CSS, PREVIEW_CARD_EXTRA_CSS
 
-        body_class = "night_mode" if isDarkTheme() else ""
+        # Keep both class names for compatibility with historical CSS selectors.
+        body_class = "night_mode nightMode" if isDarkTheme() else ""
 
         return f"""
         <!DOCTYPE html>
@@ -457,500 +460,7 @@ class CardRenderer:
             <meta charset="UTF-8">
             <style>
             {MODERN_CARD_CSS}
-
-            /* Card Type Specific Styles */
-            .card-basic, .card-reversed, .card-cloze, .card-concept,
-            .card-keyterm, .card-choice, .card-image, .card-generic {{
-                padding: 32px;
-                min-height: 400px;
-            }}
-
-            /* Notice Badges */
-            .reversed-notice, .cloze-notice, .concept-notice,
-            .keyterm-notice, .choice-notice, .image-notice {{
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                padding: 8px 16px;
-                background: linear-gradient(135deg, #0078d4 0%, #005a9e 100%);
-                color: white;
-                border-radius: 20px;
-                font-size: 14px;
-                font-weight: 600;
-                margin-bottom: 24px;
-                box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
-            }}
-
-            .night_mode .reversed-notice,
-            .night_mode .cloze-notice,
-            .night_mode .concept-notice,
-            .night_mode .keyterm-notice,
-            .night_mode .choice-notice,
-            .night_mode .image-notice {{
-                background: linear-gradient(135deg, #4db8ff 0%, #0078d4 100%);
-                box-shadow: 0 2px 8px rgba(77, 184, 255, 0.3);
-            }}
-
-            .notice-icon {{
-                font-size: 18px;
-            }}
-
-            .notice-text {{
-                font-size: 14px;
-                letter-spacing: 0.5px;
-            }}
-
-            /* Section Styles */
-            .question-section, .answer-section,
-            .concept-term, .concept-explanation,
-            .keyterm-term, .keyterm-definition,
-            .choice-question, .choice-answer,
-            .image-question, .image-answer {{
-                margin: 32px 0;
-            }}
-
-            .section-label {{
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                font-size: 16px;
-                font-weight: 700;
-                color: #0078d4;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                margin-bottom: 16px;
-            }}
-
-            .night_mode .section-label {{
-                color: #4db8ff;
-            }}
-
-            .label-icon {{
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 32px;
-                height: 32px;
-                background: #0078d4;
-                color: white;
-                border-radius: 8px;
-                font-size: 16px;
-                font-weight: 700;
-            }}
-
-            .night_mode .label-icon {{
-                background: #4db8ff;
-                color: #1e1e1e;
-            }}
-
-            .section-content {{
-                font-size: 20px;
-                line-height: 2;
-                padding: 16px 20px;
-                border-left: 4px solid #0078d4;
-                background: rgba(0, 120, 212, 0.03);
-                border-radius: 0 8px 8px 0;
-            }}
-
-            .night_mode .section-content {{
-                border-left-color: #4db8ff;
-                background: rgba(77, 184, 255, 0.05);
-            }}
-
-            /* Concept Card Specific */
-            .concept-name {{
-                font-size: 24px;
-                font-weight: 700;
-                color: #0078d4;
-            }}
-
-            .night_mode .concept-name {{
-                color: #4db8ff;
-            }}
-
-            /* Key Term Card Specific */
-            .keyterm-name {{
-                font-size: 24px;
-                font-weight: 700;
-                color: #0078d4;
-                font-style: italic;
-            }}
-
-            .night_mode .keyterm-name {{
-                color: #4db8ff;
-            }}
-
-            /* Cloze Card Specific */
-            .cloze-content-wrapper {{
-                font-size: 20px;
-                line-height: 2.2;
-                padding: 24px;
-                background: rgba(0, 120, 212, 0.03);
-                border-radius: 12px;
-                border: 2px solid rgba(0, 120, 212, 0.1);
-            }}
-
-            .night_mode .cloze-content-wrapper {{
-                background: rgba(77, 184, 255, 0.05);
-                border-color: rgba(77, 184, 255, 0.15);
-            }}
-
-            .cloze {{
-                display: inline-block;
-                padding: 4px 12px;
-                margin: 0 4px;
-                background: linear-gradient(135deg, #0078d4 0%, #005a9e 100%);
-                color: white;
-                border-radius: 6px;
-                font-weight: 600;
-                font-size: 20px;
-                box-shadow: 0 2px 6px rgba(0, 120, 212, 0.3);
-            }}
-
-            .night_mode .cloze {{
-                background: linear-gradient(135deg, #4db8ff 0%, #0078d4 100%);
-                box-shadow: 0 2px 6px rgba(77, 184, 255, 0.3);
-            }}
-
-            .cloze-bracket {{
-                font-weight: 700;
-                font-size: 22px;
-            }}
-
-            .cloze-content {{
-                padding: 0 4px;
-            }}
-
-            /* Divider */
-            .divider {{
-                height: 3px;
-                background: linear-gradient(to right, transparent 5%, #0078d4 50%, transparent 95%);
-                margin: 48px 0;
-                border-radius: 2px;
-                box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
-            }}
-
-            .night_mode .divider {{
-                background: linear-gradient(to right, transparent 5%, #4db8ff 50%, transparent 95%);
-                box-shadow: 0 2px 8px rgba(77, 184, 255, 0.3);
-            }}
-
-            /* Generic Card */
-            .field {{
-                margin-bottom: 24px;
-                padding: 20px;
-                background: rgba(0, 120, 212, 0.03);
-                border-radius: 8px;
-                border-left: 4px solid #0078d4;
-            }}
-
-            .night_mode .field {{
-                background: rgba(77, 184, 255, 0.05);
-                border-left-color: #4db8ff;
-            }}
-
-            .field-name {{
-                font-size: 16px;
-                font-weight: 700;
-                color: #0078d4;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                margin-bottom: 12px;
-            }}
-
-            .night_mode .field-name {{
-                color: #4db8ff;
-            }}
-
-            .field-content {{
-                font-size: 20px;
-                line-height: 2;
-            }}
-
-            /* Visual refresh from style demos (local copy, no runtime dependency) */
-            .card[data-card-type] {{
-                --bg: #f3f7fc;
-                --bg-grad-a: #d9e9ff;
-                --bg-grad-b: #dff7ec;
-                --surface: #ffffff;
-                --text-primary: #0f1c2e;
-                --text-secondary: #4b5a72;
-                --border: #d8e2f0;
-                --shadow-sm: 0 10px 24px rgba(16, 39, 72, 0.12);
-                --radius-lg: 16px;
-                --radius-md: 12px;
-                --q1-border: #d14343;
-                --q1-head: #fff2f2;
-                --q2-border: #e38a17;
-                --q2-head: #fff7eb;
-                --q3-border: #2d7fd3;
-                --q3-head: #edf6ff;
-                --q4-border: #3b8f4f;
-                --q4-head: #eefaf1;
-                background:
-                    radial-gradient(900px 540px at -10% -10%, var(--bg-grad-a) 0%, rgba(217, 233, 255, 0) 60%),
-                    radial-gradient(760px 420px at 110% 15%, var(--bg-grad-b) 0%, rgba(223, 247, 236, 0) 60%),
-                    var(--bg);
-                color: var(--text-primary);
-                padding: 18px;
-            }}
-
-            .night_mode .card[data-card-type] {{
-                --bg: #0f1724;
-                --bg-grad-a: #1a2a40;
-                --bg-grad-b: #1b3345;
-                --surface: #111b2b;
-                --text-primary: #e5edf7;
-                --text-secondary: #95a3b8;
-                --border: #2a3951;
-                --shadow-sm: 0 10px 24px rgba(0, 0, 0, 0.32);
-                --q1-border: #be6464;
-                --q1-head: #2e1f2a;
-                --q2-border: #c18a46;
-                --q2-head: #322a22;
-                --q3-border: #4f89bf;
-                --q3-head: #1f2d42;
-                --q4-border: #4b8a60;
-                --q4-head: #1d2f28;
-            }}
-
-            .card-basic, .card-reversed, .card-cloze, .card-concept,
-            .card-keyterm, .card-choice, .card-image, .card-generic {{
-                max-width: 960px;
-                margin: 0 auto;
-                border: 1px solid var(--border);
-                border-radius: var(--radius-lg);
-                box-shadow: var(--shadow-sm);
-                background: var(--surface);
-                overflow: hidden;
-                padding: 16px 18px 20px;
-            }}
-
-            .card[data-card-type="basic"] .card-basic,
-            .card[data-card-type="choice"] .card-choice {{
-                border-top: 4px solid var(--q1-border);
-            }}
-
-            .card[data-card-type="concept"] .card-concept,
-            .card[data-card-type="image"] .card-image {{
-                border-top: 4px solid var(--q2-border);
-            }}
-
-            .card[data-card-type="cloze"] .card-cloze,
-            .card[data-card-type="reversed"] .card-reversed {{
-                border-top: 4px solid var(--q3-border);
-            }}
-
-            .card[data-card-type="keyterm"] .card-keyterm,
-            .card[data-card-type="generic"] .card-generic {{
-                border-top: 4px solid var(--q4-border);
-            }}
-
-            .reversed-notice, .cloze-notice, .concept-notice,
-            .keyterm-notice, .choice-notice, .image-notice {{
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                padding: 4px 12px;
-                border-radius: 999px;
-                border: 1px solid var(--border);
-                background: #f5f9ff;
-                color: var(--text-secondary);
-                font-size: 12px;
-                font-weight: 700;
-                letter-spacing: 0.3px;
-                margin-bottom: 14px;
-            }}
-
-            .notice-icon {{
-                font-size: 14px;
-            }}
-
-            .question-section, .answer-section,
-            .concept-term, .concept-explanation,
-            .keyterm-term, .keyterm-definition,
-            .choice-question, .choice-answer,
-            .image-question, .image-answer {{
-                margin: 0;
-            }}
-
-            .section-label {{
-                display: inline-block;
-                margin: 0 0 8px;
-                border-radius: 999px;
-                padding: 2px 10px;
-                border: 1px solid var(--border);
-                background: #f5f9ff;
-                color: var(--text-secondary);
-                font-size: 11px;
-                font-weight: 700;
-                letter-spacing: 0.4px;
-                text-transform: uppercase;
-            }}
-
-            .label-icon {{
-                display: none;
-            }}
-
-            .section-content {{
-                font-size: 17px;
-                line-height: 1.7;
-                padding: 12px;
-                border: 1px solid var(--border);
-                background: #fbfdff;
-                border-radius: var(--radius-md);
-                color: var(--text-primary);
-            }}
-
-            .night_mode .section-content {{
-                background: rgba(18, 29, 44, 0.9);
-                border-color: var(--border);
-            }}
-
-            .concept-name,
-            .keyterm-name {{
-                font-size: 19px;
-                color: #1f6fd6;
-            }}
-
-            .night_mode .concept-name,
-            .night_mode .keyterm-name {{
-                color: #8cc2ff;
-            }}
-
-            .choice-options {{
-                margin-top: 10px;
-                display: grid;
-                gap: 8px;
-            }}
-
-            .choice-option {{
-                border: 1px solid var(--border);
-                border-radius: 10px;
-                padding: 8px 10px;
-                background: #fbfdff;
-                display: grid;
-                grid-template-columns: 22px 1fr;
-                gap: 8px;
-                align-items: start;
-            }}
-
-            .choice-option.is-correct {{
-                border-color: #8fd1ac;
-                background: #eaf8ef;
-            }}
-
-            .night_mode .choice-option {{
-                background: rgba(20, 31, 47, 0.88);
-            }}
-
-            .night_mode .choice-option.is-correct {{
-                background: rgba(29, 64, 49, 0.85);
-            }}
-
-            .choice-option-key {{
-                width: 22px;
-                height: 22px;
-                border-radius: 6px;
-                border: 1px solid #bdd1eb;
-                background: #eef5ff;
-                color: #245189;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 12px;
-                font-weight: 700;
-            }}
-
-            .choice-option-text {{
-                line-height: 1.65;
-            }}
-
-            .choice-answer-box {{
-                border: 1px solid #b7e1c7;
-                background: #f3fcf6;
-            }}
-
-            .choice-explain {{
-                margin-top: 10px;
-                border: 1px solid var(--border);
-                border-radius: 10px;
-                background: #f9fbff;
-                padding: 10px 12px;
-                font-size: 15px;
-                line-height: 1.6;
-                color: var(--text-secondary);
-            }}
-
-            .night_mode .choice-explain {{
-                background: rgba(22, 35, 53, 0.9);
-            }}
-
-            .cloze-content-wrapper {{
-                background: #eef5ff;
-                border: 1px solid #bdd4f5;
-                border-radius: var(--radius-md);
-                font-size: 17px;
-                line-height: 1.8;
-                padding: 12px;
-            }}
-
-            .cloze {{
-                font-size: 17px;
-                font-weight: 700;
-                color: #225ea8;
-                background: rgba(31, 111, 214, 0.12);
-                border: 1px solid rgba(31, 111, 214, 0.35);
-                border-radius: 6px;
-                box-shadow: none;
-                margin: 0 2px;
-                padding: 2px 8px;
-            }}
-
-            .divider {{
-                height: 1px;
-                background: var(--border);
-                margin: 14px 2px;
-                box-shadow: none;
-            }}
-
-            .field {{
-                margin-bottom: 12px;
-                padding: 0;
-                border: none;
-                background: transparent;
-            }}
-
-            .field-name {{
-                font-size: 12px;
-                color: var(--text-secondary);
-                margin-bottom: 6px;
-            }}
-
-            .field-content {{
-                font-size: 16px;
-                line-height: 1.65;
-                border: 1px solid var(--border);
-                background: #fbfdff;
-                border-radius: 10px;
-                padding: 10px 12px;
-            }}
-
-            .empty-placeholder {{
-                color: var(--text-secondary);
-                font-style: italic;
-            }}
-
-            @media (max-width: 640px) {{
-                .card[data-card-type] {{
-                    padding: 10px;
-                }}
-
-                .card-basic, .card-reversed, .card-cloze, .card-concept,
-                .card-keyterm, .card-choice, .card-image, .card-generic {{
-                    padding: 12px;
-                }}
-            }}
+            {PREVIEW_CARD_EXTRA_CSS}
             </style>
         </head>
         <body class="{body_class}">
@@ -977,8 +487,8 @@ class CardPreviewPage(QWidget):
     def _init_ui(self):
         """Initialize the user interface."""
         layout = QVBoxLayout(self)
-        layout.setSpacing(SPACING_LARGE)
-        layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
+        layout.setSpacing(SPACING_SMALL)
+        layout.setContentsMargins(MARGIN_STANDARD, MARGIN_SMALL, MARGIN_STANDARD, MARGIN_SMALL)
 
         # Top bar
         top_bar = self._create_top_bar()
@@ -1017,33 +527,36 @@ class CardPreviewPage(QWidget):
     def _create_top_bar(self) -> QHBoxLayout:
         """Create top bar with title and filters."""
         layout = QHBoxLayout()
-        layout.setSpacing(SPACING_MEDIUM)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACING_SMALL)
 
         # Title
         self._title_label = TitleLabel("卡片预览" if self._main.config.language == "zh" else "Card Preview")
         apply_page_title_style(self._title_label)
-        layout.addWidget(self._title_label)
+        layout.addWidget(self._title_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         layout.addStretch()
 
         # Filter by note type
         self._filter_label = BodyLabel("筛选:" if self._main.config.language == "zh" else "Filter:")
-        layout.addWidget(self._filter_label)
+        layout.addWidget(self._filter_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self._note_type_combo = ComboBox()
         self._note_type_combo.addItem("全部" if self._main.config.language == "zh" else "All", userData="all")
         self._note_type_combo.addItem("Basic", userData="Basic")
         self._note_type_combo.addItem("Cloze", userData="Cloze")
+        apply_compact_combo_metrics(self._note_type_combo)
         self._note_type_combo.currentIndexChanged.connect(self._apply_filters)
-        layout.addWidget(self._note_type_combo)
+        layout.addWidget(self._note_type_combo, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # Search box
         self._search_input = LineEdit()
         self._search_input.setPlaceholderText("搜索卡片内容..." if self._main.config.language == "zh" else "Search card content...")
+        self._search_input.setFixedHeight(self._note_type_combo.height())
         self._search_input.setMinimumWidth(200)
         self._search_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._search_input.textChanged.connect(self._apply_filters)
-        layout.addWidget(self._search_input)
+        layout.addWidget(self._search_input, 0, Qt.AlignmentFlag.AlignVCenter)
 
         return layout
 
@@ -1293,7 +806,6 @@ class CardPreviewPage(QWidget):
             "}"
             "QListWidget::item {"
             f"color: {palette.text};"
-            "font-size: 15px;"
             "padding: 8px 14px;"
             "border-radius: 6px;"
             "border: none;"

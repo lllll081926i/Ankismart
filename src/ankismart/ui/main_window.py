@@ -4,6 +4,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QIcon
+from PyQt6.QtWidgets import QApplication
 from qfluentwidgets import (
     FluentIcon,
     FluentWindow,
@@ -24,6 +25,15 @@ from .performance_page import PerformancePage
 from .card_preview_page import CardPreviewPage
 from .settings_page import SettingsPage
 from .shortcuts import ShortcutKeys, create_shortcut
+from .styles import (
+    DEFAULT_WINDOW_HEIGHT,
+    DEFAULT_WINDOW_WIDTH,
+    MIN_WINDOW_HEIGHT,
+    MIN_WINDOW_WIDTH,
+    get_display_scale,
+    get_stylesheet,
+    scale_px,
+)
 
 
 class MainWindow(FluentWindow):
@@ -72,12 +82,34 @@ class MainWindow(FluentWindow):
     def _init_window(self):
         """Initialize window properties."""
         self.setWindowTitle("Ankismart")
-        self.resize(1200, 800)
-        self.setMinimumSize(1000, 700)  # Set minimum size for DPI compatibility
+
+        screen = self.screen() or QApplication.primaryScreen()
+        available = screen.availableGeometry() if screen is not None else None
+        scale = get_display_scale(screen=screen)
+
+        preferred_w = scale_px(DEFAULT_WINDOW_WIDTH, scale=scale, min_value=DEFAULT_WINDOW_WIDTH)
+        preferred_h = scale_px(DEFAULT_WINDOW_HEIGHT, scale=scale, min_value=DEFAULT_WINDOW_HEIGHT)
+        min_w = scale_px(MIN_WINDOW_WIDTH, scale=scale, min_value=MIN_WINDOW_WIDTH)
+        min_h = scale_px(MIN_WINDOW_HEIGHT, scale=scale, min_value=MIN_WINDOW_HEIGHT)
+
+        if available is not None:
+            max_w = max(820, available.width() - scale_px(48, scale=scale, min_value=48))
+            max_h = max(620, available.height() - scale_px(64, scale=scale, min_value=64))
+
+            effective_min_w = min(min_w, max_w)
+            effective_min_h = min(min_h, max_h)
+            target_w = max(effective_min_w, min(preferred_w, max_w))
+            target_h = max(effective_min_h, min(preferred_h, max_h))
+
+            self.setMinimumSize(effective_min_w, effective_min_h)
+            self.resize(target_w, target_h)
+        else:
+            self.setMinimumSize(min_w, min_h)
+            self.resize(preferred_w, preferred_h)
 
         # Make top title bar slimmer and sync content top margin
         if hasattr(self, "titleBar") and self.titleBar is not None:
-            self.titleBar.setFixedHeight(34)
+            self.titleBar.setFixedHeight(scale_px(34, scale=scale, min_value=30))
             if hasattr(self, "widgetLayout") and self.widgetLayout is not None:
                 self.widgetLayout.setContentsMargins(0, self.titleBar.height(), 0, 0)
 
@@ -88,9 +120,17 @@ class MainWindow(FluentWindow):
 
     def _init_navigation(self):
         """Initialize navigation interface with pages."""
-        # Set navigation panel width to 1/3 of default (narrower)
-        self.navigationInterface.setMinimumExpandWidth(150)
-        self.navigationInterface.setExpandWidth(150)
+        # Set adaptive navigation panel width for different resolutions.
+        screen = self.screen() or QApplication.primaryScreen()
+        available_width = screen.availableGeometry().width() if screen is not None else 1400
+        if available_width <= 1200:
+            nav_width = 120
+        elif available_width <= 1440:
+            nav_width = 132
+        else:
+            nav_width = 150
+        self.navigationInterface.setMinimumExpandWidth(nav_width)
+        self.navigationInterface.setExpandWidth(nav_width)
 
         # Get translated labels
         labels = self._get_navigation_labels()
@@ -261,6 +301,13 @@ class MainWindow(FluentWindow):
             theme = Theme.LIGHT  # Default fallback
 
         setTheme(theme)
+        self._apply_global_stylesheet()
+
+    def _apply_global_stylesheet(self) -> None:
+        """Apply app-level stylesheet derived from current effective theme."""
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(get_stylesheet(dark=isDarkTheme()))
 
     def _on_theme_changed(self, theme: Theme):
         """Handle theme change from qconfig signal.
@@ -271,6 +318,7 @@ class MainWindow(FluentWindow):
         # Emit our own signal to notify all pages
         theme_name = "dark" if isDarkTheme() else "light"
         self.theme_changed.emit(theme_name)
+        self._apply_global_stylesheet()
 
         # Notify all pages to update their custom styles
         if hasattr(self.preview_page, 'update_theme'):

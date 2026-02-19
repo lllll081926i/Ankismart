@@ -47,6 +47,7 @@ from ankismart.ui.styles import (
     SPACING_SMALL,
     MARGIN_STANDARD,
     MARGIN_SMALL,
+    apply_compact_combo_metrics,
     apply_page_title_style,
 )
 
@@ -99,6 +100,7 @@ class ResultPage(QWidget):
 
         # Results table
         self._table_label = SubtitleLabel(t("result.detail_results", lang))
+        apply_page_title_style(self._table_label)
         layout.addWidget(self._table_label)
 
         self._table = TableWidget()
@@ -197,6 +199,7 @@ class ResultPage(QWidget):
         self._update_combo.addItem(t("result.update_only"), userData="update_only")
         self._update_combo.addItem(t("result.create_or_update"), userData="create_or_update")
         self._update_combo.setMinimumWidth(170)
+        apply_compact_combo_metrics(self._update_combo)
 
         default_mode = getattr(self._main.config, "last_update_mode", None) or "create_only"
         for idx in range(self._update_combo.count()):
@@ -216,6 +219,7 @@ class ResultPage(QWidget):
         self._duplicate_scope_combo.addItem(t("result.duplicate_scope_deck"), userData="deck")
         self._duplicate_scope_combo.addItem(t("result.duplicate_scope_collection"), userData="collection")
         self._duplicate_scope_combo.setMinimumWidth(170)
+        apply_compact_combo_metrics(self._duplicate_scope_combo)
         duplicate_scope = getattr(self._main.config, "duplicate_scope", "deck")
         self._duplicate_scope_combo.setCurrentIndex(
             0 if duplicate_scope == "deck" else 1
@@ -284,6 +288,7 @@ class ResultPage(QWidget):
         )
         self._duplicate_scope_combo.currentIndexChanged.connect(self._on_duplicate_scope_changed)
         self._duplicate_scope_combo.setMinimumWidth(150)
+        apply_compact_combo_metrics(self._duplicate_scope_combo)
         scope_row.addWidget(self._duplicate_scope_combo)
 
         scope_desc = CaptionLabel(t("result.duplicate_scope_desc"))
