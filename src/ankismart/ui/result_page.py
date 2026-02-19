@@ -454,6 +454,7 @@ class ResultPage(QWidget):
 
     def _display_result(self, result: PushResult, cards: list[CardDraft]) -> None:
         """显示推送结果。"""
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
         # Update statistics
         self._update_stat_card(self._card_total, str(result.total))
         self._update_stat_card(self._card_success, str(result.succeeded))
@@ -474,8 +475,8 @@ class ResultPage(QWidget):
         # Show info bar
         if result.succeeded == result.total:
             InfoBar.success(
-                title="推送成功",
-                content=f"成功推送 {result.succeeded} 张卡片",
+                title="推送成功" if is_zh else "Push Success",
+                content=f"成功推送 {result.succeeded} 张卡片" if is_zh else f"Successfully pushed {result.succeeded} cards",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -484,8 +485,9 @@ class ResultPage(QWidget):
             )
         elif result.failed > 0:
             InfoBar.warning(
-                title="部分失败",
-                content=f"成功 {result.succeeded} 张，失败 {result.failed} 张",
+                title="部分失败" if is_zh else "Partial Failure",
+                content=f"成功 {result.succeeded} 张，失败 {result.failed} 张"
+                if is_zh else f"Success {result.succeeded}, Failed {result.failed}",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -587,6 +589,7 @@ class ResultPage(QWidget):
 
     def _retry_failed(self) -> None:
         """重试失败的卡片。"""
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
         if not self._push_result or not self._cards:
             return
 
@@ -598,8 +601,8 @@ class ResultPage(QWidget):
 
         if not failed_cards:
             InfoBar.info(
-                title="提示",
-                content="没有失败的卡片需要重试",
+                title="提示" if is_zh else "Info",
+                content="没有失败的卡片需要重试" if is_zh else "No failed cards to retry",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -634,8 +637,9 @@ class ResultPage(QWidget):
         self._worker = worker
 
         InfoBar.info(
-            title="重试中",
-            content=f"正在重试 {len(failed_cards)} 张失败卡片...",
+            title="重试中" if is_zh else "Retrying",
+            content=f"正在重试 {len(failed_cards)} 张失败卡片..."
+            if is_zh else f"Retrying {len(failed_cards)} failed cards...",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -645,6 +649,7 @@ class ResultPage(QWidget):
 
     def _on_retry_done(self, result: PushResult) -> None:
         """重试完成回调。"""
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
         # Merge retry result with original result
         if self._push_result:
             # Update original result statistics
@@ -662,8 +667,9 @@ class ResultPage(QWidget):
 
         if result.succeeded > 0:
             InfoBar.success(
-                title="重试成功",
-                content=f"成功推送 {result.succeeded} 张卡片",
+                title="重试成功" if is_zh else "Retry Succeeded",
+                content=f"成功推送 {result.succeeded} 张卡片"
+                if is_zh else f"Successfully pushed {result.succeeded} cards",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -672,8 +678,8 @@ class ResultPage(QWidget):
             )
         else:
             InfoBar.error(
-                title="重试失败",
-                content="所有卡片重试失败",
+                title="重试失败" if is_zh else "Retry Failed",
+                content="所有卡片重试失败" if is_zh else "All retries failed",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -683,11 +689,12 @@ class ResultPage(QWidget):
 
     def _on_retry_error(self, msg: str) -> None:
         """重试错误回调。"""
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
         self._btn_retry.setEnabled(True)
         self._btn_export_apkg.setEnabled(True)
 
         InfoBar.error(
-            title="重试错误",
+            title="重试错误" if is_zh else "Retry Error",
             content=msg,
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
@@ -698,6 +705,7 @@ class ResultPage(QWidget):
 
     def _export_failed(self) -> None:
         """导出失败的卡片为 APKG。"""
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
         if not self._push_result or not self._cards:
             return
 
@@ -709,8 +717,8 @@ class ResultPage(QWidget):
 
         if not failed_cards:
             InfoBar.info(
-                title="提示",
-                content="没有失败的卡片需要导出",
+                title="提示" if is_zh else "Info",
+                content="没有失败的卡片需要导出" if is_zh else "No failed cards to export",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -722,7 +730,7 @@ class ResultPage(QWidget):
         # Show save dialog
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "导出失败卡片",
+            "导出失败卡片" if is_zh else "Export Failed Cards",
             "ankismart_failed.apkg",
             "Anki Package (*.apkg)",
         )
@@ -745,8 +753,9 @@ class ResultPage(QWidget):
         self._worker = worker
 
         InfoBar.info(
-            title="导出中",
-            content=f"正在导出 {len(failed_cards)} 张失败卡片...",
+            title="导出中" if is_zh else "Exporting",
+            content=f"正在导出 {len(failed_cards)} 张失败卡片..."
+            if is_zh else f"Exporting {len(failed_cards)} failed cards...",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -756,11 +765,12 @@ class ResultPage(QWidget):
 
     def _on_export_done(self, path: Path) -> None:
         """导出完成回调。"""
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
         self._btn_export_apkg.setEnabled(True)
 
         InfoBar.success(
-            title="导出成功",
-            content=f"已导出到 {path}",
+            title="导出成功" if is_zh else "Export Succeeded",
+            content=f"已导出到 {path}" if is_zh else f"Exported to {path}",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -770,10 +780,11 @@ class ResultPage(QWidget):
 
     def _on_export_error(self, msg: str) -> None:
         """导出错误回调。"""
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
         self._btn_export_apkg.setEnabled(True)
 
         InfoBar.error(
-            title="导出错误",
+            title="导出错误" if is_zh else "Export Error",
             content=msg,
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
@@ -784,10 +795,12 @@ class ResultPage(QWidget):
 
     def _back_to_preview(self) -> None:
         """返回预览页面。"""
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
         reply = QMessageBox.question(
             self,
-            "确认返回",
-            "返回预览页面将丢失当前结果，是否继续？",
+            "确认返回" if is_zh else "Confirm Back",
+            "返回预览页面将丢失当前结果，是否继续？"
+            if is_zh else "Going back to preview will lose current results. Continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -963,10 +976,11 @@ class ResultPage(QWidget):
 
     def _repush_all_cards(self) -> None:
         """Repush all cards to Anki."""
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
         if not self._cards:
             InfoBar.info(
-                title="提示",
-                content="没有卡片需要推送",
+                title="提示" if is_zh else "Info",
+                content="没有卡片需要推送" if is_zh else "No cards to push",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -1002,8 +1016,9 @@ class ResultPage(QWidget):
         self._worker = worker
 
         InfoBar.info(
-            title="推送中",
-            content=f"正在推送 {len(self._cards)} 张卡片...",
+            title="推送中" if is_zh else "Pushing",
+            content=f"正在推送 {len(self._cards)} 张卡片..."
+            if is_zh else f"Pushing {len(self._cards)} cards...",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -1013,6 +1028,7 @@ class ResultPage(QWidget):
 
     def _on_repush_done(self, result: PushResult) -> None:
         """Callback when repush is complete."""
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
         # Update status for repushed cards
         if self._push_result:
             repush_indices = sorted(self._edited_card_indices)
@@ -1042,8 +1058,9 @@ class ResultPage(QWidget):
 
         if result.succeeded > 0:
             InfoBar.success(
-                title="推送成功",
-                content=f"成功推送 {result.succeeded} 张已编辑卡片",
+                title="推送成功" if is_zh else "Push Success",
+                content=f"成功推送 {result.succeeded} 张已编辑卡片"
+                if is_zh else f"Successfully pushed {result.succeeded} edited cards",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -1052,8 +1069,8 @@ class ResultPage(QWidget):
             )
         else:
             InfoBar.error(
-                title="推送失败",
-                content="所有卡片推送失败",
+                title="推送失败" if is_zh else "Push Failed",
+                content="所有卡片推送失败" if is_zh else "All cards failed to push",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -1063,12 +1080,13 @@ class ResultPage(QWidget):
 
     def _on_repush_error(self, msg: str) -> None:
         """Callback when repush encounters an error."""
+        is_zh = getattr(self._main.config, "language", "zh") == "zh"
         self._btn_repush_all.setEnabled(True)
         self._btn_retry.setEnabled(True)
         self._btn_export_apkg.setEnabled(True)
 
         InfoBar.error(
-            title="推送错误",
+            title="推送错误" if is_zh else "Push Error",
             content=msg,
             orient=Qt.Orientation.Horizontal,
             isClosable=True,

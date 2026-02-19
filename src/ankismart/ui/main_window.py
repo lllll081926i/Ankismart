@@ -4,7 +4,6 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QIcon
-from PyQt6.QtWidgets import QMessageBox
 from qfluentwidgets import (
     FluentIcon,
     FluentWindow,
@@ -24,7 +23,7 @@ from .result_page import ResultPage
 from .performance_page import PerformancePage
 from .card_preview_page import CardPreviewPage
 from .settings_page import SettingsPage
-from .shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
+from .shortcuts import ShortcutKeys, create_shortcut
 
 
 class MainWindow(FluentWindow):
@@ -34,9 +33,9 @@ class MainWindow(FluentWindow):
     theme_changed = pyqtSignal(str)  # Signal emitted when theme changes
     config_updated = pyqtSignal(list)  # Signal emitted when runtime config fields change
 
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig | None = None):
         super().__init__()
-        self.config = config
+        self.config = config or load_config()
         if self.config.theme not in {"light", "dark", "auto"}:
             self.config.theme = "light"
         self._cards = []
@@ -114,7 +113,10 @@ class MainWindow(FluentWindow):
         self.addSubInterface(
             self.card_preview_page,
             FluentIcon.BOOK_SHELF,
-            labels.get("card_preview", "卡片预览" if self.config.language == "zh" else "Card Preview"),
+            labels.get(
+                "card_preview",
+                "卡片预览" if self.config.language == "zh" else "Card Preview",
+            ),
             NavigationItemPosition.TOP
         )
 
@@ -407,7 +409,14 @@ class MainWindow(FluentWindow):
 
     def _switch_page(self, index: int) -> None:
         """Switch page by index for backward compatibility."""
-        pages = [self.import_page, self.preview_page, self.card_preview_page, self.result_page, self.performance_page, self.settings_page]
+        pages = [
+            self.import_page,
+            self.preview_page,
+            self.card_preview_page,
+            self.result_page,
+            self.performance_page,
+            self.settings_page,
+        ]
         if 0 <= index < len(pages):
             self.switchTo(pages[index])
 

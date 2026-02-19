@@ -259,6 +259,7 @@ class SettingsPage(ScrollArea):
         self.setObjectName("settingsPage")
         self.verticalScrollBar().setSingleStep(64)
         self.verticalScrollBar().setPageStep(360)
+        self.verticalScrollBar().rangeChanged.connect(self._enforce_scroll_steps)
 
         self.scrollWidget.setObjectName("scrollWidget")
 
@@ -277,6 +278,15 @@ class SettingsPage(ScrollArea):
 
         # Connect auto-save signals
         self._connect_auto_save_signals()
+        self._enforce_scroll_steps()
+
+    def _enforce_scroll_steps(self, *_args) -> None:
+        """Keep tuned scroll steps stable after internal scrollbar recalculations."""
+        scroll_bar = self.verticalScrollBar()
+        if scroll_bar.singleStep() != 64:
+            scroll_bar.setSingleStep(64)
+        if scroll_bar.pageStep() != 360:
+            scroll_bar.setPageStep(360)
 
     def _init_shortcuts(self):
         """Initialize page-specific keyboard shortcuts."""
@@ -1493,8 +1503,6 @@ class SettingsPage(ScrollArea):
         from pathlib import Path
         from datetime import datetime
 
-        is_zh = self._main.config.language == "zh"
-
         try:
             exporter = LogExporter()
 
@@ -1554,6 +1562,12 @@ class SettingsPage(ScrollArea):
                 t("log.export_failed_msg", self._main.config.language, error=str(e)),
                 duration=5000,
             )
+
+    def closeEvent(self, event):  # noqa: N802
+        """Ensure autosave timer is stopped before widget closes."""
+        if self._autosave_timer.isActive():
+            self._autosave_timer.stop()
+        super().closeEvent(event)
 
     def retranslate_ui(self):
         """Retranslate UI elements when language changes."""

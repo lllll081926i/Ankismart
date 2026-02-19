@@ -283,12 +283,16 @@ class PreviewPage(ProgressMixin, QWidget):
         """Handle show event to ensure buttons are enabled when page is displayed."""
         super().showEvent(event)
         # Ensure buttons are enabled when page is shown (unless actively processing)
-        if not (self._generate_worker and self._generate_worker.isRunning()) and \
-           not (self._push_worker and self._push_worker.isRunning()):
+        if not self._is_busy():
             if self._documents:  # Only enable if we have documents
                 self._btn_save.setEnabled(True)
                 self._btn_generate.setEnabled(True)
                 self._btn_preview.setEnabled(True)
+
+    def _is_busy(self) -> bool:
+        """Return True when any worker is actively running."""
+        workers = (self._generate_worker, self._push_worker, self._sample_worker)
+        return any(worker is not None and worker.isRunning() for worker in workers)
 
     def _hide_progress(self) -> None:
         """Hide all progress indicators (override from ProgressMixin)."""
@@ -544,6 +548,20 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_generate_cards(self):
         """Handle generate cards button click."""
+        is_zh = self._main.config.language == "zh"
+        if self._sample_worker and self._sample_worker.isRunning():
+            InfoBar.info(
+                title="请稍候" if is_zh else "Please Wait",
+                content="样本卡片正在生成，请稍后再开始正式生成"
+                if is_zh else "Sample generation is in progress. Please wait before starting full generation.",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2500,
+                parent=self,
+            )
+            return
+
         # Validate configuration
         provider = self._main.config.active_provider
         if not provider:
@@ -627,6 +645,22 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _on_preview_sample(self):
         """Generate and show sample cards."""
+        is_zh = self._main.config.language == "zh"
+        if (self._generate_worker and self._generate_worker.isRunning()) or (
+            self._push_worker and self._push_worker.isRunning()
+        ):
+            InfoBar.info(
+                title="请稍候" if is_zh else "Please Wait",
+                content="卡片生成/推送进行中，暂时无法生成样本卡片"
+                if is_zh else "Card generation/push is in progress. Sample preview is temporarily unavailable.",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2500,
+                parent=self,
+            )
+            return
+
         # Validate configuration
         provider = self._main.config.active_provider
         if not provider:
@@ -674,7 +708,6 @@ class PreviewPage(ProgressMixin, QWidget):
             return
 
         # Show generating message
-        is_zh = self._main.config.language == "zh"
         self._show_info_bar(
             "info",
             "生成中" if is_zh else "Generating",
@@ -753,9 +786,11 @@ class PreviewPage(ProgressMixin, QWidget):
             )
             self._sample_worker.finished.connect(self._on_sample_finished)
             self._sample_worker.error.connect(self._on_sample_error)
+            self._btn_generate.setEnabled(False)
             self._btn_preview.setEnabled(False)
             self._sample_worker.start()
         except Exception as e:
+            self._update_ui_state()
             self._btn_preview.setEnabled(True)
             InfoBar.error(
                 title="错误" if is_zh else "Error",
@@ -770,6 +805,7 @@ class PreviewPage(ProgressMixin, QWidget):
     def _on_sample_finished(self, cards):
         """Handle sample generation completion."""
         self._cleanup_sample_worker()
+        self._update_ui_state()
         self._btn_preview.setEnabled(True)
         is_zh = self._main.config.language == "zh"
 
@@ -830,6 +866,7 @@ class PreviewPage(ProgressMixin, QWidget):
     def _on_sample_error(self, error: str):
         """Handle sample generation error."""
         self._cleanup_sample_worker()
+        self._update_ui_state()
         self._btn_preview.setEnabled(True)
         is_zh = self._main.config.language == "zh"
         InfoBar.error(
