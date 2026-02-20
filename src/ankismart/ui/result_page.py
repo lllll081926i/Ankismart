@@ -654,6 +654,7 @@ class ResultPage(QWidget):
 
     def _on_retry_done(self, result: PushResult) -> None:
         """重试完成回调。"""
+        self._cleanup_push_worker()
         is_zh = getattr(self._main.config, "language", "zh") == "zh"
         # Merge retry result with original result
         if self._push_result:
@@ -694,6 +695,7 @@ class ResultPage(QWidget):
 
     def _on_retry_error(self, msg: str) -> None:
         """重试错误回调。"""
+        self._cleanup_push_worker()
         is_zh = getattr(self._main.config, "language", "zh") == "zh"
         self._btn_retry.setEnabled(True)
         self._btn_export_apkg.setEnabled(True)
@@ -973,6 +975,7 @@ class ResultPage(QWidget):
 
     def _on_repush_done(self, result: PushResult) -> None:
         """Callback when repush is complete."""
+        self._cleanup_push_worker()
         is_zh = getattr(self._main.config, "language", "zh") == "zh"
         # Update status for repushed cards
         if self._push_result:
@@ -1025,6 +1028,7 @@ class ResultPage(QWidget):
 
     def _on_repush_error(self, msg: str) -> None:
         """Callback when repush encounters an error."""
+        self._cleanup_push_worker()
         is_zh = getattr(self._main.config, "language", "zh") == "zh"
         self._btn_repush_all.setEnabled(True)
         self._btn_retry.setEnabled(True)
@@ -1072,6 +1076,32 @@ class ResultPage(QWidget):
         # Refresh row content (status/error/action texts) with the active language.
         if self._push_result:
             self._display_result(self._push_result, self._cards)
+
+    def _cleanup_push_worker(self) -> None:
+        worker = self.__dict__.get("_worker")
+        if worker is None:
+            return
+        if hasattr(worker, "isRunning") and worker.isRunning():
+            if hasattr(worker, "cancel"):
+                worker.cancel()
+            worker.wait(200)
+            if worker.isRunning():
+                return
+        self.__dict__["_worker"] = None
+        if hasattr(worker, "deleteLater"):
+            worker.deleteLater()
+
+    def closeEvent(self, event):  # noqa: N802
+        """Ensure push worker is stopped before widget closes."""
+        if self._worker and self._worker.isRunning():
+            if hasattr(self._worker, "cancel"):
+                self._worker.cancel()
+            self._worker.wait(3000)
+            if self._worker.isRunning():
+                self._worker.terminate()
+                self._worker.wait()
+        self._cleanup_push_worker()
+        super().closeEvent(event)
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""

@@ -945,20 +945,42 @@ class PreviewPage(ProgressMixin, QWidget):
 
     def _cleanup_generate_worker(self) -> None:
         worker = self.__dict__.get("_generate_worker")
+        if worker is None:
+            return
+        if hasattr(worker, "isRunning") and worker.isRunning():
+            if hasattr(worker, "cancel"):
+                worker.cancel()
+            worker.wait(200)
+            if worker.isRunning():
+                return
         self.__dict__["_generate_worker"] = None
-        if worker is not None and hasattr(worker, "deleteLater"):
+        if hasattr(worker, "deleteLater"):
             worker.deleteLater()
 
     def _cleanup_push_worker(self) -> None:
         worker = self.__dict__.get("_push_worker")
+        if worker is None:
+            return
+        if hasattr(worker, "isRunning") and worker.isRunning():
+            if hasattr(worker, "cancel"):
+                worker.cancel()
+            worker.wait(200)
+            if worker.isRunning():
+                return
         self.__dict__["_push_worker"] = None
-        if worker is not None and hasattr(worker, "deleteLater"):
+        if hasattr(worker, "deleteLater"):
             worker.deleteLater()
 
     def _cleanup_sample_worker(self) -> None:
         worker = self.__dict__.get("_sample_worker")
+        if worker is None:
+            return
+        if hasattr(worker, "isRunning") and worker.isRunning():
+            worker.wait(200)
+            if worker.isRunning():
+                return
         self.__dict__["_sample_worker"] = None
-        if worker is not None and hasattr(worker, "deleteLater"):
+        if hasattr(worker, "deleteLater"):
             worker.deleteLater()
 
     def _on_generation_progress(self, message: str):

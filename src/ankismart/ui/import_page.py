@@ -1091,20 +1091,40 @@ class ImportPage(ProgressMixin, QWidget):
 
     def _cleanup_batch_worker(self) -> None:
         worker = self.__dict__.get("_worker")
+        if worker is None:
+            return
+        if hasattr(worker, "isRunning") and worker.isRunning():
+            if hasattr(worker, "cancel"):
+                worker.cancel()
+            worker.wait(200)
+            if worker.isRunning():
+                return
         self.__dict__["_worker"] = None
-        if worker is not None and hasattr(worker, "deleteLater"):
+        if hasattr(worker, "deleteLater"):
             worker.deleteLater()
 
     def _cleanup_ocr_download_worker(self) -> None:
         worker = self.__dict__.get("_ocr_download_worker")
+        if worker is None:
+            return
+        if hasattr(worker, "isRunning") and worker.isRunning():
+            worker.wait(200)
+            if worker.isRunning():
+                return
         self.__dict__["_ocr_download_worker"] = None
-        if worker is not None and hasattr(worker, "deleteLater"):
+        if hasattr(worker, "deleteLater"):
             worker.deleteLater()
 
     def _cleanup_deck_loader_worker(self) -> None:
         worker = self.__dict__.get("_deck_loader")
+        if worker is None:
+            return
+        if hasattr(worker, "isRunning") and worker.isRunning():
+            worker.wait(200)
+            if worker.isRunning():
+                return
         self.__dict__["_deck_loader"] = None
-        if worker is not None and hasattr(worker, "deleteLater"):
+        if hasattr(worker, "deleteLater"):
             worker.deleteLater()
 
     def _dispose_state_tooltip(self) -> None:

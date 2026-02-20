@@ -152,8 +152,8 @@ def test_test_provider_connection_uses_worker_and_triggers_success_flow(_qapp, m
     provider = page._providers[0]
     page._test_provider_connection(provider)
 
-    assert page._provider_test_worker is not None
-    assert page._provider_test_worker.provider.id == provider.id
+    # Worker may finish synchronously in tests and should then be cleaned up.
+    assert page._provider_test_worker is None
 
 
 def test_configure_ocr_runtime_falls_back_for_legacy_signature(monkeypatch) -> None:

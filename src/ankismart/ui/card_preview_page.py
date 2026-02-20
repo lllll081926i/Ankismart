@@ -920,6 +920,7 @@ class CardPreviewPage(QWidget):
 
     def _on_push_finished(self, result):
         """Handle push completion."""
+        self._cleanup_push_worker()
         is_zh = self._main.config.language == "zh"
         self._progress_bar.hide()
         self._btn_push.setEnabled(True)
@@ -951,6 +952,7 @@ class CardPreviewPage(QWidget):
 
     def _on_push_error(self, error: str):
         """Handle push error."""
+        self._cleanup_push_worker()
         is_zh = self._main.config.language == "zh"
         self._progress_bar.hide()
         self._btn_push.setEnabled(True)
@@ -971,6 +973,7 @@ class CardPreviewPage(QWidget):
 
     def _on_push_cancelled(self):
         """Handle push cancellation."""
+        self._cleanup_push_worker()
         is_zh = self._main.config.language == "zh"
         self._progress_bar.hide()
         self._btn_push.setEnabled(True)
@@ -984,4 +987,30 @@ class CardPreviewPage(QWidget):
             duration=3000,
             parent=self,
         )
+
+    def _cleanup_push_worker(self) -> None:
+        worker = self.__dict__.get("_push_worker")
+        if worker is None:
+            return
+        if hasattr(worker, "isRunning") and worker.isRunning():
+            if hasattr(worker, "cancel"):
+                worker.cancel()
+            worker.wait(200)
+            if worker.isRunning():
+                return
+        self.__dict__["_push_worker"] = None
+        if hasattr(worker, "deleteLater"):
+            worker.deleteLater()
+
+    def closeEvent(self, event):  # noqa: N802
+        """Ensure push worker is stopped before widget closes."""
+        if self._push_worker and self._push_worker.isRunning():
+            if hasattr(self._push_worker, "cancel"):
+                self._push_worker.cancel()
+            self._push_worker.wait(3000)
+            if self._push_worker.isRunning():
+                self._push_worker.terminate()
+                self._push_worker.wait()
+        self._cleanup_push_worker()
+        super().closeEvent(event)
 

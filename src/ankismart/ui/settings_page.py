@@ -1138,6 +1138,7 @@ class SettingsPage(ScrollArea):
         """Test connection to a specific LLM provider."""
         from ankismart.ui.workers import ProviderConnectionWorker
 
+        self._cleanup_provider_test_worker()
         self._show_info_bar(
             "info",
             "测试中",
@@ -1151,9 +1152,16 @@ class SettingsPage(ScrollArea):
             temperature=self._temperature_slider.value() / 10,
             max_tokens=self._max_tokens_spin.value(),
         )
-        worker.finished.connect(lambda ok, err: self._on_provider_test_result(provider.name, ok, err))
-        worker.start()
         self._provider_test_worker = worker
+
+        def _on_finished(ok: bool, err: str) -> None:
+            try:
+                self._on_provider_test_result(provider.name, ok, err)
+            finally:
+                self._cleanup_provider_test_worker()
+
+        worker.finished.connect(_on_finished)
+        worker.start()
 
     def _on_provider_test_result(self, provider_name: str, connected: bool, error: str) -> None:
         """Handle provider connection test result."""
@@ -1196,6 +1204,7 @@ class SettingsPage(ScrollArea):
         """Test connection to AnkiConnect."""
         from ankismart.ui.workers import ConnectionCheckWorker
 
+        self._cleanup_anki_test_worker()
         url = self._anki_url_edit.text() or "http://127.0.0.1:8765"
         key = self._anki_key_edit.text()
         proxy = self._proxy_edit.text()
@@ -1204,9 +1213,16 @@ class SettingsPage(ScrollArea):
         self._show_info_bar("info", "测试中", "正在检测 AnkiConnect 连接...", duration=1500)
 
         worker = ConnectionCheckWorker(url, key, proxy_url=proxy)
-        worker.finished.connect(self._on_test_result)
-        worker.start()
         self._anki_test_worker = worker
+
+        def _on_finished(connected: bool) -> None:
+            try:
+                self._on_test_result(connected)
+            finally:
+                self._cleanup_anki_test_worker()
+
+        worker.finished.connect(_on_finished)
+        worker.start()
 
     def _on_test_result(self, connected: bool) -> None:
         """Handle test connection result."""
@@ -1567,10 +1583,46 @@ class SettingsPage(ScrollArea):
                 duration=5000,
             )
 
+    def _cleanup_provider_test_worker(self, *_args) -> None:
+        worker = self.__dict__.get("_provider_test_worker")
+        if worker is None:
+            return
+        if hasattr(worker, "isRunning") and worker.isRunning():
+            worker.wait(200)
+            if worker.isRunning():
+                return
+        self.__dict__["_provider_test_worker"] = None
+        if hasattr(worker, "deleteLater"):
+            worker.deleteLater()
+
+    def _cleanup_anki_test_worker(self, *_args) -> None:
+        worker = self.__dict__.get("_anki_test_worker")
+        if worker is None:
+            return
+        if hasattr(worker, "isRunning") and worker.isRunning():
+            worker.wait(200)
+            if worker.isRunning():
+                return
+        self.__dict__["_anki_test_worker"] = None
+        if hasattr(worker, "deleteLater"):
+            worker.deleteLater()
+
     def closeEvent(self, event):  # noqa: N802
-        """Ensure autosave timer is stopped before widget closes."""
+        """Ensure autosave timer and test workers are stopped before widget closes."""
         if self._autosave_timer.isActive():
             self._autosave_timer.stop()
+        if self._provider_test_worker and self._provider_test_worker.isRunning():
+            self._provider_test_worker.wait(3000)
+            if self._provider_test_worker.isRunning():
+                self._provider_test_worker.terminate()
+                self._provider_test_worker.wait()
+        if self._anki_test_worker and self._anki_test_worker.isRunning():
+            self._anki_test_worker.wait(3000)
+            if self._anki_test_worker.isRunning():
+                self._anki_test_worker.terminate()
+                self._anki_test_worker.wait()
+        self._cleanup_provider_test_worker()
+        self._cleanup_anki_test_worker()
         super().closeEvent(event)
 
     def retranslate_ui(self):
