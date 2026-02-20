@@ -134,6 +134,11 @@ class TestConvenienceMethods:
         assert AnkiConnectClient().get_model_field_names("Basic") == ["Front", "Back"]
 
     @patch("ankismart.anki_gateway.client.httpx.post")
+    def test_create_deck(self, mock_post: MagicMock) -> None:
+        mock_post.return_value = _mock_response({"error": None, "result": 123})
+        assert AnkiConnectClient().create_deck("Default") == 123
+
+    @patch("ankismart.anki_gateway.client.httpx.post")
     def test_add_note_success(self, mock_post: MagicMock) -> None:
         mock_post.return_value = _mock_response({"error": None, "result": 12345})
         note_id = AnkiConnectClient().add_note({"deckName": "Default"})

@@ -259,3 +259,45 @@ def test_retry_failed_sync_finished_worker_is_cleaned_up(_qapp, monkeypatch) -> 
     page._retry_failed()
 
     assert page._worker is None
+
+
+def test_load_result_only_shows_top_feedback_once(_qapp, monkeypatch) -> None:
+    page = ResultPage(_FakeMainWindow())
+    cards = [_make_card("问题一", "答案一")]
+    result = PushResult(
+        total=1,
+        succeeded=1,
+        failed=0,
+        results=[CardPushStatus(index=0, success=True, error="")],
+        trace_id="trace-feedback-once",
+    )
+
+    success_calls = []
+    monkeypatch.setattr(
+        "ankismart.ui.result_page.InfoBar.success",
+        lambda *args, **kwargs: success_calls.append(kwargs),
+    )
+
+    page.load_result(result, cards)
+    page._refresh()
+
+    assert len(success_calls) == 1
+
+
+def test_table_title_uses_question_field_only(_qapp) -> None:
+    page = ResultPage(_FakeMainWindow())
+    card = CardDraft(
+        fields={
+            "Front": "这是一条非常关键的问题文本",
+            "Back": "答案内容",
+            "Extra": "额外字段不应作为标题",
+        },
+        note_type="Basic",
+        deck_name="Default",
+        tags=[],
+    )
+    status = CardPushStatus(index=0, success=True, error="")
+
+    page._add_table_row(status, [card])
+
+    assert page._table.item(0, 1).text().startswith("这是一条非常关键的问题文本")

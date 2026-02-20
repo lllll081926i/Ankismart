@@ -6,6 +6,12 @@ from ankismart.core.tracing import metrics
 
 
 class _FakeClient:
+    def get_deck_names(self):
+        return ["Default"]
+
+    def create_deck(self, _name: str):
+        return 1
+
     def add_note(self, note_params):
         return 1001
 

@@ -277,6 +277,43 @@ class TestLLMClientGenerationParams:
         assert client._max_tokens == 0
 
 
+class TestLLMClientValidateConnection:
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_validate_connection_uses_chat_completion(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.chat.completions.create.return_value = _make_response("OK")
+
+        client = LLMClient(api_key="sk-test", model="gpt-4o-mini")
+        assert client.validate_connection() is True
+
+        mock_client.chat.completions.create.assert_called_once()
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs["model"] == "gpt-4o-mini"
+        assert call_kwargs["max_tokens"] == 1
+        assert call_kwargs["timeout"] == 30
+
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_validate_connection_auth_error_is_mapped(self, mock_openai_cls):
+        from openai import AuthenticationError
+
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        response = httpx.Response(401, request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"))
+        mock_client.chat.completions.create.side_effect = AuthenticationError(
+            message="invalid api key",
+            response=response,
+            body=None,
+        )
+
+        client = LLMClient(api_key="sk-test")
+        with pytest.raises(CardGenError) as exc_info:
+            client.validate_connection()
+
+        assert exc_info.value.code == ErrorCode.E_LLM_AUTH_ERROR
+        assert "validate connection" in exc_info.value.message
+
+
 class TestLLMClientProxy:
     """Tests for proxy_url parameter passing."""
 

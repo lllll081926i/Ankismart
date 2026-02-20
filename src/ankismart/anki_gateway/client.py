@@ -80,6 +80,10 @@ class AnkiConnectClient:
     def get_deck_names(self) -> list[str]:
         return self._request("deckNames")
 
+    def create_deck(self, deck_name: str) -> int | None:
+        """Create deck if missing and return deck id when provided by AnkiConnect."""
+        return self._request("createDeck", {"deck": deck_name})
+
     def get_model_names(self) -> list[str]:
         return self._request("modelNames")
 

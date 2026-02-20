@@ -384,6 +384,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "settings.save_success": {"zh": "配置保存成功", "en": "Configuration saved successfully"},
     "settings.save_failed": {"zh": "保存配置失败：{error}", "en": "Failed to save configuration: {error}"},
 
+    # Card edit dialog
+    "card_edit.title": {"zh": "编辑卡片", "en": "Edit Card"},
+    "card_edit.tags": {"zh": "标签", "en": "Tags"},
+    "card_edit.tags_placeholder": {"zh": "输入标签，用逗号分隔", "en": "Enter tags separated by commas"},
+    "card_edit.deck": {"zh": "牌组", "en": "Deck"},
+    "card_edit.edit_button": {"zh": "编辑", "en": "Edit"},
+    "card_edit.save_success": {"zh": "保存成功", "en": "Saved"},
+
     # Common buttons
     "common.ok": {"zh": "确定", "en": "OK"},
     "common.cancel": {"zh": "取消", "en": "Cancel"},

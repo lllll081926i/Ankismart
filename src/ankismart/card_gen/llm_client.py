@@ -87,10 +87,19 @@ class LLMClient:
         self._max_tokens = max_tokens
 
     def validate_connection(self) -> bool:
-        """Test if the LLM endpoint is reachable by listing models."""
+        """Test if the configured model endpoint is reachable via chat completion."""
         metrics.increment("llm_validate_requests_total")
         try:
-            self._client.models.list()
+            self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": "You are a connectivity probe. Reply with OK."},
+                    {"role": "user", "content": "ping"},
+                ],
+                temperature=0,
+                max_tokens=1,
+                timeout=30,
+            )
             metrics.increment("llm_validate_success_total")
             return True
         except Exception as exc:

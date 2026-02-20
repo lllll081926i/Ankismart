@@ -41,6 +41,16 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+_STRATEGY_LABELS = {
+    "basic": ("基础问答", "Basic Q&A"),
+    "cloze": ("填空题", "Cloze"),
+    "concept": ("概念解释", "Concept"),
+    "key_terms": ("关键术语", "Key Terms"),
+    "single_choice": ("单选题", "Single Choice"),
+    "multiple_choice": ("多选题", "Multiple Choice"),
+    "image_qa": ("图片问答", "Image Q&A"),
+}
+
 
 class MarkdownHighlighter(QSyntaxHighlighter):
     """Syntax highlighter for Markdown text with theme support."""
@@ -930,6 +940,24 @@ class PreviewPage(ProgressMixin, QWidget):
         if hasattr(tooltip, "deleteLater"):
             tooltip.deleteLater()
 
+    def _normalize_generation_message(self, message: str) -> str:
+        """Localize strategy IDs and wrap long tooltip messages."""
+        is_zh = self._main.config.language == "zh"
+        text = str(message or "").strip()
+
+        for key, (zh_label, en_label) in _STRATEGY_LABELS.items():
+            label = zh_label if is_zh else en_label
+            text = re.sub(rf"\b{re.escape(key)}\b", label, text)
+
+        text = re.sub(r"\s+", " ", text).strip()
+        max_chars = 180
+        if len(text) > max_chars:
+            text = f"{text[: max_chars - 1]}…"
+
+        line_len = 40
+        wrapped = [text[i:i + line_len] for i in range(0, len(text), line_len)]
+        return "\n".join(wrapped) if wrapped else text
+
     def _parse_error_payload(self, error: str) -> tuple[ErrorCode | None, str]:
         """Parse worker error payload like '[E_CODE] message'."""
         text = str(error).strip()
@@ -986,13 +1014,14 @@ class PreviewPage(ProgressMixin, QWidget):
     def _on_generation_progress(self, message: str):
         """Handle generation progress message."""
         is_zh = self._main.config.language == "zh"
+        normalized = self._normalize_generation_message(message)
         self._show_state_tooltip(
             "正在生成卡片" if is_zh else "Generating Cards",
-            message,
+            normalized,
         )
         logger.info(
             "generation progress",
-            extra={"event": "ui.generation.progress", "message_detail": message},
+            extra={"event": "ui.generation.progress", "message_detail": normalized},
         )
 
     def _on_card_progress(self, current: int, total: int):

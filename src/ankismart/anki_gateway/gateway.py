@@ -75,6 +75,8 @@ class AnkiGateway:
 
     def create_or_update_note(self, card: CardDraft) -> CardPushStatus:
         """Create a note or update it if a duplicate front field exists."""
+        deck_cache = self._fetch_deck_cache()
+        self._ensure_deck_exists(card.deck_name, deck_cache)
         validate_card_draft(card, self._client)
         existing_id = self._find_existing_note(card)
         if existing_id is not None:
@@ -102,9 +104,11 @@ class AnkiGateway:
                 results: list[CardPushStatus] = []
                 succeeded = 0
                 failed = 0
+                deck_cache = self._fetch_deck_cache()
 
                 for i, card in enumerate(cards):
                     try:
+                        self._ensure_deck_exists(card.deck_name, deck_cache)
                         validate_card_draft(card, self._client)
                         status = self._push_single(i, card, update_mode, trace_id)
                         results.append(status)
@@ -205,3 +209,21 @@ class AnkiGateway:
             return note_ids[0] if note_ids else None
         except AnkiGatewayError:
             return None
+
+    def _fetch_deck_cache(self) -> set[str]:
+        """Fetch existing deck names, falling back to an empty cache on gateway errors."""
+        try:
+            return set(self._client.get_deck_names())
+        except AnkiGatewayError as exc:
+            logger.warning("Failed to query deck names before push", extra={"error": exc.message})
+            return set()
+
+    def _ensure_deck_exists(self, deck_name: str, cache: set[str]) -> None:
+        """Ensure a target deck exists before card validation/push."""
+        name = (deck_name or "").strip()
+        if not name or name in cache:
+            return
+
+        self._client.create_deck(name)
+        cache.add(name)
+        logger.info("Deck created automatically", extra={"deck_name": name})

@@ -19,6 +19,7 @@ from ankismart.core.models import (
 def _fake_client(add_note_return: int = 1001) -> MagicMock:
     client = MagicMock()
     client.add_note.return_value = add_note_return
+    client.create_deck.return_value = 1
     client.check_connection.return_value = True
     client.get_deck_names.return_value = ["Default"]
     client.get_model_names.return_value = ["Basic"]
@@ -223,6 +224,33 @@ class TestPush:
 
         assert result.results[0].index == 0
         assert result.results[1].index == 1
+
+    def test_push_auto_creates_missing_deck(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client()
+        client.get_deck_names.return_value = ["ExistingDeck"]
+        gw = AnkiGateway(client)
+
+        result = gw.push([_card(deck_name="NewDeck")])
+
+        assert result.succeeded == 1
+        client.create_deck.assert_called_once_with("NewDeck")
+
+    def test_push_auto_creates_missing_deck_only_once(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client()
+        client.get_deck_names.return_value = ["ExistingDeck"]
+        gw = AnkiGateway(client)
+
+        cards = [_card(deck_name="BatchDeck"), _card(deck_name="BatchDeck")]
+        result = gw.push(cards)
+
+        assert result.succeeded == 2
+        client.create_deck.assert_called_once_with("BatchDeck")
 
 
 class TestPushOrUpdate:

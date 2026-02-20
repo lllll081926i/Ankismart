@@ -60,30 +60,51 @@ class CardRenderer:
     )
 
     @staticmethod
-    def render_card(card: CardDraft) -> str:
-        """Generate HTML for card preview - always show both question and answer."""
+    def detect_card_kind(card: CardDraft) -> str:
+        """Return normalized card kind key used by UI filtering and rendering."""
         note_type = card.note_type
-
-        # Detect card strategy from tags or content
         tags = card.tags or []
         lower_tags = {tag.lower() for tag in tags}
+        front_preview = str(card.fields.get("Front", ""))[:80]
 
-        # Check for specific strategies
-        if "concept" in lower_tags or "概念" in str(card.fields.get("Front", ""))[:50]:
+        if "concept" in lower_tags or "概念" in front_preview:
+            return "concept"
+        if "key_terms" in lower_tags or "术语" in tags:
+            return "key_terms"
+        if "single_choice" in lower_tags or "单选" in tags:
+            return "single_choice"
+        if "multiple_choice" in lower_tags or "多选" in tags:
+            return "multiple_choice"
+        if "image" in lower_tags:
+            return "image_qa"
+        if note_type == "Basic (and reversed card)":
+            return "basic_reversed"
+        if note_type.startswith("Cloze"):
+            return "cloze"
+        if note_type == "Basic":
+            return "basic"
+        return "generic"
+
+    @staticmethod
+    def render_card(card: CardDraft) -> str:
+        """Generate HTML for card preview - always show both question and answer."""
+        card_kind = CardRenderer.detect_card_kind(card)
+
+        if card_kind == "concept":
             return CardRenderer._render_concept(card)
-        elif "key_terms" in lower_tags or "术语" in tags:
+        elif card_kind == "key_terms":
             return CardRenderer._render_key_terms(card)
-        elif "single_choice" in lower_tags or "单选" in tags:
+        elif card_kind == "single_choice":
             return CardRenderer._render_single_choice(card)
-        elif "multiple_choice" in lower_tags or "多选" in tags:
+        elif card_kind == "multiple_choice":
             return CardRenderer._render_multiple_choice(card)
-        elif "image" in lower_tags:
+        elif card_kind == "image_qa":
             return CardRenderer._render_image_qa(card)
-        elif note_type == "Basic":
+        elif card_kind == "basic":
             return CardRenderer._render_basic(card)
-        elif note_type == "Basic (and reversed card)":
+        elif card_kind == "basic_reversed":
             return CardRenderer._render_basic_reversed(card)
-        elif note_type.startswith("Cloze"):
+        elif card_kind == "cloze":
             return CardRenderer._render_cloze(card)
         else:
             return CardRenderer._render_generic(card)
@@ -323,11 +344,18 @@ class CardRenderer:
                     f'<span class="choice-option-text">{CardRenderer._format_text_block(text)}</span>'
                     "</div>"
                 )
-            options_html = f'<div class="choice-options">{"".join(items)}</div>'
+            options_html = (
+                '<div class="divider divider-subtle"></div>'
+                f'<div class="choice-options">{"".join(items)}</div>'
+            )
 
         answer_text = ", ".join(keys) if keys else card.fields.get("Back", "")
         explanation_html = (
+            '<div class="divider divider-subtle"></div>'
+            '<div class="choice-explain-wrap">'
+            '<div class="section-label">解析</div>'
             f'<div class="choice-explain">{CardRenderer._format_text_block(explanation)}</div>'
+            '</div>'
             if explanation
             else ""
         )
@@ -373,11 +401,18 @@ class CardRenderer:
                     f'<span class="choice-option-text">{CardRenderer._format_text_block(text)}</span>'
                     "</div>"
                 )
-            options_html = f'<div class="choice-options">{"".join(items)}</div>'
+            options_html = (
+                '<div class="divider divider-subtle"></div>'
+                f'<div class="choice-options">{"".join(items)}</div>'
+            )
 
         answer_text = ", ".join(keys) if keys else card.fields.get("Back", "")
         explanation_html = (
+            '<div class="divider divider-subtle"></div>'
+            '<div class="choice-explain-wrap">'
+            '<div class="section-label">解析</div>'
             f'<div class="choice-explain">{CardRenderer._format_text_block(explanation)}</div>'
+            '</div>'
             if explanation
             else ""
         )
@@ -473,6 +508,19 @@ class CardRenderer:
 class CardPreviewPage(QWidget):
     """Page for previewing generated Anki cards."""
 
+    _NOTE_TYPE_FILTERS: tuple[tuple[str, str, str], ...] = (
+        ("all", "全部类型", "All Types"),
+        ("basic", "基础问答", "Basic Q&A"),
+        ("basic_reversed", "双向卡片", "Reversed"),
+        ("cloze", "填空题", "Cloze"),
+        ("concept", "概念解释", "Concept"),
+        ("key_terms", "关键术语", "Key Terms"),
+        ("single_choice", "单选题", "Single Choice"),
+        ("multiple_choice", "多选题", "Multiple Choice"),
+        ("image_qa", "图片问答", "Image Q&A"),
+        ("generic", "其他", "Other"),
+    )
+
     def __init__(self, main_window: MainWindow):
         super().__init__()
         self.setObjectName("cardPreviewPage")  # Required by QFluentWidgets
@@ -542,9 +590,8 @@ class CardPreviewPage(QWidget):
         layout.addWidget(self._filter_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self._note_type_combo = ComboBox()
-        self._note_type_combo.addItem("全部" if self._main.config.language == "zh" else "All", userData="all")
-        self._note_type_combo.addItem("Basic", userData="Basic")
-        self._note_type_combo.addItem("Cloze", userData="Cloze")
+        for key, zh_text, en_text in self._NOTE_TYPE_FILTERS:
+            self._note_type_combo.addItem(zh_text if self._main.config.language == "zh" else en_text, userData=key)
         apply_compact_combo_metrics(self._note_type_combo)
         self._note_type_combo.currentIndexChanged.connect(self._apply_filters)
         layout.addWidget(self._note_type_combo, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -571,7 +618,7 @@ class CardPreviewPage(QWidget):
         layout.setSpacing(MARGIN_SMALL)
 
         # List title
-        self._list_title_label = BodyLabel("卡片列表" if self._main.config.language == "zh" else "Card List")
+        self._list_title_label = BodyLabel("问题列表" if self._main.config.language == "zh" else "Questions")
         layout.addWidget(self._list_title_label)
 
         # Card list
@@ -688,7 +735,7 @@ class CardPreviewPage(QWidget):
         # Filter by note type
         note_type_filter = self._note_type_combo.currentData()
         if note_type_filter and note_type_filter != "all":
-            filtered = [c for c in filtered if c.note_type == note_type_filter]
+            filtered = [c for c in filtered if CardRenderer.detect_card_kind(c) == note_type_filter]
 
         # Filter by search text
         search_text = self._search_input.text().strip().lower()
@@ -705,14 +752,9 @@ class CardPreviewPage(QWidget):
         """Refresh the card list widget."""
         self._card_list.clear()
 
-        for i, card in enumerate(self._filtered_cards):
-            # Get first field value as title
-            title = ""
-            if card.fields:
-                first_value = next(iter(card.fields.values()))
-                title = first_value if len(first_value) <= 50 else f"{first_value[:47]}..."
-
-            item = QListWidgetItem(f"{i + 1}. {title}")
+        for card in self._filtered_cards:
+            question = self._get_card_question_text(card)
+            item = QListWidgetItem(question)
             self._card_list.addItem(item)
 
         # Update count label
@@ -723,6 +765,29 @@ class CardPreviewPage(QWidget):
             self._card_list.setCurrentRow(0)
         else:
             self._set_card_meta_labels(None)
+
+    def _compact_plain_text(self, text: str, *, max_len: int = 72) -> str:
+        plain = re.sub(r"<[^>]+>", "", text or "")
+        plain = re.sub(r"\s+", " ", plain).strip()
+        if not plain:
+            return "（空问题）" if self._main.config.language == "zh" else "(Empty question)"
+        return plain if len(plain) <= max_len else f"{plain[: max_len - 1]}…"
+
+    def _get_card_question_text(self, card: CardDraft) -> str:
+        kind = CardRenderer.detect_card_kind(card)
+        if kind in {"single_choice", "multiple_choice"}:
+            question, _ = CardRenderer._parse_choice_front(card.fields.get("Front", ""))
+            return self._compact_plain_text(question)
+
+        for key in ("Front", "Text", "Question"):
+            value = card.fields.get(key, "")
+            if value and value.strip():
+                return self._compact_plain_text(value)
+
+        if card.fields:
+            first_value = next(iter(card.fields.values()))
+            return self._compact_plain_text(first_value)
+        return "（空问题）" if self._main.config.language == "zh" else "(Empty question)"
 
     def _on_card_selected(self, index: int):
         """Handle card selection from list."""
@@ -806,7 +871,8 @@ class CardPreviewPage(QWidget):
             "}"
             "QListWidget::item {"
             f"color: {palette.text};"
-            "padding: 8px 14px;"
+            "font-size: 15px;"
+            "padding: 10px 14px;"
             "border-radius: 6px;"
             "border: none;"
             "margin: 2px 0px;"
@@ -836,11 +902,12 @@ class CardPreviewPage(QWidget):
         is_zh = self._main.config.language == "zh"
         self._title_label.setText("卡片预览" if is_zh else "Card Preview")
         self._filter_label.setText("筛选:" if is_zh else "Filter:")
-        self._note_type_combo.setItemText(0, "全部" if is_zh else "All")
+        for idx, (_key, zh_text, en_text) in enumerate(self._NOTE_TYPE_FILTERS):
+            self._note_type_combo.setItemText(idx, zh_text if is_zh else en_text)
         self._search_input.setPlaceholderText(
             "搜索卡片内容..." if is_zh else "Search card content..."
         )
-        self._list_title_label.setText("卡片列表" if is_zh else "Card List")
+        self._list_title_label.setText("问题列表" if is_zh else "Questions")
         self._btn_prev.setText("上一张" if is_zh else "Previous")
         self._btn_next.setText("下一张" if is_zh else "Next")
         self._btn_push.setText("推送到 Anki" if is_zh else "Push to Anki")

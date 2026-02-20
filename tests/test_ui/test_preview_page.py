@@ -316,3 +316,26 @@ class TestPreviewPageWorkerCleanup:
 
         assert page._sample_worker is None
         assert worker.deleted is True
+
+
+def test_generation_message_localizes_strategy_for_zh():
+    main = _make_main_window()
+    main.config.language = "zh"
+    page = PreviewPage(main)
+
+    text = page._normalize_generation_message("正在从 demo.md 生成 2 张 single_choice 卡片")
+
+    assert "单选题" in text
+    assert "single_choice" not in text
+
+
+def test_generation_message_wraps_long_text():
+    main = _make_main_window()
+    main.config.language = "zh"
+    page = PreviewPage(main)
+
+    long_message = "生成 multiple_choice 卡片时出错，" + ("错误详情" * 40)
+    text = page._normalize_generation_message(long_message)
+
+    assert "\n" in text
+    assert len(text) < 220

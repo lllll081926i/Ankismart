@@ -979,6 +979,17 @@ class SettingsPage(ScrollArea):
             return fallback
         return str(current)
 
+    def _current_proxy_url(self) -> str:
+        """Return effective proxy URL consistent with runtime config save logic."""
+        proxy_mode_values = ["system", "manual", "none"]
+        index = self._proxy_mode_combo.currentIndex()
+        if index < 0 or index >= len(proxy_mode_values):
+            return ""
+        mode = proxy_mode_values[index]
+        if mode != "manual":
+            return ""
+        return self._proxy_edit.text().strip()
+
     def _refresh_ocr_recommendation(self) -> None:
         tier = self._get_combo_current_data(self._ocr_model_tier_combo, "lite")
         is_zh = self._main.config.language == "zh"
@@ -1107,6 +1118,7 @@ class SettingsPage(ScrollArea):
                 self._active_provider_id = provider.id
 
         self._update_provider_list()
+        self._save_config_silent(show_feedback=False)
 
     def _delete_provider(self, provider: LLMProviderConfig) -> None:
         """Delete a provider."""
@@ -1128,11 +1140,13 @@ class SettingsPage(ScrollArea):
             if provider.id == self._active_provider_id and self._providers:
                 self._active_provider_id = self._providers[0].id
             self._update_provider_list()
+            self._save_config_silent(show_feedback=False)
 
     def _activate_provider(self, provider: LLMProviderConfig) -> None:
         """Set a provider as active."""
         self._active_provider_id = provider.id
         self._update_provider_list()
+        self._save_config_silent(show_feedback=False)
 
     def _test_provider_connection(self, provider: LLMProviderConfig) -> None:
         """Test connection to a specific LLM provider."""
@@ -1148,7 +1162,7 @@ class SettingsPage(ScrollArea):
 
         worker = ProviderConnectionWorker(
             provider,
-            proxy_url=self._proxy_edit.text().strip(),
+            proxy_url=self._current_proxy_url(),
             temperature=self._temperature_slider.value() / 10,
             max_tokens=self._max_tokens_spin.value(),
         )
@@ -1207,7 +1221,7 @@ class SettingsPage(ScrollArea):
         self._cleanup_anki_test_worker()
         url = self._anki_url_edit.text() or "http://127.0.0.1:8765"
         key = self._anki_key_edit.text()
-        proxy = self._proxy_edit.text()
+        proxy = self._current_proxy_url()
 
         self._test_connection_card.setContent("测试中...")
         self._show_info_bar("info", "测试中", "正在检测 AnkiConnect 连接...", duration=1500)

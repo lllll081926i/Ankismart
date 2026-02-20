@@ -68,9 +68,10 @@ class ResultPage(QWidget):
         self._push_result: PushResult | None = None
         self._cards: list[CardDraft] = []
         self._selected_indices: set[int] = set()  # Track selected card indices
+        self._result_feedback_key: tuple[str, int, int, int] | None = None
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(SPACING_MEDIUM)  # Reduced from SPACING_LARGE
+        layout.setSpacing(SPACING_SMALL)
         layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
 
         # Title
@@ -97,7 +98,7 @@ class ResultPage(QWidget):
 
         # Unified settings card (merged push and duplicate settings)
         settings_card = self._create_unified_settings_card()
-        settings_card.setMaximumHeight(92)
+        settings_card.setMaximumHeight(86)
         layout.addWidget(settings_card)
 
         # Results table
@@ -110,7 +111,8 @@ class ResultPage(QWidget):
         self._table.setBorderRadius(8)
         self._table.setWordWrap(False)
         self._table.setColumnCount(5)
-        self._table.setMinimumHeight(520)
+        self._table.setMinimumHeight(420)
+        self._table.verticalHeader().setDefaultSectionSize(38)
 
         # Create header with checkbox
         self._header_checkbox = CheckBox()
@@ -129,42 +131,45 @@ class ResultPage(QWidget):
         self._table.setSelectionBehavior(TableWidget.SelectionBehavior.SelectRows)
         layout.addWidget(self._table, 5)
 
-        # All buttons in one row at the bottom, right-aligned
-        all_buttons_row = QHBoxLayout()
+        # Bottom operation row (dedicated line)
+        bottom_actions = CardWidget()
+        bottom_actions.setBorderRadius(8)
+        all_buttons_row = QHBoxLayout(bottom_actions)
+        all_buttons_row.setContentsMargins(MARGIN_STANDARD, MARGIN_SMALL, MARGIN_STANDARD, MARGIN_SMALL)
         all_buttons_row.setSpacing(MARGIN_SMALL)
         all_buttons_row.addStretch()
 
         self._btn_batch_edit_tags = PrimaryPushButton(t("result.batch_edit_tags"))
-        self._btn_batch_edit_tags.setMinimumHeight(40)
+        self._btn_batch_edit_tags.setMinimumHeight(34)
         self._btn_batch_edit_tags.clicked.connect(self._batch_edit_tags)
         self._btn_batch_edit_tags.setEnabled(False)
         all_buttons_row.addWidget(self._btn_batch_edit_tags)
 
         self._btn_batch_edit_deck = PushButton(t("result.batch_edit_deck"))
-        self._btn_batch_edit_deck.setMinimumHeight(40)
+        self._btn_batch_edit_deck.setMinimumHeight(34)
         self._btn_batch_edit_deck.clicked.connect(self._batch_edit_deck)
         self._btn_batch_edit_deck.setEnabled(False)
         all_buttons_row.addWidget(self._btn_batch_edit_deck)
 
         self._btn_retry = PushButton(t("result.retry_failed", lang))
-        self._btn_retry.setMinimumHeight(40)
+        self._btn_retry.setMinimumHeight(34)
         self._btn_retry.clicked.connect(self._retry_failed)
         self._btn_retry.setEnabled(False)
         all_buttons_row.addWidget(self._btn_retry)
 
         self._btn_repush_all = PushButton("推送所有卡片" if lang == "zh" else "Push All Cards")
-        self._btn_repush_all.setMinimumHeight(40)
+        self._btn_repush_all.setMinimumHeight(34)
         self._btn_repush_all.clicked.connect(self._repush_all_cards)
         self._btn_repush_all.setEnabled(False)
         all_buttons_row.addWidget(self._btn_repush_all)
 
         self._btn_export_apkg = PushButton("导出为 APKG" if lang == "zh" else "Export as APKG")
-        self._btn_export_apkg.setMinimumHeight(40)
+        self._btn_export_apkg.setMinimumHeight(34)
         self._btn_export_apkg.clicked.connect(self._export_apkg)
         self._btn_export_apkg.setEnabled(False)
         all_buttons_row.addWidget(self._btn_export_apkg)
 
-        layout.addLayout(all_buttons_row)
+        layout.addWidget(bottom_actions)
 
         # Track edited cards
         self._edited_card_indices: set[int] = set()
@@ -201,6 +206,7 @@ class ResultPage(QWidget):
         self._update_combo.addItem(t("result.update_only"), userData="update_only")
         self._update_combo.addItem(t("result.create_or_update"), userData="create_or_update")
         self._update_combo.setMinimumWidth(170)
+        self._update_combo.setFixedHeight(30)
         apply_compact_combo_metrics(self._update_combo)
 
         default_mode = getattr(self._main.config, "last_update_mode", None) or "create_only"
@@ -209,8 +215,8 @@ class ResultPage(QWidget):
                 self._update_combo.setCurrentIndex(idx)
                 break
         self._update_combo.currentIndexChanged.connect(self._on_update_mode_changed)
-        update_row.addWidget(update_label)
-        update_row.addWidget(self._update_combo)
+        update_row.addWidget(update_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        update_row.addWidget(self._update_combo, 0, Qt.AlignmentFlag.AlignVCenter)
         update_row.addStretch(1)
 
         # Duplicate scope
@@ -221,14 +227,15 @@ class ResultPage(QWidget):
         self._duplicate_scope_combo.addItem(t("result.duplicate_scope_deck"), userData="deck")
         self._duplicate_scope_combo.addItem(t("result.duplicate_scope_collection"), userData="collection")
         self._duplicate_scope_combo.setMinimumWidth(170)
+        self._duplicate_scope_combo.setFixedHeight(30)
         apply_compact_combo_metrics(self._duplicate_scope_combo)
         duplicate_scope = getattr(self._main.config, "duplicate_scope", "deck")
         self._duplicate_scope_combo.setCurrentIndex(
             0 if duplicate_scope == "deck" else 1
         )
         self._duplicate_scope_combo.currentIndexChanged.connect(self._on_duplicate_scope_changed)
-        scope_row.addWidget(scope_label)
-        scope_row.addWidget(self._duplicate_scope_combo)
+        scope_row.addWidget(scope_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        scope_row.addWidget(self._duplicate_scope_combo, 0, Qt.AlignmentFlag.AlignVCenter)
         scope_row.addStretch(1)
 
         # Check model switch
@@ -407,12 +414,12 @@ class ResultPage(QWidget):
     def _create_stat_card(self, title: str, value: str, color: str) -> CardWidget:
         """创建统计卡片。"""
         card = CardWidget()
-        card.setMinimumHeight(100)
+        card.setMinimumHeight(78)
         card.setBorderRadius(8)
 
         card_layout = QVBoxLayout(card)
-        card_layout.setSpacing(MARGIN_SMALL)
-        card_layout.setContentsMargins(MARGIN_STANDARD, SPACING_MEDIUM, MARGIN_STANDARD, SPACING_MEDIUM)
+        card_layout.setSpacing(4)
+        card_layout.setContentsMargins(MARGIN_STANDARD, 8, MARGIN_STANDARD, 8)
 
         title_label = CaptionLabel(title)
         title_label.setObjectName("stat_title")
@@ -447,7 +454,7 @@ class ResultPage(QWidget):
     def _refresh(self) -> None:
         """刷新页面数据。"""
         if self._push_result:
-            self._display_result(self._push_result, self._cards)
+            self._display_result(self._push_result, self._cards, show_feedback=False)
         else:
             self._clear_display()
 
@@ -455,9 +462,15 @@ class ResultPage(QWidget):
         """加载推送结果数据。"""
         self._push_result = result
         self._cards = cards
-        self._display_result(result, cards)
+        self._display_result(result, cards, show_feedback=True)
 
-    def _display_result(self, result: PushResult, cards: list[CardDraft]) -> None:
+    def _display_result(
+        self,
+        result: PushResult,
+        cards: list[CardDraft],
+        *,
+        show_feedback: bool = False,
+    ) -> None:
         """显示推送结果。"""
         is_zh = getattr(self._main.config, "language", "zh") == "zh"
         # Update statistics
@@ -477,8 +490,10 @@ class ResultPage(QWidget):
         self._btn_retry.setEnabled(has_failed)
         self._btn_export_apkg.setEnabled(bool(cards))
 
-        # Show info bar
-        if result.succeeded == result.total:
+        # Show top feedback only on fresh result load.
+        feedback_key = (result.trace_id or "", result.total, result.succeeded, result.failed)
+        should_show_feedback = show_feedback and self._result_feedback_key != feedback_key
+        if should_show_feedback and result.succeeded == result.total:
             InfoBar.success(
                 title="推送成功" if is_zh else "Push Success",
                 content=f"成功推送 {result.succeeded} 张卡片" if is_zh else f"Successfully pushed {result.succeeded} cards",
@@ -488,7 +503,8 @@ class ResultPage(QWidget):
                 duration=3000,
                 parent=self,
             )
-        elif result.failed > 0:
+            self._result_feedback_key = feedback_key
+        elif should_show_feedback and result.failed > 0:
             InfoBar.warning(
                 title="部分失败" if is_zh else "Partial Failure",
                 content=f"成功 {result.succeeded} 张，失败 {result.failed} 张"
@@ -499,6 +515,7 @@ class ResultPage(QWidget):
                 duration=5000,
                 parent=self,
             )
+            self._result_feedback_key = feedback_key
 
     def _add_table_row(self, status: CardPushStatus, cards: list[CardDraft]) -> None:
         """添加表格行。"""
@@ -521,9 +538,7 @@ class ResultPage(QWidget):
         card_title = t("result.unknown_card", lang)
         if 0 <= status.index < len(cards):
             card = cards[status.index]
-            if card.fields:
-                first_field = next(iter(card.fields.values()))
-                card_title = first_field[:50] + "..." if len(first_field) > 50 else first_field
+            card_title = self._extract_question_title(card, lang=lang)
 
         title_item = QTableWidgetItem(card_title)
         self._table.setItem(row, 1, title_item)
@@ -563,6 +578,19 @@ class ResultPage(QWidget):
 
         self._table.setCellWidget(row, 4, btn_widget)
 
+    @staticmethod
+    def _extract_question_title(card: CardDraft, *, lang: str) -> str:
+        """Extract display title from question field only."""
+        def _compact(value: str) -> str:
+            plain = " ".join(value.replace("\r", " ").replace("\n", " ").split())
+            return plain if len(plain) <= 56 else f"{plain[:55]}…"
+
+        for key in ("Front", "Text", "Question"):
+            value = card.fields.get(key, "")
+            if value and value.strip():
+                return _compact(value)
+        return t("result.unknown_card", lang)
+
     def _hex_to_qcolor(self, hex_color: str):
         """将十六进制颜色转换为 QColor。"""
         from PyQt6.QtGui import QColor
@@ -578,6 +606,7 @@ class ResultPage(QWidget):
         self._table.setRowCount(0)
         self._btn_retry.setEnabled(False)
         self._btn_export_apkg.setEnabled(False)
+        self._result_feedback_key = None
 
     def _apply_duplicate_settings(self, cards: list[CardDraft]) -> None:
         """Apply duplicate check settings to cards."""
@@ -924,12 +953,13 @@ class ResultPage(QWidget):
             if status.index == card_index:
                 # Update card title
                 card = self._cards[card_index]
-                if card.fields:
-                    first_field = next(iter(card.fields.values()))
-                    card_title = first_field[:50] + "..." if len(first_field) > 50 else first_field
-                    title_item = self._table.item(row_idx, 1)
-                    if title_item:
-                        title_item.setText(card_title)
+                card_title = self._extract_question_title(
+                    card,
+                    lang=getattr(self._main.config, "language", "zh"),
+                )
+                title_item = self._table.item(row_idx, 1)
+                if title_item:
+                    title_item.setText(card_title)
                 break
 
     def _repush_all_cards(self) -> None:
@@ -1097,7 +1127,7 @@ class ResultPage(QWidget):
 
         # Refresh row content (status/error/action texts) with the active language.
         if self._push_result:
-            self._display_result(self._push_result, self._cards)
+            self._display_result(self._push_result, self._cards, show_feedback=False)
 
     def _cleanup_push_worker(self) -> None:
         worker = self.__dict__.get("_worker")

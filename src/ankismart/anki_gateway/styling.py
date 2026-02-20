@@ -441,9 +441,9 @@ PREVIEW_CARD_EXTRA_CSS = """
 }
 
 .section-content {
-    font-size: 14px;
-    line-height: 1.7;
-    padding: 12px;
+    font-size: 16px;
+    line-height: 1.75;
+    padding: 14px;
     border: 1px solid var(--border);
     background: #fbfdff;
     border-radius: var(--radius-md);
@@ -470,7 +470,7 @@ PREVIEW_CARD_EXTRA_CSS = """
 }
 
 .choice-options {
-    margin-top: 10px;
+    margin-top: 12px;
     display: grid;
     gap: 8px;
 }
@@ -516,7 +516,8 @@ PREVIEW_CARD_EXTRA_CSS = """
 }
 
 .choice-option-text {
-    line-height: 1.65;
+    font-size: 15px;
+    line-height: 1.7;
 }
 
 .choice-answer-box {
@@ -525,14 +526,17 @@ PREVIEW_CARD_EXTRA_CSS = """
 }
 
 .choice-explain {
-    margin-top: 10px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: #f9fbff;
-    padding: 10px 12px;
-    font-size: 12px;
-    line-height: 1.6;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 1.7;
     color: var(--text-secondary);
+}
+
+.choice-explain-wrap .section-label {
+    margin-bottom: 10px;
 }
 
 .night_mode .choice-explain,
@@ -564,8 +568,13 @@ PREVIEW_CARD_EXTRA_CSS = """
 .divider {
     height: 1px;
     background: var(--border);
-    margin: 14px 2px;
+    margin: 16px 2px;
     box-shadow: none;
+}
+
+.divider-subtle {
+    margin: 12px 0 10px;
+    opacity: 0.9;
 }
 
 .field {

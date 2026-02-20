@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from PyQt6.QtWidgets import QMessageBox
 
+from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.ui.settings_page import SettingsPage, configure_ocr_runtime
 
 from .settings_page_test_utils import make_main
@@ -142,9 +143,12 @@ def test_test_provider_connection_uses_worker_and_triggers_success_flow(_qapp, m
     page = SettingsPage(main)
 
     class _ProviderWorkerStub:
+        last_proxy_url = None
+
         def __init__(self, provider, **kwargs):
             self.provider = provider
             self.kwargs = kwargs
+            _ProviderWorkerStub.last_proxy_url = kwargs.get("proxy_url")
             self.finished = _SignalStub()
 
         def start(self):
@@ -160,6 +164,51 @@ def test_test_provider_connection_uses_worker_and_triggers_success_flow(_qapp, m
 
     # Worker may finish synchronously in tests and should then be cleaned up.
     assert page._provider_test_worker is None
+    assert _ProviderWorkerStub.last_proxy_url == ""
+
+
+def test_test_provider_connection_uses_effective_manual_proxy(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+    page._proxy_mode_combo.setCurrentIndex(1)  # manual
+    page._proxy_edit.setText("http://proxy.local:8080")
+
+    class _ProviderWorkerStub:
+        last_proxy_url = None
+
+        def __init__(self, provider, **kwargs):
+            _ProviderWorkerStub.last_proxy_url = kwargs.get("proxy_url")
+            self.finished = _SignalStub()
+
+        def start(self):
+            self.finished.emit(True, "")
+
+    monkeypatch.setattr("ankismart.ui.workers.ProviderConnectionWorker", _ProviderWorkerStub)
+    monkeypatch.setattr(page, "_show_info_bar", lambda *args, **kwargs: None)
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+
+    page._test_provider_connection(page._providers[0])
+
+    assert _ProviderWorkerStub.last_proxy_url == "http://proxy.local:8080"
+
+
+def test_activate_provider_persists_to_main_config_immediately(_qapp) -> None:
+    p1 = LLMProviderConfig(id="p1", name="P1", api_key="k1", base_url="https://api.openai.com/v1", model="gpt-4o")
+    p2 = LLMProviderConfig(id="p2", name="P2", api_key="k2", base_url="https://api.openai.com/v1", model="gpt-4o")
+    cfg = AppConfig(llm_providers=[p1, p2], active_provider_id="p1")
+    main, _ = make_main(cfg)
+
+    def _apply_runtime(config: AppConfig, *, persist: bool = True, changed_fields=None):
+        main.config = config
+        return set(changed_fields or [])
+
+    main.apply_runtime_config = _apply_runtime
+    page = SettingsPage(main)
+
+    page._activate_provider(page._providers[1])
+
+    assert main.config.active_provider_id == "p2"
 
 
 def test_cleanup_provider_worker_keeps_reference_when_thread_still_running(_qapp) -> None:
