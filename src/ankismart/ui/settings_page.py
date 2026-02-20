@@ -366,6 +366,10 @@ class SettingsPage(ScrollArea):
             f"border: 1px solid {palette.border};"
             "border-radius: 8px;"
             "}"
+            "QTableWidget::item:selected {"
+            "background: transparent;"
+            "color: inherit;"
+            "}"
         )
 
     def _init_layout(self):
@@ -397,7 +401,8 @@ class SettingsPage(ScrollArea):
         self._provider_table.verticalHeader().hide()
         self._provider_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._provider_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._provider_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._provider_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self._provider_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._provider_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         # Set fixed row height (36px per row)
@@ -931,10 +936,10 @@ class SettingsPage(ScrollArea):
 
             # Active state button: active=primary(强调色), inactive=flat(no color).
             if is_active:
-                activate_btn = PrimaryPushButton("激活中")
+                activate_btn = PrimaryPushButton("当前")
                 activate_btn.setFixedSize(64, 28)
             else:
-                activate_btn = PushButton("待激活")
+                activate_btn = PushButton("激活")
                 activate_btn.setFixedSize(64, 28)
                 activate_btn.clicked.connect(lambda checked, p=provider: self._activate_provider(p))
             action_layout.addWidget(activate_btn)

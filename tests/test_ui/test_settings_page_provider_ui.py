@@ -201,6 +201,7 @@ def test_provider_table_activation_buttons_match_active_state(_qapp) -> None:
     page = SettingsPage(main)
 
     assert page._provider_table.columnCount() == 5
+    assert page._provider_table.selectionMode() == page._provider_table.SelectionMode.NoSelection
 
     active_widget = page._provider_table.cellWidget(0, 4)
     inactive_widget = page._provider_table.cellWidget(1, 4)
@@ -211,7 +212,7 @@ def test_provider_table_activation_buttons_match_active_state(_qapp) -> None:
     inactive_btn = inactive_widget.layout().itemAt(0).widget()
 
     assert isinstance(active_btn, PrimaryPushButton)
-    assert active_btn.text() == "激活中"
+    assert active_btn.text() == "当前"
 
     assert type(inactive_btn) is PushButton
-    assert inactive_btn.text() == "待激活"
+    assert inactive_btn.text() == "激活"
