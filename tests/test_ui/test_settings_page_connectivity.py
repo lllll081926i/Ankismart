@@ -10,6 +10,34 @@ from .settings_page_test_utils import make_main
 pytest_plugins = ["tests.test_ui.settings_page_test_utils"]
 
 
+class _SignalStub:
+    def __init__(self) -> None:
+        self._callbacks = []
+
+    def connect(self, callback):
+        self._callbacks.append(callback)
+
+    def emit(self, *args):
+        for callback in list(self._callbacks):
+            callback(*args)
+
+
+class _ThreadLikeWorker:
+    def __init__(self, *, running: bool) -> None:
+        self._running = running
+        self.wait_calls: list[int] = []
+        self.deleted = False
+
+    def isRunning(self) -> bool:  # noqa: N802
+        return self._running
+
+    def wait(self, timeout: int) -> None:
+        self.wait_calls.append(timeout)
+
+    def deleteLater(self) -> None:  # noqa: N802
+        self.deleted = True
+
+
 def test_ocr_connectivity_cloud_mode_shows_developing_message(_qapp, monkeypatch) -> None:
     main, _ = make_main()
     page = SettingsPage(main)
@@ -89,17 +117,6 @@ def test_test_connection_uses_worker_and_triggers_success_flow(_qapp, monkeypatc
     main, status_calls = make_main()
     page = SettingsPage(main)
 
-    class _SignalStub:
-        def __init__(self):
-            self._callback = None
-
-        def connect(self, callback):
-            self._callback = callback
-
-        def emit(self, *args):
-            if self._callback:
-                self._callback(*args)
-
     class _WorkerStub:
         def __init__(self, url: str, key: str, proxy_url: str = ""):
             self.url = url
@@ -124,17 +141,6 @@ def test_test_provider_connection_uses_worker_and_triggers_success_flow(_qapp, m
     main, _ = make_main()
     page = SettingsPage(main)
 
-    class _SignalStub:
-        def __init__(self):
-            self._callback = None
-
-        def connect(self, callback):
-            self._callback = callback
-
-        def emit(self, *args):
-            if self._callback:
-                self._callback(*args)
-
     class _ProviderWorkerStub:
         def __init__(self, provider, **kwargs):
             self.provider = provider
@@ -154,6 +160,56 @@ def test_test_provider_connection_uses_worker_and_triggers_success_flow(_qapp, m
 
     # Worker may finish synchronously in tests and should then be cleaned up.
     assert page._provider_test_worker is None
+
+
+def test_cleanup_provider_worker_keeps_reference_when_thread_still_running(_qapp) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+    worker = _ThreadLikeWorker(running=True)
+    page._provider_test_worker = worker
+
+    page._cleanup_provider_test_worker()
+
+    assert page._provider_test_worker is worker
+    assert worker.wait_calls == [200]
+    assert worker.deleted is False
+
+
+def test_cleanup_provider_worker_releases_finished_thread(_qapp) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+    worker = _ThreadLikeWorker(running=False)
+    page._provider_test_worker = worker
+
+    page._cleanup_provider_test_worker()
+
+    assert page._provider_test_worker is None
+    assert worker.deleted is True
+
+
+def test_cleanup_anki_worker_keeps_reference_when_thread_still_running(_qapp) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+    worker = _ThreadLikeWorker(running=True)
+    page._anki_test_worker = worker
+
+    page._cleanup_anki_test_worker()
+
+    assert page._anki_test_worker is worker
+    assert worker.wait_calls == [200]
+    assert worker.deleted is False
+
+
+def test_cleanup_anki_worker_releases_finished_thread(_qapp) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+    worker = _ThreadLikeWorker(running=False)
+    page._anki_test_worker = worker
+
+    page._cleanup_anki_test_worker()
+
+    assert page._anki_test_worker is None
+    assert worker.deleted is True
 
 
 def test_configure_ocr_runtime_falls_back_for_legacy_signature(monkeypatch) -> None:

@@ -15,6 +15,26 @@ from .import_page_test_utils import (
 )
 
 
+class _ThreadLikeWorker:
+    def __init__(self, *, running: bool) -> None:
+        self._running = running
+        self.wait_calls: list[int] = []
+        self.cancel_called = False
+        self.deleted = False
+
+    def isRunning(self) -> bool:  # noqa: N802
+        return self._running
+
+    def wait(self, timeout: int) -> None:
+        self.wait_calls.append(timeout)
+
+    def cancel(self) -> None:
+        self.cancel_called = True
+
+    def deleteLater(self) -> None:  # noqa: N802
+        self.deleted = True
+
+
 def test_batch_convert_done_sets_result_and_switches(monkeypatch):
     page = make_page()
 
@@ -178,3 +198,73 @@ def test_batch_convert_done_no_documents(monkeypatch):
 
     assert page._main._switched_to_preview is False
     assert any("没有" in t for t in status_texts)
+
+
+def test_cleanup_batch_worker_keeps_reference_when_running():
+    page = make_page()
+    worker = _ThreadLikeWorker(running=True)
+    page._worker = worker
+
+    ImportPage._cleanup_batch_worker(page)
+
+    assert page._worker is worker
+    assert worker.cancel_called is True
+    assert worker.wait_calls == [200]
+    assert worker.deleted is False
+
+
+def test_cleanup_batch_worker_releases_finished_worker():
+    page = make_page()
+    worker = _ThreadLikeWorker(running=False)
+    page._worker = worker
+
+    ImportPage._cleanup_batch_worker(page)
+
+    assert page._worker is None
+    assert worker.deleted is True
+
+
+def test_cleanup_ocr_download_worker_keeps_reference_when_running():
+    page = make_page()
+    worker = _ThreadLikeWorker(running=True)
+    page._ocr_download_worker = worker
+
+    ImportPage._cleanup_ocr_download_worker(page)
+
+    assert page._ocr_download_worker is worker
+    assert worker.wait_calls == [200]
+    assert worker.deleted is False
+
+
+def test_cleanup_ocr_download_worker_releases_finished_worker():
+    page = make_page()
+    worker = _ThreadLikeWorker(running=False)
+    page._ocr_download_worker = worker
+
+    ImportPage._cleanup_ocr_download_worker(page)
+
+    assert page._ocr_download_worker is None
+    assert worker.deleted is True
+
+
+def test_cleanup_deck_loader_keeps_reference_when_running():
+    page = make_page()
+    worker = _ThreadLikeWorker(running=True)
+    page._deck_loader = worker
+
+    ImportPage._cleanup_deck_loader_worker(page)
+
+    assert page._deck_loader is worker
+    assert worker.wait_calls == [200]
+    assert worker.deleted is False
+
+
+def test_cleanup_deck_loader_releases_finished_worker():
+    page = make_page()
+    worker = _ThreadLikeWorker(running=False)
+    page._deck_loader = worker
+
+    ImportPage._cleanup_deck_loader_worker(page)
+
+    assert page._deck_loader is None
+    assert worker.deleted is True

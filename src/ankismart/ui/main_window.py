@@ -548,6 +548,27 @@ NavigationPanel[transparent=true] {{
         """Store connection status for settings page feedback."""
         self._connection_status = connected
 
+    def _shutdown_pages(self) -> None:
+        """Close child pages first so their closeEvent hooks can stop workers safely."""
+        for attr in (
+            "import_page",
+            "preview_page",
+            "card_preview_page",
+            "result_page",
+            "performance_page",
+            "settings_page",
+        ):
+            page = getattr(self, attr, None)
+            if page is None:
+                continue
+            close_page = getattr(page, "close", None)
+            if not callable(close_page):
+                continue
+            try:
+                close_page()
+            except Exception:
+                continue
+
     @property
     def cards(self):
         return self._cards
@@ -566,6 +587,7 @@ NavigationPanel[transparent=true] {{
 
     def closeEvent(self, event):  # noqa: N802
         """Save window geometry before closing."""
+        self._shutdown_pages()
         geometry = self.saveGeometry().toHex().data().decode()
         self.config.window_geometry = geometry
         save_config(self.config)

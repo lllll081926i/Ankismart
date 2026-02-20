@@ -597,6 +597,17 @@ class ResultPage(QWidget):
         is_zh = getattr(self._main.config, "language", "zh") == "zh"
         if not self._push_result or not self._cards:
             return
+        if self._worker and self._worker.isRunning():
+            InfoBar.info(
+                title="请稍候" if is_zh else "Please Wait",
+                content="已有推送任务进行中" if is_zh else "Another push task is already running.",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self,
+            )
+            return
 
         # Collect failed cards
         failed_cards = []
@@ -636,10 +647,10 @@ class ResultPage(QWidget):
             cards=failed_cards,
             update_mode=config.last_update_mode or "create_only",
         )
+        self._worker = worker
         worker.finished.connect(self._on_retry_done)
         worker.error.connect(self._on_retry_error)
         worker.start()
-        self._worker = worker
 
         InfoBar.info(
             title="重试中" if is_zh else "Retrying",
@@ -935,6 +946,17 @@ class ResultPage(QWidget):
                 parent=self,
             )
             return
+        if self._worker and self._worker.isRunning():
+            InfoBar.info(
+                title="请稍候" if is_zh else "Please Wait",
+                content="已有推送任务进行中" if is_zh else "Another push task is already running.",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self,
+            )
+            return
 
         # Apply duplicate check settings to all cards
         self._apply_duplicate_settings(self._cards)
@@ -957,10 +979,10 @@ class ResultPage(QWidget):
             cards=self._cards,
             update_mode=config.last_update_mode or "create_or_update",
         )
+        self._worker = worker
         worker.finished.connect(self._on_repush_done)
         worker.error.connect(self._on_repush_error)
         worker.start()
-        self._worker = worker
 
         InfoBar.info(
             title="推送中" if is_zh else "Pushing",

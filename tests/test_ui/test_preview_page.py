@@ -46,6 +46,26 @@ def _make_main_window() -> MagicMock:
     return main
 
 
+class _ThreadLikeWorker:
+    def __init__(self, *, running: bool) -> None:
+        self._running = running
+        self.wait_calls: list[int] = []
+        self.cancel_called = False
+        self.deleted = False
+
+    def isRunning(self) -> bool:  # noqa: N802
+        return self._running
+
+    def wait(self, timeout: int) -> None:
+        self.wait_calls.append(timeout)
+
+    def cancel(self) -> None:
+        self.cancel_called = True
+
+    def deleteLater(self) -> None:  # noqa: N802
+        self.deleted = True
+
+
 class TestPreviewPageLoadDocuments:
     def test_load_single_document(self):
         main = _make_main_window()
@@ -223,3 +243,76 @@ class TestPreviewPageFlow:
         page._on_push_finished(MagicMock())
 
         main.switch_to_result.assert_not_called()
+
+
+class TestPreviewPageWorkerCleanup:
+    def test_cleanup_generate_worker_keeps_reference_when_running(self):
+        main = _make_main_window()
+        page = PreviewPage(main)
+        worker = _ThreadLikeWorker(running=True)
+        page._generate_worker = worker
+
+        page._cleanup_generate_worker()
+
+        assert page._generate_worker is worker
+        assert worker.cancel_called is True
+        assert worker.wait_calls == [200]
+        assert worker.deleted is False
+
+    def test_cleanup_generate_worker_releases_finished_worker(self):
+        main = _make_main_window()
+        page = PreviewPage(main)
+        worker = _ThreadLikeWorker(running=False)
+        page._generate_worker = worker
+
+        page._cleanup_generate_worker()
+
+        assert page._generate_worker is None
+        assert worker.deleted is True
+
+    def test_cleanup_push_worker_keeps_reference_when_running(self):
+        main = _make_main_window()
+        page = PreviewPage(main)
+        worker = _ThreadLikeWorker(running=True)
+        page._push_worker = worker
+
+        page._cleanup_push_worker()
+
+        assert page._push_worker is worker
+        assert worker.cancel_called is True
+        assert worker.wait_calls == [200]
+        assert worker.deleted is False
+
+    def test_cleanup_push_worker_releases_finished_worker(self):
+        main = _make_main_window()
+        page = PreviewPage(main)
+        worker = _ThreadLikeWorker(running=False)
+        page._push_worker = worker
+
+        page._cleanup_push_worker()
+
+        assert page._push_worker is None
+        assert worker.deleted is True
+
+    def test_cleanup_sample_worker_keeps_reference_when_running(self):
+        main = _make_main_window()
+        page = PreviewPage(main)
+        worker = _ThreadLikeWorker(running=True)
+        page._sample_worker = worker
+
+        page._cleanup_sample_worker()
+
+        assert page._sample_worker is worker
+        assert worker.wait_calls == [200]
+        assert worker.deleted is False
+
+    def test_cleanup_sample_worker_releases_finished_worker(self):
+        main = _make_main_window()
+        page = PreviewPage(main)
+        worker = _ThreadLikeWorker(running=False)
+        page._sample_worker = worker
+
+        page._cleanup_sample_worker()
+
+        assert page._sample_worker is None
+        assert worker.deleted is True
