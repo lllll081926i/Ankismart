@@ -548,9 +548,9 @@ PREVIEW_CARD_EXTRA_CSS = """
     background: #eef5ff;
     border: 1px solid #bdd4f5;
     border-radius: var(--radius-md);
-    font-size: 14px;
+    font-size: 15px;
     line-height: 1.8;
-    padding: 12px;
+    padding: 14px;
 }
 
 .cloze {
@@ -563,6 +563,112 @@ PREVIEW_CARD_EXTRA_CSS = """
     box-shadow: none;
     margin: 0 2px;
     padding: 2px 8px;
+}
+
+.cloze-emphasis {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 2px;
+    padding: 2px 8px 2px 6px;
+    border-radius: 8px;
+    border: 1px solid rgba(31, 111, 214, 0.38);
+    background: linear-gradient(90deg, rgba(31, 111, 214, 0.12) 0%, rgba(31, 111, 214, 0.06) 100%);
+}
+
+.cloze-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 20px;
+    border-radius: 6px;
+    padding: 0 6px;
+    border: 1px solid #8ab3ea;
+    background: #ddeeff;
+    color: #1b4f87;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+}
+
+.cloze-gap {
+    color: #2a5f97;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+}
+
+.cloze-content {
+    color: #1f5fa7;
+    font-weight: 800;
+    font-size: 15px;
+}
+
+.cloze-hint {
+    margin-left: 4px;
+    color: #4f6a89;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.cloze-answer-wrap .section-label {
+    margin-bottom: 10px;
+}
+
+.cloze-answer-list {
+    display: grid;
+    gap: 8px;
+}
+
+.cloze-chip {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #bfd5f4;
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: #f8fbff;
+}
+
+.cloze-chip-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 22px;
+    border-radius: 7px;
+    padding: 0 8px;
+    border: 1px solid #9abce7;
+    background: #e6f1ff;
+    color: #255a95;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.cloze-chip-answer {
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.cloze-chip-hint {
+    grid-column: 1 / -1;
+    margin-left: 36px;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+.cloze-empty-note {
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: var(--text-secondary);
+    background: #f8fbff;
+    font-size: 13px;
 }
 
 .divider {
@@ -623,6 +729,49 @@ PREVIEW_CARD_EXTRA_CSS = """
     color: #e2e2e2;
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(255, 255, 255, 0.24);
+}
+
+.night_mode .cloze-emphasis,
+.nightMode .cloze-emphasis {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.26);
+}
+
+.night_mode .cloze-index,
+.nightMode .cloze-index,
+.night_mode .cloze-chip-index,
+.nightMode .cloze-chip-index {
+    background: rgba(92, 92, 92, 0.95);
+    border-color: #777777;
+    color: #efefef;
+}
+
+.night_mode .cloze-gap,
+.nightMode .cloze-gap,
+.night_mode .cloze-content,
+.nightMode .cloze-content {
+    color: #f0f0f0;
+}
+
+.night_mode .cloze-hint,
+.nightMode .cloze-hint {
+    color: #c8c8c8;
+}
+
+.night_mode .cloze-chip,
+.nightMode .cloze-chip {
+    background: rgba(56, 56, 56, 0.88);
+    border-color: #5f5f5f;
+}
+
+.night_mode .cloze-chip-answer,
+.nightMode .cloze-chip-answer {
+    color: #f0f0f0;
+}
+
+.night_mode .cloze-empty-note,
+.nightMode .cloze-empty-note {
+    background: rgba(56, 56, 56, 0.86);
 }
 
 .empty-placeholder {

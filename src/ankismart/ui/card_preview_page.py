@@ -58,6 +58,7 @@ class CardRenderer:
         r"^(?:答案|正确答案|answer)?\s*[:：]?\s*([A-Ea-e](?:\s*[,，、/]\s*[A-Ea-e])*)\s*$",
         re.IGNORECASE,
     )
+    _CLOZE_PATTERN = re.compile(r"\{\{c(\d+)::(.*?)(?:::(.*?))?\}\}", re.IGNORECASE | re.DOTALL)
 
     @staticmethod
     def detect_card_kind(card: CardDraft) -> str:
@@ -248,14 +249,63 @@ class CardRenderer:
     def _render_cloze(card: CardDraft) -> str:
         """Render Cloze note type with highlighted deletions."""
         text = card.fields.get("Text", "")
+        cloze_entries: list[tuple[str, str, str]] = []
 
-        # Process cloze deletions: {{c1::text}} -> highlighted spans
-        processed = re.sub(
-            r'\{\{c(\d+)::([^}]+)\}\}',
-            r'<span class="cloze" data-cloze="\1"><span class="cloze-bracket">[</span><span class="cloze-content">\2</span><span class="cloze-bracket">]</span></span>',
-            text
-        )
+        def _replace_cloze(match: re.Match[str]) -> str:
+            idx = match.group(1)
+            answer = (match.group(2) or "").strip()
+            hint = (match.group(3) or "").strip()
+            cloze_entries.append((idx, answer, hint))
+
+            answer_text = CardRenderer._format_text_block(answer, empty_text="（空）")
+            hint_html = (
+                f'<span class="cloze-hint">提示：{CardRenderer._format_text_block(hint)}</span>'
+                if hint
+                else ""
+            )
+            return (
+                f'<span class="cloze cloze-emphasis" data-cloze="{idx}">'
+                f'<span class="cloze-index">C{idx}</span>'
+                '<span class="cloze-gap">____</span>'
+                f'<span class="cloze-content">{answer_text}</span>'
+                f"{hint_html}"
+                "</span>"
+            )
+
+        processed = CardRenderer._CLOZE_PATTERN.sub(_replace_cloze, text)
         processed = CardRenderer._format_text_block(processed, empty_text="（无填空内容）")
+
+        if cloze_entries:
+            chips: list[str] = []
+            for idx, answer, hint in cloze_entries:
+                answer_html = CardRenderer._format_text_block(answer, empty_text="（空）")
+                hint_block = (
+                    f'<span class="cloze-chip-hint">提示：{CardRenderer._format_text_block(hint)}</span>'
+                    if hint
+                    else ""
+                )
+                chips.append(
+                    '<div class="cloze-chip">'
+                    f'<span class="cloze-chip-index">C{idx}</span>'
+                    f'<span class="cloze-chip-answer">{answer_html}</span>'
+                    f"{hint_block}"
+                    "</div>"
+                )
+            answer_list_html = (
+                '<div class="divider divider-subtle"></div>'
+                '<div class="cloze-answer-wrap">'
+                '<div class="section-label">挖空要点</div>'
+                f'<div class="cloze-answer-list">{"".join(chips)}</div>'
+                "</div>"
+            )
+        else:
+            answer_list_html = (
+                '<div class="divider divider-subtle"></div>'
+                '<div class="cloze-answer-wrap">'
+                '<div class="section-label">挖空要点</div>'
+                '<div class="cloze-empty-note">未检测到有效的 {{cN::...}} 挖空标记。</div>'
+                "</div>"
+            )
 
         content = f"""
         <div class="card-cloze">
@@ -263,9 +313,11 @@ class CardRenderer:
                 <span class="notice-icon">●●●</span>
                 <span class="notice-text">填空题</span>
             </div>
+            <div class="section-label">原文（含挖空内容）</div>
             <div class="cloze-content-wrapper">
                 {processed}
             </div>
+            {answer_list_html}
         </div>
         """
 

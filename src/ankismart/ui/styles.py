@@ -281,7 +281,9 @@ QWidget#scrollWidget {{
 FluentWindowBase,
 StackedWidget,
 FluentTitleBar,
+MSFluentTitleBar,
 SplitTitleBar,
+TitleBar,
 NavigationInterface,
 NavigationPanel[menu=true],
 NavigationPanel[menu=false],
@@ -290,6 +292,15 @@ NavigationPanel[transparent=true] {{
 }}
 
 QLabel, BodyLabel, CaptionLabel, TitleLabel, SubtitleLabel {{
+    background: transparent;
+}}
+
+#settingsPage InfoBar QLabel,
+#settingsPage StateToolTip QLabel,
+#settingsPage InfoBar QFrame,
+#settingsPage StateToolTip QFrame {{
+    border: none;
+    border-radius: 0px;
     background: transparent;
 }}
 

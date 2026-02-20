@@ -7,6 +7,7 @@ from qfluentwidgets import Theme, setTheme
 
 from ankismart.anki_gateway.styling import PREVIEW_CARD_EXTRA_CSS
 from ankismart.core.config import AppConfig
+from ankismart.core.models import CardDraft
 from ankismart.ui.card_preview_page import CardRenderer
 from ankismart.ui.main_window import MainWindow
 from ankismart.ui.shortcuts_dialog import ShortcutsHelpDialog
@@ -70,3 +71,35 @@ def test_card_preview_dark_class_keeps_compatibility() -> None:
 def test_shortcuts_dialog_can_construct_without_crash() -> None:
     dialog = ShortcutsHelpDialog("zh")
     dialog.close()
+
+
+def test_cloze_preview_emphasizes_deletion_features() -> None:
+    card = CardDraft(
+        note_type="Cloze",
+        fields={"Text": "地球是太阳系第 {{c1::三}} 颗行星，简称 {{c2::蓝星::别称}}。"},
+    )
+    html = CardRenderer.render_card(card)
+
+    assert 'class="cloze cloze-emphasis"' in html
+    assert 'class="cloze-answer-list"' in html
+    assert "挖空要点" in html
+    assert "C1" in html
+    assert "C2" in html
+    assert "提示：" in html
+
+
+def test_choice_preview_keeps_question_answer_structure() -> None:
+    card = CardDraft(
+        note_type="Basic",
+        tags=["single_choice"],
+        fields={
+            "Front": "Python 默认解释器是？\nA. CPython\nB. JVM\nC. CLR",
+            "Back": "答案：A\nCPython 是官方实现。",
+        },
+    )
+    html = CardRenderer.render_card(card)
+
+    assert 'class="choice-question"' in html
+    assert 'class="choice-options"' in html
+    assert "choice-answer-box" in html
+    assert "choice-explain" in html

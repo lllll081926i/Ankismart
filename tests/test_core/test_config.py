@@ -173,6 +173,15 @@ class TestLoadConfig:
             cfg = load_config()
         assert cfg == AppConfig()
 
+    def test_invalid_ocr_mode_falls_back_to_local(self, tmp_path: Path):
+        config_file = tmp_path / "config.yaml"
+        data = {"ocr_mode": "invalid_mode"}
+        config_file.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+        with patch("ankismart.core.config.CONFIG_PATH", config_file):
+            cfg = load_config()
+        assert cfg.ocr_mode == "local"
+
 
 class TestMigration:
     def test_migrates_openai_legacy(self, tmp_path: Path):

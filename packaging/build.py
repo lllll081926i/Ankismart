@@ -7,7 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 DIST_DIR = PROJECT_ROOT / "dist"
@@ -18,6 +17,7 @@ APP_BUILD_DIR = DIST_DIR / "Ankismart"
 STAGED_APP_DIR = RELEASE_DIR / "app"
 PORTABLE_ROOT = RELEASE_DIR / "portable"
 INSTALLER_ROOT = RELEASE_DIR / "installer"
+APP_EXE_NAME = "Ankismart.exe"
 
 OCR_MODEL_DIR_NAMES = {
     "model",
@@ -149,6 +149,20 @@ def stage_app_files() -> None:
         else:
             shutil.copy2(item, destination)
 
+    staged_exe = STAGED_APP_DIR / APP_EXE_NAME
+    if not staged_exe.exists():
+        fallback_candidates = [
+            APP_BUILD_DIR / APP_EXE_NAME,
+            BUILD_DIR / "ankismart" / APP_EXE_NAME,
+        ]
+        for candidate in fallback_candidates:
+            if candidate.exists():
+                shutil.copy2(candidate, staged_exe)
+                _print(f"检测到可执行文件不在 dist 目录，已回填: {candidate} -> {staged_exe}")
+                break
+        if not staged_exe.exists():
+            raise FileNotFoundError(f"未找到应用可执行文件: {APP_EXE_NAME}")
+
     prune_unused_dependencies(STAGED_APP_DIR)
     removed_dirs, removed_files = remove_ocr_model_artifacts(STAGED_APP_DIR)
     _print(f"已清理 OCR 模型目录 {removed_dirs} 个，模型文件 {removed_files} 个")
@@ -263,6 +277,13 @@ def verify_layout(version: str) -> None:
     for path in required:
         if not path.exists():
             raise RuntimeError(f"发布目录缺失: {path}")
+
+    app_exe = STAGED_APP_DIR / APP_EXE_NAME
+    portable_exe = portable_dir / APP_EXE_NAME
+    if not app_exe.exists():
+        raise RuntimeError(f"应用分发目录缺少可执行文件: {app_exe}")
+    if not portable_exe.exists():
+        raise RuntimeError(f"便携版目录缺少可执行文件: {portable_exe}")
 
     verify_no_ocr_models(STAGED_APP_DIR)
     verify_no_ocr_models(portable_dir)

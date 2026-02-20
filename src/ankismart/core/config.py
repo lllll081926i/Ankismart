@@ -300,6 +300,8 @@ def load_config() -> AppConfig:
         config = AppConfig(**data)
         if config.theme not in {"light", "dark", "auto"}:
             config.theme = "light"
+        if config.ocr_mode not in {"local", "cloud"}:
+            config.ocr_mode = "local"
         _update_config_cache(config_path, True, mtime_ns, config)
         return config
     except Exception as exc:

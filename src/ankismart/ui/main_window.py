@@ -90,6 +90,9 @@ class MainWindow(FluentWindow):
     def _init_window(self):
         """Initialize window properties."""
         self.setWindowTitle("Ankismart")
+        # Keep app chrome color fully controlled by our stylesheet/background config.
+        # Win11 mica blends with system accent and makes title bar color unstable.
+        self.setMicaEffectEnabled(False)
         self.setCustomBackgroundColor(FIXED_PAGE_BACKGROUND_HEX, DARK_PAGE_BACKGROUND_HEX)
 
         screen = self.screen() or QApplication.primaryScreen()
@@ -138,8 +141,22 @@ class MainWindow(FluentWindow):
         setCustomStyleSheet(self, base_light_qss, base_dark_qss)
 
         if hasattr(self, "titleBar") and self.titleBar is not None:
-            title_light_qss = f"FluentTitleBar, SplitTitleBar {{ background-color: {bg_light}; }}"
-            title_dark_qss = f"FluentTitleBar, SplitTitleBar {{ background-color: {bg_dark}; }}"
+            title_light_qss = f"""
+FluentTitleBar,
+MSFluentTitleBar,
+SplitTitleBar,
+TitleBar {{
+    background-color: {bg_light};
+}}
+"""
+            title_dark_qss = f"""
+FluentTitleBar,
+MSFluentTitleBar,
+SplitTitleBar,
+TitleBar {{
+    background-color: {bg_dark};
+}}
+"""
             setCustomStyleSheet(self.titleBar, title_light_qss, title_dark_qss)
 
         if hasattr(self, "stackedWidget") and self.stackedWidget is not None:
