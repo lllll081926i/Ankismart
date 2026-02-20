@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections import deque
 import threading
 import time
+from collections import deque
 
 import httpx
 from openai import (

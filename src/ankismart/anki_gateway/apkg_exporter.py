@@ -12,6 +12,7 @@ from ankismart.core.errors import AnkiGatewayError, ErrorCode
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft, MediaItem
 from ankismart.core.tracing import get_trace_id, timed
+
 from .styling import MODERN_CARD_CSS
 
 logger = get_logger("anki_gateway.apkg_exporter")

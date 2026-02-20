@@ -1,0 +1,122 @@
+name: Quality Gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-core:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Dependencies
+        run: uv sync --group dev
+
+      - name: Ruff (phase-1 gate rules)
+        run: uv run ruff check src tests --select F821,F401,F811,I001
+
+  unit-integration:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    needs: lint-core
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Dependencies
+        run: uv sync --group dev
+
+      - name: Run Unit + Integration (non-E2E)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run pytest tests --ignore=tests/e2e -q --maxfail=1
+
+  e2e-fast-layer:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    needs: unit-integration
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Dependencies
+        run: uv sync --group dev
+
+      - name: Run Fast E2E
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run pytest tests/e2e/scenarios -m "fast" -q --maxfail=1
+
+      - name: Run Gate-Real P0 Smoke
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run pytest tests/e2e/gate -m "p0 and gate_real" -q --maxfail=1
+
+  ui-risk-coverage:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    needs: unit-integration
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Dependencies
+        run: uv sync --group dev
+
+      - name: UI Risk Coverage Baseline
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: >
+          uv run pytest tests --ignore=tests/e2e -q
+          --cov=ankismart.ui.import_page
+          --cov=ankismart.ui.result_page
+          --cov=ankismart.ui.workers
+          --cov-report=term-missing
+          --cov-fail-under=35

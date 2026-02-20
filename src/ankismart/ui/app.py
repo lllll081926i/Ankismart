@@ -17,12 +17,12 @@ os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "1")
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
-from qfluentwidgets import setTheme, Theme, isDarkTheme
+from qfluentwidgets import Theme, isDarkTheme, setTheme, setThemeColor
 
 from ankismart.core.config import load_config
 from ankismart.core.logging import get_logger, setup_logging
 from ankismart.ui.main_window import MainWindow
-from ankismart.ui.styles import get_stylesheet
+from ankismart.ui.styles import FIXED_THEME_ACCENT_HEX, get_stylesheet
 
 logger = get_logger("app")
 
@@ -42,21 +42,29 @@ def _apply_theme(theme_name: str) -> None:
     Args:
         theme_name: Theme name ("light", "dark", or "auto")
     """
-    theme_name = theme_name.lower()
-
+    theme_name = (theme_name or "light").lower()
     if theme_name == "dark":
         theme = Theme.DARK
-    elif theme_name == "light":
-        theme = Theme.LIGHT
     elif theme_name == "auto":
         theme = Theme.AUTO
     else:
         theme = Theme.LIGHT  # Default fallback
+        theme_name = "light"
 
-    setTheme(theme)
+    try:
+        setTheme(theme, lazy=True)
+        setThemeColor(FIXED_THEME_ACCENT_HEX, lazy=True)
+    except RuntimeError as exc:
+        # qfluentwidgets may raise this during rapid style manager mutations.
+        if "dictionary changed size during iteration" not in str(exc):
+            raise
+        setTheme(theme, lazy=False)
+        setThemeColor(FIXED_THEME_ACCENT_HEX, lazy=False)
     app = QApplication.instance()
     if app is not None:
-        app.setStyleSheet(get_stylesheet(dark=isDarkTheme()))
+        css = get_stylesheet(dark=isDarkTheme())
+        if app.styleSheet() != css:
+            app.setStyleSheet(css)
     logger.info(f"Applied theme: {theme_name}")
 
 

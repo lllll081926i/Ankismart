@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-import threading
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -14,8 +14,13 @@ from ankismart.card_gen.llm_client import LLMClient
 from ankismart.core.config import LLMProviderConfig
 from ankismart.core.errors import AnkiSmartError
 from ankismart.core.logging import get_logger
-from ankismart.core.models import CardDraft, GenerateRequest, MarkdownResult
-from ankismart.core.models import BatchConvertResult, ConvertedDocument
+from ankismart.core.models import (
+    BatchConvertResult,
+    CardDraft,
+    ConvertedDocument,
+    GenerateRequest,
+    MarkdownResult,
+)
 
 if TYPE_CHECKING:
     from ankismart.converter.converter import DocumentConverter
@@ -295,8 +300,9 @@ class BatchConvertWorker(QThread):
 
     def run(self) -> None:
         import time
-        from ankismart.core.config import save_config
+
         from ankismart.converter.detector import detect_file_type
+        from ankismart.core.config import save_config
 
         try:
             self._start_time = time.time()
@@ -503,9 +509,10 @@ class BatchConvertWorker(QThread):
     def _merge_and_convert_images(self, image_files: list[Path]) -> MarkdownResult | None:
         """Merge multiple images into one PDF and convert via OCR."""
         try:
-            from PIL import Image
-            import tempfile
             import os
+            import tempfile
+
+            from PIL import Image
 
             self.ocr_progress.emit(f"正在合并 {len(image_files)} 张图片...")
 
@@ -685,8 +692,9 @@ class BatchGenerateWorker(QThread):
         return cancelled or bool(cancel_event is not None and cancel_event.is_set())
 
     def run(self) -> None:
-        import time
         import concurrent.futures
+        import time
+
         from ankismart.core.config import save_config
 
         try:

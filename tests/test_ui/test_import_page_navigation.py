@@ -178,4 +178,3 @@ def test_batch_convert_done_no_documents(monkeypatch):
 
     assert page._main._switched_to_preview is False
     assert any("没有" in t for t in status_texts)
-

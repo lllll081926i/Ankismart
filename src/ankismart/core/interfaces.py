@@ -3,7 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
-from ankismart.core.models import CardDraft, CardPushStatus, GenerateRequest, MarkdownResult, PushResult
+from ankismart.core.models import (
+    CardDraft,
+    CardPushStatus,
+    GenerateRequest,
+    MarkdownResult,
+    PushResult,
+)
 
 
 class IConverter(Protocol):

@@ -13,6 +13,10 @@ COLOR_SUCCESS = "#10b981"  # Green
 COLOR_ERROR = "#ef4444"    # Red
 COLOR_WARNING = "#f59e0b"  # Orange
 COLOR_INFO = "#3b82f6"     # Blue
+FIXED_THEME_ACCENT_HEX = "#2563eb"
+FIXED_THEME_ACCENT_RGB = "37, 99, 235"
+FIXED_PAGE_BACKGROUND_HEX = "#f5f7fb"
+DARK_PAGE_BACKGROUND_HEX = "#202020"
 
 # Card widget styles
 CARD_BORDER_RADIUS = 8
@@ -28,6 +32,7 @@ DEFAULT_WINDOW_WIDTH = 1200
 DEFAULT_WINDOW_HEIGHT = 900
 MIN_WINDOW_WIDTH = 800
 MIN_WINDOW_HEIGHT = 540
+TITLE_BAR_HEIGHT = 30
 
 # File drag-drop area style
 DRAG_DROP_AREA_STYLE = """
@@ -172,18 +177,18 @@ class Colors:
     BORDER = "#e5e7eb"
     TEXT_PRIMARY = "#111827"
     TEXT_SECONDARY = "#6b7280"
-    ACCENT = "#2563eb"
+    ACCENT = FIXED_THEME_ACCENT_HEX
 
 
 class DarkColors:
     """Dark theme color palette."""
 
-    BACKGROUND = "#202020"
+    BACKGROUND = DARK_PAGE_BACKGROUND_HEX
     SURFACE = "#2b2b2b"
     BORDER = "#3a3a3a"
     TEXT_PRIMARY = "#e6e6e6"
     TEXT_SECONDARY = "#a6a6a6"
-    ACCENT = "#8a8a8a"
+    ACCENT = FIXED_THEME_ACCENT_HEX
 
 
 @dataclass(frozen=True)
@@ -211,7 +216,7 @@ def get_list_widget_palette(*, dark: bool | None = None) -> ListWidgetPalette:
             text="rgba(255, 255, 255, 1)",
             text_disabled="rgba(255, 255, 255, 0.42)",
             hover="rgba(255, 255, 255, 0.06)",
-            selected_background="rgba(255, 255, 255, 0.14)",
+            selected_background=f"rgba({FIXED_THEME_ACCENT_RGB}, 0.30)",
             selected_text="rgba(255, 255, 255, 1)",
         )
 
@@ -221,21 +226,22 @@ def get_list_widget_palette(*, dark: bool | None = None) -> ListWidgetPalette:
         text="rgba(0, 0, 0, 1)",
         text_disabled="rgba(0, 0, 0, 0.42)",
         hover="rgba(0, 0, 0, 0.04)",
-        selected_background="rgba(37, 99, 235, 0.15)",
+        selected_background=f"rgba({FIXED_THEME_ACCENT_RGB}, 0.15)",
         selected_text="rgba(0, 0, 0, 1)",
     )
 
 
 def get_page_background_color(*, dark: bool | None = None) -> str:
-    """Get unified page background color for settings-like pages."""
+    """Get page background color by theme: fixed blue for light, deep gray for dark."""
     if dark is None:
         dark = isDarkTheme()
-    return "#202020" if dark else Colors.BACKGROUND
+    return DARK_PAGE_BACKGROUND_HEX if dark else FIXED_PAGE_BACKGROUND_HEX
 
 
 def get_stylesheet(*, dark: bool = False) -> str:
     """Build the main app stylesheet for light/dark mode."""
     palette = DarkColors if dark else Colors
+    page_background = get_page_background_color(dark=dark)
     scale = get_display_scale()
     combo_text_px = scale_text_px(FONT_SIZE_MEDIUM, scale=scale, min_value=12)
     input_radius = scale_px(8, scale=scale, min_value=8)
@@ -269,7 +275,18 @@ QWidget#resultPage,
 QWidget#performancePage,
 QScrollArea#settingsPage,
 QWidget#scrollWidget {{
-    background-color: {palette.BACKGROUND};
+    background-color: {page_background};
+}}
+
+FluentWindowBase,
+StackedWidget,
+FluentTitleBar,
+SplitTitleBar,
+NavigationInterface,
+NavigationPanel[menu=true],
+NavigationPanel[menu=false],
+NavigationPanel[transparent=true] {{
+    background-color: {page_background};
 }}
 
 QLabel, BodyLabel, CaptionLabel, TitleLabel, SubtitleLabel {{

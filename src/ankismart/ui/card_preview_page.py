@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QSizePolicy,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
@@ -19,7 +20,6 @@ from qfluentwidgets import (
     CaptionLabel,
     CardWidget,
     ComboBox,
-    FluentIcon as FIF,
     InfoBar,
     InfoBarPosition,
     LineEdit,
@@ -29,7 +29,9 @@ from qfluentwidgets import (
     TitleLabel,
     isDarkTheme,
 )
-from PyQt6.QtWidgets import QTextBrowser
+from qfluentwidgets import (
+    FluentIcon as FIF,
+)
 
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft

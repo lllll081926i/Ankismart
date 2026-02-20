@@ -5,7 +5,9 @@ from PyQt6.QtWidgets import QMessageBox
 from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.ui.settings_page import SettingsPage
 
-from .settings_page_test_utils import _qapp, make_main
+from .settings_page_test_utils import make_main
+
+pytest_plugins = ["tests.test_ui.settings_page_test_utils"]
 
 
 def test_temperature_load_and_save_uses_slider(_qapp, monkeypatch) -> None:
@@ -145,4 +147,3 @@ def test_save_config_prefers_runtime_apply_when_available(_qapp, monkeypatch) ->
     assert applied["persist"] is True
     assert isinstance(applied["config"], AppConfig)
     assert applied["config"].language == "en"
-

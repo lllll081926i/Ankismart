@@ -86,13 +86,13 @@ class ShortcutsHelpDialog(QDialog):
         desc_text_color = "#E5E7EB" if dark else "#333333"
 
         row_widget = QLabel()
-        row_widget.setStyleSheet(f"""
-            QLabel {
-                background: transparent;
-                padding: 8px;
-                border-bottom: 1px solid {border_color};
-            }
-        """)
+        row_widget.setStyleSheet(
+            "QLabel {{"
+            "background: transparent;"
+            "padding: 8px;"
+            f"border-bottom: 1px solid {border_color};"
+            "}}"
+        )
 
         row_layout = QHBoxLayout(row_widget)
         row_layout.setContentsMargins(0, 0, 0, 0)

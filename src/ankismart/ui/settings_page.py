@@ -3,61 +3,52 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QEvent, Qt, pyqtSignal, QUrl, QTimer
-from PyQt6.QtGui import QWheelEvent, QDesktopServices
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
-    QLabel,
-    QListWidgetItem,
     QMessageBox,
-    QTableWidgetItem,
     QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 from qfluentwidgets import (
     BodyLabel,
     ComboBox,
-    ComboBoxSettingCard,
     ExpandLayout,
-    FluentIcon as FIF,
     InfoBar,
     InfoBarPosition,
     LineEdit,
-    ListWidget,
     PasswordLineEdit,
     PrimaryPushButton,
-    PrimaryPushSettingCard,
     PushButton,
     PushSettingCard,
-    RangeSettingCard,
     ScrollArea,
     SettingCard,
     SettingCardGroup,
     Slider,
     SmoothMode,
     SpinBox,
-    SubtitleLabel,
     SwitchButton,
     SwitchSettingCard,
     isDarkTheme,
 )
+from qfluentwidgets import (
+    FluentIcon as FIF,
+)
 
-from ankismart.core.config import KNOWN_PROVIDERS, LLMProviderConfig, save_config
+from ankismart.core.config import LLMProviderConfig, save_config
 from ankismart.core.errors import ErrorCode, get_error_info
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
 from ankismart.ui.styles import (
-    PROVIDER_ITEM_HEIGHT,
-    MAX_VISIBLE_PROVIDERS,
-    SPACING_MEDIUM,
-    SPACING_LARGE,
-    SPACING_SMALL,
     MARGIN_STANDARD,
-    MARGIN_SMALL,
+    SPACING_MEDIUM,
+    SPACING_SMALL,
     get_list_widget_palette,
     get_page_background_color,
 )
@@ -234,7 +225,7 @@ class SettingsPage(ScrollArea):
         self._main = main_window
         self._providers: list[LLMProviderConfig] = []
         self._active_provider_id: str = ""
-        self._provider_list_widget: ProviderListWidget | None = None
+        self._provider_list_widget: QWidget | None = None
         self._provider_test_worker = None
         self._anki_test_worker = None
         self._autosave_timer = QTimer(self)
@@ -1258,7 +1249,7 @@ class SettingsPage(ScrollArea):
 
     def _clear_cache(self) -> None:
         """Clear all cache files."""
-        from ankismart.converter.cache import get_cache_stats, clear_cache
+        from ankismart.converter.cache import clear_cache, get_cache_stats
         from ankismart.ui.i18n import t
 
         stats = get_cache_stats()
@@ -1516,10 +1507,11 @@ class SettingsPage(ScrollArea):
 
     def _export_logs(self) -> None:
         """Export application logs to a zip file."""
-        from ankismart.ui.log_exporter import LogExporter
-        from ankismart.ui.i18n import t
-        from pathlib import Path
         from datetime import datetime
+        from pathlib import Path
+
+        from ankismart.ui.i18n import t
+        from ankismart.ui.log_exporter import LogExporter
 
         try:
             exporter = LogExporter()

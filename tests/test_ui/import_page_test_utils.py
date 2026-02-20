@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.ui.import_page import ImportPage
 
@@ -113,6 +111,7 @@ def make_page():
     page._main = DummyMain()
     page._file_paths = []
     page._worker = None
+    page._deck_loader = None
     page._strategy_sliders = [
         ("basic", DummySlider(100), None),
     ]
@@ -185,4 +184,3 @@ def patch_infobar(monkeypatch) -> dict[str, list[dict]]:
     )
     monkeypatch.setattr("ankismart.ui.import_page.InfoBar", infobar_stub)
     return calls
-

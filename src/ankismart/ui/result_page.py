@@ -20,6 +20,7 @@ from qfluentwidgets import (
     CardWidget,
     CheckBox,
     ComboBox,
+    FluentIcon,
     InfoBar,
     InfoBarPosition,
     LineEdit,
@@ -32,26 +33,27 @@ from qfluentwidgets import (
     TableWidget,
     TitleLabel,
     ToolButton,
-    FluentIcon,
 )
 
-from ankismart.anki_gateway.apkg_exporter import ApkgExporter
+from ankismart.anki_gateway.apkg_exporter import ApkgExporter as _ApkgExporter
 from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.gateway import AnkiGateway
 from ankismart.core.models import CardDraft, CardPushStatus, PushResult
 from ankismart.ui.card_edit_widget import CardEditDialog
 from ankismart.ui.i18n import t
-from ankismart.ui.workers import PushWorker
 from ankismart.ui.styles import (
+    MARGIN_SMALL,
+    MARGIN_STANDARD,
     SPACING_MEDIUM,
     SPACING_SMALL,
-    MARGIN_STANDARD,
-    MARGIN_SMALL,
     apply_compact_combo_metrics,
     apply_page_title_style,
 )
+from ankismart.ui.workers import PushWorker
 
 logger = logging.getLogger(__name__)
+# Backward compatibility for tests patching ankismart.ui.result_page.ApkgExporter.
+ApkgExporter = _ApkgExporter
 
 
 class ResultPage(QWidget):
@@ -378,8 +380,6 @@ class ResultPage(QWidget):
             return
 
         try:
-            from ankismart.anki_gateway.apkg_exporter import ApkgExporter
-
             exporter = ApkgExporter()
             exporter.export(self._cards, path)
 

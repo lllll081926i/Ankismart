@@ -3,7 +3,21 @@
 This file demonstrates how to integrate the ErrorHandler into existing pages.
 """
 
-from ankismart.ui.error_handler import ErrorHandler
+from ankismart.ui.error_handler import ErrorCategory, ErrorHandler
+
+
+class _ExampleMain:
+    def switch_to_settings(self) -> None:
+        return None
+
+
+class _ExampleParent:
+    def __init__(self) -> None:
+        self._main = _ExampleMain()
+
+
+EXAMPLE_PARENT = _ExampleParent()
+
 
 # Example 1: Basic error handling in import_page.py
 def example_import_page_error_handling():
@@ -19,7 +33,7 @@ def example_import_page_error_handling():
     except Exception as e:
         # Show error with InfoBar for non-critical errors
         error_handler.show_error(
-            parent=self,  # The page widget
+            parent=EXAMPLE_PARENT,  # The page widget
             error=e,
             use_infobar=True,  # Use InfoBar instead of MessageBox
         )
@@ -40,10 +54,10 @@ def example_result_page_error_handling():
     except Exception as e:
         # Show error with action button to go to settings
         error_handler.show_error(
-            parent=self,
+            parent=EXAMPLE_PARENT,
             error=e,
             use_infobar=False,  # Use MessageBox for critical errors
-            action_callback=lambda: self._main.switch_to_settings(),
+            action_callback=lambda: EXAMPLE_PARENT._main.switch_to_settings(),
         )
 
 
@@ -61,7 +75,7 @@ def example_replace_messagebox():
     # NEW CODE:
     error_handler = ErrorHandler(language="zh")
     error_handler.show_error(
-        parent=self,
+        parent=EXAMPLE_PARENT,
         error="请先选择文件",  # Can pass string directly
         use_infobar=True,
     )
@@ -80,14 +94,14 @@ def example_custom_error():
         raise Exception("API key is invalid or expired")
     except Exception as e:
         # Will be classified as API_KEY error automatically
-        error_handler.show_error(parent=self, error=e)
+        error_handler.show_error(parent=EXAMPLE_PARENT, error=e)
 
     try:
         # Simulate network error
         raise Exception("Connection timeout")
     except Exception as e:
         # Will be classified as NETWORK/TIMEOUT error automatically
-        error_handler.show_error(parent=self, error=e, use_infobar=True)
+        error_handler.show_error(parent=EXAMPLE_PARENT, error=e, use_infobar=True)
 
 
 # Example 5: Integration pattern for existing pages

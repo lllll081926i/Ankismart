@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QVBoxLayout, QMessageBox, QWidget
+from PyQt6.QtWidgets import QMessageBox, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
-    FluentIcon as FIF,
     PushSettingCard,
     SettingCard,
     SettingCardGroup,
     SubtitleLabel,
+)
+from qfluentwidgets import (
+    FluentIcon as FIF,
 )
 
 from ankismart.core.config import save_config

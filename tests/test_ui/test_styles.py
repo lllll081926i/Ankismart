@@ -1,4 +1,5 @@
 from ankismart.ui.styles import (
+    DARK_PAGE_BACKGROUND_HEX,
     Colors,
     DarkColors,
     get_list_widget_palette,
@@ -15,7 +16,8 @@ def test_light_stylesheet_contains_light_bg():
 
 def test_dark_stylesheet_contains_dark_bg():
     css = get_stylesheet(dark=True)
-    assert DarkColors.BACKGROUND in css
+    assert DARK_PAGE_BACKGROUND_HEX in css
+    assert DarkColors.TEXT_PRIMARY in css
     assert len(css) > 100
 
 
@@ -36,4 +38,4 @@ def test_list_widget_palette_light_and_dark_are_distinct():
 
 def test_page_background_color_matches_theme():
     assert get_page_background_color(dark=False) == Colors.BACKGROUND
-    assert get_page_background_color(dark=True) == "#202020"
+    assert get_page_background_color(dark=True) == DARK_PAGE_BACKGROUND_HEX

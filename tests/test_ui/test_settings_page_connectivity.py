@@ -5,7 +5,9 @@ from PyQt6.QtWidgets import QMessageBox
 
 from ankismart.ui.settings_page import SettingsPage, configure_ocr_runtime
 
-from .settings_page_test_utils import _qapp, make_main
+from .settings_page_test_utils import make_main
+
+pytest_plugins = ["tests.test_ui.settings_page_test_utils"]
 
 
 def test_ocr_connectivity_cloud_mode_shows_developing_message(_qapp, monkeypatch) -> None:
@@ -182,4 +184,3 @@ def test_configure_ocr_runtime_reraises_unrelated_type_error(monkeypatch) -> Non
 
     with pytest.raises(TypeError, match="bad payload type"):
         configure_ocr_runtime(model_tier="standard", model_source="official", reset_ocr_instance=True)
-

@@ -1,26 +1,28 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
-from PyQt6.QtCore import QThread, Qt, pyqtSignal
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QColor
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor, QDragEnterEvent, QDropEvent
 from PyQt6.QtWidgets import (
-    QFileDialog,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QHBoxLayout,
     QListWidgetItem,
-    QMessageBox,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
+)
+from PyQt6.QtWidgets import (
+    QMessageBox as _QMessageBox,
 )
 from qfluentwidgets import (
     BodyLabel,
     CardWidget,
     ComboBox,
     EditableComboBox,
-    FluentIcon as FIF,
     InfoBar,
     InfoBarPosition,
     LineEdit,
@@ -30,7 +32,6 @@ from qfluentwidgets import (
     ProgressBar,
     ProgressRing,
     PushButton,
-    RangeSettingCard,
     ScrollArea,
     SettingCard,
     SettingCardGroup,
@@ -38,22 +39,31 @@ from qfluentwidgets import (
     Slider,
     StateToolTip,
     SubtitleLabel,
-    TitleLabel,
     isDarkTheme,
+)
+from qfluentwidgets import (
+    FluentIcon as FIF,
 )
 
 from ankismart.converter.converter import DocumentConverter
 from ankismart.core.config import save_config
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
-from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
-from ankismart.ui.styles import SPACING_LARGE, SPACING_MEDIUM, SPACING_SMALL, MARGIN_STANDARD, MARGIN_SMALL
-from ankismart.ui.utils import ProgressMixin, split_tags_text
 from ankismart.ui.i18n import get_text
+from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
+from ankismart.ui.styles import (
+    MARGIN_SMALL,
+    MARGIN_STANDARD,
+    SPACING_LARGE,
+    SPACING_MEDIUM,
+    SPACING_SMALL,
+)
+from ankismart.ui.utils import ProgressMixin, split_tags_text
 from ankismart.ui.workers import BatchConvertWorker
-import re
 
 logger = get_logger(__name__)
+# Backward compatibility for tests patching ankismart.ui.import_page.QMessageBox.
+QMessageBox = _QMessageBox
 
 _OCR_FILE_SUFFIXES = {
     ".pdf",
@@ -70,6 +80,7 @@ _RIGHT_CONFIG_GROUP_MAX_HEIGHT = 360
 _RIGHT_STRATEGY_GROUP_MAX_HEIGHT = 640
 
 _OCR_CONVERTER_MODULE = None
+_DECK_LOADING_ENABLED = False
 
 
 class OCRRuntimeUnavailableError(RuntimeError):
@@ -304,6 +315,9 @@ class _LegacyBatchConvertWorker(QThread):
                         # Get LLM client from active provider
                         provider = self._config.active_provider
                         if provider:
+                            from ankismart.card_gen.generator import CardGenerator
+                            from ankismart.card_gen.llm_client import LLMClient
+
                             # Validate provider configuration before creating LLMClient
                             if not provider.api_key and "Ollama" not in provider.name:
                                 raise ValueError(f"Provider '{provider.name}' requires an API key but none is configured")
@@ -353,10 +367,17 @@ class DeckLoaderWorker(QThread):
 
     def run(self) -> None:
         try:
+            # Product decision: stop loading decks in background from Anki.
+            if not _DECK_LOADING_ENABLED:
+                self.finished.emit([])
+                return
+
+            from ankismart.anki_gateway.client import AnkiConnectClient
+            from ankismart.anki_gateway.gateway import AnkiGateway
+
             client = AnkiConnectClient(url=self._anki_url, key=self._anki_key)
             gateway = AnkiGateway(client)
-            decks = gateway.get_deck_names()
-            self.finished.emit(decks)
+            self.finished.emit(gateway.get_deck_names())
         except Exception as e:
             self.error.emit(str(e))
 
@@ -461,7 +482,6 @@ class ImportPage(ProgressMixin, QWidget):
 
         self._init_ui()
         self._init_shortcuts()
-        self._load_decks()
 
     def _init_ui(self):
         """Initialize the user interface."""
@@ -690,8 +710,9 @@ class ImportPage(ProgressMixin, QWidget):
             group
         )
         self._deck_combo = EditableComboBox()
-        self._deck_combo.addItem("Default")
-        self._deck_combo.setCurrentText("Default")
+        initial_deck = self._resolve_initial_deck_name()
+        self._deck_combo.addItem(initial_deck)
+        self._deck_combo.setCurrentText(initial_deck)
         self._deck_combo.setPlaceholderText(
             get_text("import.deck_name_placeholder", self._main.config.language)
         )
@@ -730,6 +751,17 @@ class ImportPage(ProgressMixin, QWidget):
 
         container_layout.addWidget(group)
         return container
+
+    def _resolve_initial_deck_name(self) -> str:
+        last_deck = (self._main.config.last_deck or "").strip()
+        if last_deck:
+            return last_deck
+
+        default_deck = (self._main.config.default_deck or "").strip()
+        if default_deck:
+            return default_deck
+
+        return "Default"
 
     def _create_strategy_group(self) -> SettingCardGroup:
         """Create strategy configuration group with RangeSettingCards."""
@@ -985,7 +1017,7 @@ class ImportPage(ProgressMixin, QWidget):
         """Show context menu for file list."""
         item = self._file_list.itemAt(pos)
         if item:
-            from qfluentwidgets import RoundMenu, Action
+            from qfluentwidgets import Action, RoundMenu
             menu = RoundMenu(parent=self)
             delete_action = Action(FIF.DELETE, "删除" if self._main.config.language == "zh" else "Delete")
             delete_action.triggered.connect(lambda: self._remove_file_item(item))
@@ -1013,6 +1045,10 @@ class ImportPage(ProgressMixin, QWidget):
 
     def _load_decks(self):
         """Load deck names from Anki in background."""
+        if not _DECK_LOADING_ENABLED:
+            self._cleanup_deck_loader_worker()
+            return
+
         if self._deck_loader and self._deck_loader.isRunning():
             return
 
@@ -1794,8 +1830,8 @@ class ImportPage(ProgressMixin, QWidget):
             "操作已取消" if self._main.config.language == "zh" else "Operation cancelled"
         )
 
-        from qfluentwidgets import InfoBar, InfoBarPosition
         from PyQt6.QtCore import Qt
+        from qfluentwidgets import InfoBar, InfoBarPosition
 
         InfoBar.warning(
             title="已取消" if self._main.config.language == "zh" else "Cancelled",

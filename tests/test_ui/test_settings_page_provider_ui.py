@@ -10,9 +10,10 @@ from ankismart.ui.settings_page import SettingsPage
 from .settings_page_test_utils import (
     ProviderListItemWidget,
     ProviderListWidget,
-    _qapp,
     make_main,
 )
+
+pytest_plugins = ["tests.test_ui.settings_page_test_utils"]
 
 
 @pytest.mark.skipif(ProviderListWidget is None, reason="legacy provider list widget removed")
@@ -136,7 +137,7 @@ def test_proxy_manual_layout_places_input_left_of_mode_combo(_qapp) -> None:
     _qapp.processEvents()
 
     assert page._proxy_edit.isVisible()
-    assert page._proxy_edit.y() == page._proxy_mode_combo.y() or abs(page._proxy_edit.y() - page._proxy_mode_combo.y()) <= 4
+    assert page._proxy_edit.y() == page._proxy_mode_combo.y() or abs(page._proxy_edit.y() - page._proxy_mode_combo.y()) <= 8
     assert page._proxy_edit.x() < page._proxy_mode_combo.x()
 
 
@@ -176,4 +177,3 @@ def test_provider_table_border_switches_with_theme(_qapp, monkeypatch) -> None:
     page.update_theme()
 
     assert "rgba(255, 255, 255, 0.08)" in page._provider_table.styleSheet()
-

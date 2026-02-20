@@ -6,7 +6,7 @@ utilities for managing them across different pages.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
@@ -38,6 +38,10 @@ class ShortcutKeys:
     QUIT = QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Q)
 
 
+# Product decision: keyboard shortcuts are currently deprecated globally.
+SHORTCUTS_ENABLED = False
+
+
 def get_shortcut_text(key_sequence: QKeySequence, language: str = "zh") -> str:
     """Get human-readable shortcut text for display.
 
@@ -48,6 +52,9 @@ def get_shortcut_text(key_sequence: QKeySequence, language: str = "zh") -> str:
     Returns:
         Formatted shortcut text (e.g., "Ctrl+O" or "F1")
     """
+    if not SHORTCUTS_ENABLED:
+        return "已停用" if language == "zh" else "Disabled"
+
     # Get native text representation
     text = key_sequence.toString(QKeySequence.SequenceFormat.NativeText)
     return text
@@ -56,9 +63,9 @@ def get_shortcut_text(key_sequence: QKeySequence, language: str = "zh") -> str:
 def create_shortcut(
     parent: QWidget,
     key_sequence: QKeySequence,
-    callback: callable,
+    callback: Callable,
     context: Qt.ShortcutContext = Qt.ShortcutContext.WidgetWithChildrenShortcut
-) -> QShortcut:
+) -> QShortcut | None:
     """Create and configure a keyboard shortcut.
 
     Args:
@@ -70,6 +77,9 @@ def create_shortcut(
     Returns:
         Configured QShortcut instance
     """
+    if not SHORTCUTS_ENABLED:
+        return None
+
     shortcut = QShortcut(key_sequence, parent)
     shortcut.setContext(context)
     shortcut.activated.connect(callback)

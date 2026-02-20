@@ -8,15 +8,12 @@ from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
 from PyQt6.QtWidgets import QHBoxLayout, QListWidget, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
-    FluentIcon as FIF,
+    IndeterminateProgressBar,
     InfoBar,
     InfoBarPosition,
-    IndeterminateProgressBar,
     MessageBox,
     PlainTextEdit,
     PrimaryPushButton,
-    ProgressBar,
-    ProgressRing,
     PushButton,
     StateToolTip,
     isDarkTheme,
@@ -28,18 +25,17 @@ from ankismart.card_gen.llm_client import LLMClient
 from ankismart.core.errors import ErrorCode, get_error_info
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
-from ankismart.ui.workers import BatchGenerateWorker, PushWorker
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
-from ankismart.ui.utils import ProgressMixin, split_tags_text
 from ankismart.ui.styles import (
-    SPACING_MEDIUM,
-    MARGIN_STANDARD,
     MARGIN_SMALL,
+    MARGIN_STANDARD,
     apply_page_title_style,
-    get_list_widget_palette,
     get_display_scale,
+    get_list_widget_palette,
     scale_px,
 )
+from ankismart.ui.utils import ProgressMixin, split_tags_text
+from ankismart.ui.workers import BatchGenerateWorker, PushWorker
 
 if TYPE_CHECKING:
     from ankismart.ui.main_window import MainWindow
@@ -718,8 +714,9 @@ class PreviewPage(ProgressMixin, QWidget):
 
         # Generate sample cards in background
         from PyQt6.QtCore import QThread
-        from ankismart.card_gen.llm_client import LLMClient
+
         from ankismart.card_gen.generator import CardGenerator
+        from ankismart.card_gen.llm_client import LLMClient
         from ankismart.core.models import GenerateRequest
 
         class SampleGenerateWorker(QThread):
@@ -823,8 +820,8 @@ class PreviewPage(ProgressMixin, QWidget):
             return
 
         # Show sample cards in a dialog
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTextEdit
-        from qfluentwidgets import SubtitleLabel, PushButton
+        from PyQt6.QtWidgets import QDialog, QTextEdit, QVBoxLayout
+        from qfluentwidgets import PushButton, SubtitleLabel
 
         dialog = QDialog(self)
         dialog.setWindowTitle("样本卡片预览" if is_zh else "Sample Cards Preview")

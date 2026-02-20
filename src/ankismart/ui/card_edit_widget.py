@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QVBoxLayout, QWidget
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import QWidget
 from qfluentwidgets import (
     BodyLabel,
     LineEdit,

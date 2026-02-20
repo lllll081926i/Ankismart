@@ -46,6 +46,35 @@ def test_on_decks_loaded_restores_last_deck_choice():
     assert page._deck_combo.currentText() == "MyDeck"
 
 
+def test_load_decks_is_disabled_and_does_not_create_worker(monkeypatch) -> None:
+    page = make_page()
+    worker_created = {"value": False}
+
+    class _Worker:
+        def __init__(self, *_args, **_kwargs):
+            worker_created["value"] = True
+
+    monkeypatch.setattr("ankismart.ui.import_page.DeckLoaderWorker", _Worker)
+
+    ImportPage._load_decks(page)
+
+    assert worker_created["value"] is False
+    assert page.__dict__.get("_deck_loader") is None
+
+
+def test_resolve_initial_deck_name_prefers_last_then_default() -> None:
+    page = make_page()
+    page._main.config.last_deck = "LastDeck"
+    page._main.config.default_deck = "DefaultDeck"
+    assert ImportPage._resolve_initial_deck_name(page) == "LastDeck"
+
+    page._main.config.last_deck = "   "
+    assert ImportPage._resolve_initial_deck_name(page) == "DefaultDeck"
+
+    page._main.config.default_deck = ""
+    assert ImportPage._resolve_initial_deck_name(page) == "Default"
+
+
 def test_persist_ocr_config_updates_prefers_runtime_apply(monkeypatch):
     page = make_page()
     applied: dict[str, object] = {}
@@ -69,4 +98,3 @@ def test_persist_ocr_config_updates_prefers_runtime_apply(monkeypatch):
     assert applied["persist"] is True
     assert isinstance(applied["config"], AppConfig)
     assert applied["config"].ocr_model_tier == "accuracy"
-

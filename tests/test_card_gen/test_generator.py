@@ -6,7 +6,6 @@ import json
 from unittest.mock import MagicMock
 
 from ankismart.card_gen.generator import _STRATEGY_MAP, CardGenerator
-from ankismart.card_gen.strategy_recommender import StrategyRecommender
 from ankismart.card_gen.prompts import (
     BASIC_SYSTEM_PROMPT,
     CLOZE_SYSTEM_PROMPT,
@@ -15,6 +14,7 @@ from ankismart.card_gen.prompts import (
     OCR_CORRECTION_PROMPT,
     SINGLE_CHOICE_SYSTEM_PROMPT,
 )
+from ankismart.card_gen.strategy_recommender import StrategyRecommender
 from ankismart.core.models import GenerateRequest
 
 # ---------------------------------------------------------------------------

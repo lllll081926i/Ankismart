@@ -10,26 +10,33 @@ from qfluentwidgets import (
     FluentWindow,
     NavigationItemPosition,
     NavigationToolButton,
-    setTheme,
     Theme,
-    qconfig,
     isDarkTheme,
+    qconfig,
+    setCustomStyleSheet,
+    setTheme,
+    setThemeColor,
 )
 
 from ankismart.core.config import AppConfig, load_config, save_config
+
+from .card_preview_page import CardPreviewPage
 from .i18n import set_language, t
 from .import_page import ImportPage
+from .performance_page import PerformancePage
 from .preview_page import PreviewPage
 from .result_page import ResultPage
-from .performance_page import PerformancePage
-from .card_preview_page import CardPreviewPage
 from .settings_page import SettingsPage
 from .shortcuts import ShortcutKeys, create_shortcut
 from .styles import (
+    DARK_PAGE_BACKGROUND_HEX,
     DEFAULT_WINDOW_HEIGHT,
     DEFAULT_WINDOW_WIDTH,
+    FIXED_PAGE_BACKGROUND_HEX,
+    FIXED_THEME_ACCENT_HEX,
     MIN_WINDOW_HEIGHT,
     MIN_WINDOW_WIDTH,
+    TITLE_BAR_HEIGHT,
     get_display_scale,
     get_stylesheet,
     scale_px,
@@ -51,12 +58,13 @@ class MainWindow(FluentWindow):
         self._cards = []
         self._batch_result = None
         self._connection_status = False
+        self._effective_theme_name = "dark" if isDarkTheme() else "light"
 
         # Set initial language
         set_language(self.config.language)
 
         # Apply initial theme before creating pages
-        self._apply_theme()
+        self._apply_theme(apply_stylesheet=True)
 
         # Initialize pages
         self.import_page = ImportPage(self)
@@ -82,6 +90,7 @@ class MainWindow(FluentWindow):
     def _init_window(self):
         """Initialize window properties."""
         self.setWindowTitle("Ankismart")
+        self.setCustomBackgroundColor(FIXED_PAGE_BACKGROUND_HEX, DARK_PAGE_BACKGROUND_HEX)
 
         screen = self.screen() or QApplication.primaryScreen()
         available = screen.availableGeometry() if screen is not None else None
@@ -109,7 +118,7 @@ class MainWindow(FluentWindow):
 
         # Make top title bar slimmer and sync content top margin
         if hasattr(self, "titleBar") and self.titleBar is not None:
-            self.titleBar.setFixedHeight(scale_px(34, scale=scale, min_value=30))
+            self.titleBar.setFixedHeight(TITLE_BAR_HEIGHT)
             if hasattr(self, "widgetLayout") and self.widgetLayout is not None:
                 self.widgetLayout.setContentsMargins(0, self.titleBar.height(), 0, 0)
 
@@ -117,6 +126,46 @@ class MainWindow(FluentWindow):
         icon_path = self._get_icon_path()
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
+
+        self._apply_fixed_background_regions()
+
+    def _apply_fixed_background_regions(self) -> None:
+        """Apply themed backgrounds: blue in light mode, deep gray in dark mode."""
+        bg_light = FIXED_PAGE_BACKGROUND_HEX
+        bg_dark = DARK_PAGE_BACKGROUND_HEX
+        base_light_qss = f"FluentWindowBase {{ background-color: {bg_light}; }}"
+        base_dark_qss = f"FluentWindowBase {{ background-color: {bg_dark}; }}"
+        setCustomStyleSheet(self, base_light_qss, base_dark_qss)
+
+        if hasattr(self, "titleBar") and self.titleBar is not None:
+            title_light_qss = f"FluentTitleBar, SplitTitleBar {{ background-color: {bg_light}; }}"
+            title_dark_qss = f"FluentTitleBar, SplitTitleBar {{ background-color: {bg_dark}; }}"
+            setCustomStyleSheet(self.titleBar, title_light_qss, title_dark_qss)
+
+        if hasattr(self, "stackedWidget") and self.stackedWidget is not None:
+            stacked_light_qss = f"StackedWidget {{ background-color: {bg_light}; }}"
+            stacked_dark_qss = f"StackedWidget {{ background-color: {bg_dark}; }}"
+            setCustomStyleSheet(self.stackedWidget, stacked_light_qss, stacked_dark_qss)
+
+        panel = getattr(getattr(self, "navigationInterface", None), "panel", None)
+        if panel is not None:
+            nav_light_qss = f"""
+NavigationPanel[menu=true],
+NavigationPanel[menu=false],
+NavigationPanel[transparent=true] {{
+    background-color: {bg_light};
+    border: 1px solid transparent;
+}}
+"""
+            nav_dark_qss = f"""
+NavigationPanel[menu=true],
+NavigationPanel[menu=false],
+NavigationPanel[transparent=true] {{
+    background-color: {bg_dark};
+    border: 1px solid transparent;
+}}
+"""
+            setCustomStyleSheet(panel, nav_light_qss, nav_dark_qss)
 
     def _init_navigation(self):
         """Initialize navigation interface with pages."""
@@ -256,14 +305,6 @@ class MainWindow(FluentWindow):
             Qt.ShortcutContext.ApplicationShortcut
         )
 
-        # F1: Help
-        create_shortcut(
-            self,
-            ShortcutKeys.HELP,
-            self._show_help,
-            Qt.ShortcutContext.ApplicationShortcut
-        )
-
         # Ctrl+Q: Quit
         create_shortcut(
             self,
@@ -276,47 +317,51 @@ class MainWindow(FluentWindow):
         """Open settings page via shortcut."""
         self.switchTo(self.settings_page)
 
-    def _show_help(self):
-        """Show keyboard shortcuts help dialog."""
-        from .shortcuts_dialog import ShortcutsHelpDialog
-
-        dialog = ShortcutsHelpDialog(self.config.language, self)
-        dialog.exec()
-
     def _quit_application(self):
         """Quit application via shortcut."""
         self.close()
 
-    def _apply_theme(self):
+    def _apply_theme(self, *, apply_stylesheet: bool = False):
         """Apply theme based on configuration."""
-        theme_name = self.config.theme.lower()
-
+        theme_name = (self.config.theme or "light").lower()
         if theme_name == "dark":
             theme = Theme.DARK
-        elif theme_name == "light":
-            theme = Theme.LIGHT
         elif theme_name == "auto":
             theme = Theme.AUTO
         else:
-            theme = Theme.LIGHT  # Default fallback
+            theme = Theme.LIGHT
 
-        setTheme(theme)
-        self._apply_global_stylesheet()
+        try:
+            setTheme(theme, lazy=True)
+            setThemeColor(FIXED_THEME_ACCENT_HEX, lazy=True)
+        except RuntimeError as exc:
+            # qfluentwidgets may raise this during rapid style manager mutations.
+            if "dictionary changed size during iteration" not in str(exc):
+                raise
+            setTheme(theme, lazy=False)
+            setThemeColor(FIXED_THEME_ACCENT_HEX, lazy=False)
+        if apply_stylesheet:
+            self._apply_global_stylesheet()
 
     def _apply_global_stylesheet(self) -> None:
         """Apply app-level stylesheet derived from current effective theme."""
         app = QApplication.instance()
         if app is not None:
-            app.setStyleSheet(get_stylesheet(dark=isDarkTheme()))
+            css = get_stylesheet(dark=isDarkTheme())
+            if app.styleSheet() != css:
+                app.setStyleSheet(css)
 
     def _on_theme_changed(self, theme: Theme):
         """Handle theme change from qconfig signal.
 
-        This is called when the theme actually changes (including auto mode
-        following system theme changes).
+        This is called when the effective theme actually changes.
         """
         # Emit our own signal to notify all pages
         theme_name = "dark" if isDarkTheme() else "light"
+        if theme_name == self._effective_theme_name:
+            self._update_theme_button_tooltip()
+            return
+        self._effective_theme_name = theme_name
         self.theme_changed.emit(theme_name)
         self._apply_global_stylesheet()
 
@@ -416,6 +461,8 @@ class MainWindow(FluentWindow):
         Args:
             theme: Theme name ("light", "dark", or "auto")
         """
+        if theme not in {"light", "dark", "auto"}:
+            theme = "light"
         if self.config.theme == theme:
             return
         updated = self.config.model_copy(update={"theme": theme})

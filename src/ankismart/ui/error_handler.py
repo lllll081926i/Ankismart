@@ -6,14 +6,12 @@ Provides user-friendly error messages, recovery suggestions, and error classific
 from __future__ import annotations
 
 import logging
-import traceback
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMessageBox, QWidget
-from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import InfoBar, InfoBarPosition, MessageBox
 
 logger = logging.getLogger(__name__)
