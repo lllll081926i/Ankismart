@@ -392,8 +392,8 @@ class SettingsPage(ScrollArea):
         self._provider_table = QTableWidget(self.scrollWidget)
         self._apply_provider_table_style()
         self._provider_table.setWordWrap(False)
-        self._provider_table.setColumnCount(6)
-        self._provider_table.setHorizontalHeaderLabels(['状态', '名称', '模型', '地址', 'RPM', '操作'])
+        self._provider_table.setColumnCount(5)
+        self._provider_table.setHorizontalHeaderLabels(["名称", "模型", "地址", "RPM", "操作"])
         self._provider_table.verticalHeader().hide()
         self._provider_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._provider_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -410,12 +410,11 @@ class SettingsPage(ScrollArea):
         # Use adaptive widths to avoid horizontal scrolling.
         header = self._provider_table.horizontalHeader()
         header.setMinimumSectionSize(56)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
 
         # Reduce top margin for table
         self.expandLayout.setSpacing(8)  # Reduce spacing between widgets
@@ -904,47 +903,39 @@ class SettingsPage(ScrollArea):
         for row, provider in enumerate(self._providers):
             is_active = provider.id == self._active_provider_id
 
-            # Column 0: Status (green dot for active)
-            status_item = QTableWidgetItem("●" if is_active else "")
-            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            if is_active:
-                status_item.setForeground(Qt.GlobalColor.green)
-            self._provider_table.setItem(row, 0, status_item)
-
-            # Column 1: Name
+            # Column 0: Name
             name_item = QTableWidgetItem(provider.name)
-            self._provider_table.setItem(row, 1, name_item)
+            self._provider_table.setItem(row, 0, name_item)
 
-            # Column 2: Model
+            # Column 1: Model
             model_text = provider.model.strip() if provider.model else "未设置"
             model_item = QTableWidgetItem(model_text)
-            self._provider_table.setItem(row, 2, model_item)
+            self._provider_table.setItem(row, 1, model_item)
 
-            # Column 3: Base URL
+            # Column 2: Base URL
             url_text = provider.base_url.strip() if provider.base_url else "未设置"
             url_item = QTableWidgetItem(url_text)
-            self._provider_table.setItem(row, 3, url_item)
+            self._provider_table.setItem(row, 2, url_item)
 
-            # Column 4: RPM
+            # Column 3: RPM
             rpm_text = str(provider.rpm_limit) if provider.rpm_limit > 0 else "无限制"
             rpm_item = QTableWidgetItem(rpm_text)
             rpm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._provider_table.setItem(row, 4, rpm_item)
+            self._provider_table.setItem(row, 3, rpm_item)
 
-            # Column 5: Action buttons
+            # Column 4: Action buttons
             action_widget = QWidget()
             action_layout = QHBoxLayout(action_widget)
             action_layout.setContentsMargins(2, 2, 2, 2)
             action_layout.setSpacing(2)
 
-            # Activate button
+            # Active state button: active=primary(强调色), inactive=flat(no color).
             if is_active:
-                activate_btn = PushButton("当前")
-                activate_btn.setEnabled(False)
-                activate_btn.setFixedSize(52, 28)
+                activate_btn = PrimaryPushButton("激活中")
+                activate_btn.setFixedSize(64, 28)
             else:
-                activate_btn = PrimaryPushButton("激活")
-                activate_btn.setFixedSize(52, 28)
+                activate_btn = PushButton("待激活")
+                activate_btn.setFixedSize(64, 28)
                 activate_btn.clicked.connect(lambda checked, p=provider: self._activate_provider(p))
             action_layout.addWidget(activate_btn)
 
@@ -966,7 +957,7 @@ class SettingsPage(ScrollArea):
             delete_btn.setEnabled(can_delete)
             delete_btn.clicked.connect(lambda checked, p=provider: self._delete_provider(p))
             action_layout.addWidget(delete_btn)
-            self._provider_table.setCellWidget(row, 5, action_widget)
+            self._provider_table.setCellWidget(row, 4, action_widget)
 
     @staticmethod
     def _set_combo_current_data(combo: ComboBox, target_value: str) -> None:

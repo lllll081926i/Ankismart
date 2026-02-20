@@ -21,7 +21,6 @@ from qfluentwidgets import (
 
 from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.gateway import AnkiGateway
-from ankismart.card_gen.llm_client import LLMClient
 from ankismart.core.errors import ErrorCode, get_error_info
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
@@ -612,6 +611,8 @@ class PreviewPage(ProgressMixin, QWidget):
         self._progress_bar.show()
 
         # Create LLM client
+        from ankismart.card_gen.llm_client import LLMClient
+
         llm_client = LLMClient(
             api_key=provider.api_key,
             base_url=provider.base_url,

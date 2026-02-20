@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 from PyQt6.QtWidgets import QWidget
-from qfluentwidgets import BodyLabel, ScrollArea
+from qfluentwidgets import BodyLabel, PrimaryPushButton, PushButton, ScrollArea
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.ui.settings_page import SettingsPage
@@ -177,3 +177,41 @@ def test_provider_table_border_switches_with_theme(_qapp, monkeypatch) -> None:
     page.update_theme()
 
     assert "rgba(255, 255, 255, 0.08)" in page._provider_table.styleSheet()
+
+
+def test_provider_table_activation_buttons_match_active_state(_qapp) -> None:
+    providers = [
+        LLMProviderConfig(
+            id="p1",
+            name="OpenAI",
+            api_key="k1",
+            base_url="https://api.openai.com/v1",
+            model="gpt-4o",
+        ),
+        LLMProviderConfig(
+            id="p2",
+            name="DeepSeek",
+            api_key="k2",
+            base_url="https://api.deepseek.com/v1",
+            model="deepseek-chat",
+        ),
+    ]
+    cfg = AppConfig(llm_providers=providers, active_provider_id="p1")
+    main, _ = make_main(cfg)
+    page = SettingsPage(main)
+
+    assert page._provider_table.columnCount() == 5
+
+    active_widget = page._provider_table.cellWidget(0, 4)
+    inactive_widget = page._provider_table.cellWidget(1, 4)
+    assert active_widget is not None
+    assert inactive_widget is not None
+
+    active_btn = active_widget.layout().itemAt(0).widget()
+    inactive_btn = inactive_widget.layout().itemAt(0).widget()
+
+    assert isinstance(active_btn, PrimaryPushButton)
+    assert active_btn.text() == "激活中"
+
+    assert type(inactive_btn) is PushButton
+    assert inactive_btn.text() == "待激活"

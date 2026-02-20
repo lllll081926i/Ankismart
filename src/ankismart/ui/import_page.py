@@ -43,7 +43,6 @@ from qfluentwidgets import (
     isDarkTheme,
 )
 
-from ankismart.converter.converter import DocumentConverter
 from ankismart.core.config import save_config
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
@@ -331,6 +330,8 @@ class _LegacyBatchConvertWorker(QThread):
                             )
                             generator = CardGenerator(llm_client)
                             ocr_correction_fn = generator.correct_ocr_text
+
+                    from ankismart.converter.converter import DocumentConverter
 
                     converter = DocumentConverter(ocr_correction_fn=ocr_correction_fn)
                     result = converter.convert(file_path)

@@ -9,8 +9,6 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from ankismart.anki_gateway.apkg_exporter import ApkgExporter
 from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.gateway import AnkiGateway, UpdateMode
-from ankismart.card_gen.generator import CardGenerator
-from ankismart.card_gen.llm_client import LLMClient
 from ankismart.core.config import LLMProviderConfig
 from ankismart.core.errors import AnkiSmartError
 from ankismart.core.logging import get_logger
@@ -23,6 +21,7 @@ from ankismart.core.models import (
 )
 
 if TYPE_CHECKING:
+    from ankismart.card_gen.llm_client import LLMClient
     from ankismart.converter.converter import DocumentConverter
 
 # Keep monkeypatch target available while avoiding startup import cost.
@@ -36,6 +35,22 @@ def _format_error_for_ui(exc: Exception) -> str:
     if isinstance(exc, AnkiSmartError):
         return f"[{exc.code}] {exc.message}"
     return str(exc)
+
+
+def _load_card_generator_class():
+    from ankismart.card_gen.generator import CardGenerator as CardGeneratorClass
+
+    return CardGeneratorClass
+
+
+class CardGenerator:
+    """Lazy proxy to keep monkeypatch target stable and defer heavy import."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        self._impl = _load_card_generator_class()(*args, **kwargs)
+
+    def generate(self, request):
+        return self._impl.generate(request)
 
 
 class ConvertWorker(QThread):
@@ -77,7 +92,7 @@ class GenerateWorker(QThread):
 
     def __init__(
         self,
-        generator: CardGenerator,
+        generator: "CardGenerator",
         markdown_result: MarkdownResult,
         deck_name: str,
         tags: list[str],
@@ -248,6 +263,8 @@ class ProviderConnectionWorker(QThread):
 
     def run(self) -> None:
         try:
+            from ankismart.card_gen.llm_client import LLMClient
+
             client = LLMClient(
                 api_key=self._provider.api_key,
                 model=self._provider.model,
@@ -486,6 +503,9 @@ class BatchConvertWorker(QThread):
         proxy_mode = str(getattr(self._config, "proxy_mode", "system"))
         proxy_url = str(getattr(self._config, "proxy_url", "")).strip() if proxy_mode == "manual" else ""
 
+        from ankismart.card_gen.generator import CardGenerator
+        from ankismart.card_gen.llm_client import LLMClient
+
         llm_client = LLMClient(
             api_key=provider.api_key,
             model=provider.model,
@@ -660,7 +680,7 @@ class BatchGenerateWorker(QThread):
         self,
         documents: list[ConvertedDocument],
         generation_config: dict[str, Any],
-        llm_client: LLMClient,
+        llm_client: "LLMClient",
         deck_name: str,
         tags: list[str],
         enable_auto_split: bool = False,
