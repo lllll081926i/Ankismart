@@ -3,13 +3,11 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QMessageBox, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
+    FluentIcon,
     PushSettingCard,
     SettingCard,
     SettingCardGroup,
     SubtitleLabel,
-)
-from qfluentwidgets import (
-    FluentIcon as FIF,
 )
 
 from ankismart.core.config import save_config
@@ -41,7 +39,7 @@ class PerformancePage(QWidget):
         )
 
         self._total_files_card = SettingCard(
-            FIF.DOCUMENT,
+            FluentIcon.DOCUMENT,
             "总处理文件数" if self._main.config.language == "zh" else "Total Files Processed",
             "已成功处理的文件总数" if self._main.config.language == "zh" else "Total number of processed files",
             self,
@@ -53,7 +51,7 @@ class PerformancePage(QWidget):
         self._stats_group.addSettingCard(self._total_files_card)
 
         self._avg_conversion_card = SettingCard(
-            FIF.SPEED_OFF,
+            FluentIcon.SPEED_OFF,
             "平均转换时间" if self._main.config.language == "zh" else "Average Conversion Time",
             "每个文件的平均转换时间（秒）" if self._main.config.language == "zh" else "Average conversion time per file (s)",
             self,
@@ -65,7 +63,7 @@ class PerformancePage(QWidget):
         self._stats_group.addSettingCard(self._avg_conversion_card)
 
         self._avg_generation_card = SettingCard(
-            FIF.SPEED_HIGH,
+            FluentIcon.SPEED_HIGH,
             "平均生成时间" if self._main.config.language == "zh" else "Average Generation Time",
             "每张卡片的平均生成时间（秒）" if self._main.config.language == "zh" else "Average generation time per card (s)",
             self,
@@ -77,7 +75,7 @@ class PerformancePage(QWidget):
         self._stats_group.addSettingCard(self._avg_generation_card)
 
         self._total_cards_card = SettingCard(
-            FIF.TILES,
+            FluentIcon.TILES,
             "总生成卡片数" if self._main.config.language == "zh" else "Total Cards Generated",
             "已成功生成的卡片总数" if self._main.config.language == "zh" else "Total number of generated cards",
             self,
@@ -90,7 +88,7 @@ class PerformancePage(QWidget):
 
         self._reset_stats_card = PushSettingCard(
             "重置统计" if self._main.config.language == "zh" else "Reset Stats",
-            FIF.DELETE,
+            FluentIcon.DELETE,
             "重置统计数据" if self._main.config.language == "zh" else "Reset Statistics",
             "清除所有性能统计数据" if self._main.config.language == "zh" else "Clear all performance statistics",
         )
@@ -141,7 +139,7 @@ class PerformancePage(QWidget):
         save_config(self._main.config)
         self.refresh_statistics()
 
-    def showEvent(self, event) -> None:
+    def showEvent(self, event) -> None:  # noqa: N802
         self.refresh_statistics()
         super().showEvent(event)
 
@@ -150,3 +148,4 @@ class PerformancePage(QWidget):
 
     def update_theme(self) -> None:
         pass
+

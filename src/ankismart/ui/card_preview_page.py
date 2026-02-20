@@ -20,6 +20,7 @@ from qfluentwidgets import (
     CaptionLabel,
     CardWidget,
     ComboBox,
+    FluentIcon,
     InfoBar,
     InfoBarPosition,
     LineEdit,
@@ -28,9 +29,6 @@ from qfluentwidgets import (
     PushButton,
     TitleLabel,
     isDarkTheme,
-)
-from qfluentwidgets import (
-    FluentIcon as FIF,
 )
 
 from ankismart.core.logging import get_logger
@@ -632,20 +630,20 @@ class CardPreviewPage(QWidget):
 
         # Navigation buttons
         self._btn_prev = PushButton("上一张" if self._main.config.language == "zh" else "Previous")
-        self._btn_prev.setIcon(FIF.LEFT_ARROW)
+        self._btn_prev.setIcon(FluentIcon.LEFT_ARROW)
         self._btn_prev.clicked.connect(self._show_previous)
         self._btn_prev.setEnabled(False)
         layout.addWidget(self._btn_prev)
 
         self._btn_next = PushButton("下一张" if self._main.config.language == "zh" else "Next")
-        self._btn_next.setIcon(FIF.RIGHT_ARROW)
+        self._btn_next.setIcon(FluentIcon.RIGHT_ARROW)
         self._btn_next.clicked.connect(self._show_next)
         self._btn_next.setEnabled(False)
         layout.addWidget(self._btn_next)
 
         # Push to Anki button
         self._btn_push = PrimaryPushButton("推送到 Anki" if self._main.config.language == "zh" else "Push to Anki")
-        self._btn_push.setIcon(FIF.SEND)
+        self._btn_push.setIcon(FluentIcon.SEND)
         self._btn_push.clicked.connect(self._push_to_anki)
         layout.addWidget(self._btn_push)
 
@@ -986,3 +984,4 @@ class CardPreviewPage(QWidget):
             duration=3000,
             parent=self,
         )
+

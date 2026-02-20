@@ -23,6 +23,7 @@ from qfluentwidgets import (
     CardWidget,
     ComboBox,
     EditableComboBox,
+    FluentIcon,
     InfoBar,
     InfoBarPosition,
     LineEdit,
@@ -40,9 +41,6 @@ from qfluentwidgets import (
     StateToolTip,
     SubtitleLabel,
     isDarkTheme,
-)
-from qfluentwidgets import (
-    FluentIcon as FIF,
 )
 
 from ankismart.converter.converter import DocumentConverter
@@ -418,19 +416,19 @@ class DropAreaWidget(SimpleCardWidget):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setBorderRadius(8)
 
-    def dragEnterEvent(self, event: QDragEnterEvent):
+    def dragEnterEvent(self, event: QDragEnterEvent):  # noqa: N802
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
             self.update()  # Trigger repaint
 
-    def dragMoveEvent(self, event):
+    def dragMoveEvent(self, event):  # noqa: N802
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
-    def dragLeaveEvent(self, event):
+    def dragLeaveEvent(self, event):  # noqa: N802
         self.update()  # Trigger repaint
 
-    def dropEvent(self, event: QDropEvent):
+    def dropEvent(self, event: QDropEvent):  # noqa: N802
         if event.mimeData().hasUrls():
             file_paths = []
             for url in event.mimeData().urls():
@@ -441,18 +439,18 @@ class DropAreaWidget(SimpleCardWidget):
             event.acceptProposedAction()
         self.update()  # Trigger repaint
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event):  # noqa: N802
         """Handle mouse click to open file dialog."""
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
         super().mousePressEvent(event)
 
-    def enterEvent(self, event):
+    def enterEvent(self, event):  # noqa: N802
         """Mouse enter - change border color."""
         self.update()
         super().enterEvent(event)
 
-    def leaveEvent(self, event):
+    def leaveEvent(self, event):  # noqa: N802
         """Mouse leave - restore border color."""
         self.update()
         super().leaveEvent(event)
@@ -655,7 +653,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._btn_generate_cards = PrimaryPushButton(
             "开始生成卡片" if is_zh else "Generate Cards"
         )
-        self._btn_generate_cards.setIcon(FIF.SEND)
+        self._btn_generate_cards.setIcon(FluentIcon.SEND)
         self._btn_generate_cards.setFixedHeight(32)
         self._btn_generate_cards.setMinimumWidth(140)
         self._btn_generate_cards.clicked.connect(self._start_generate_cards)
@@ -676,7 +674,7 @@ class ImportPage(ProgressMixin, QWidget):
 
         # Target count card
         self._count_card = SettingCard(
-            FIF.LABEL,
+            FluentIcon.LABEL,
             "目标卡片数量" if is_zh else "Target Card Count",
             "设置要生成的卡片总数" if is_zh else "Set total number of cards to generate",
             group
@@ -704,7 +702,7 @@ class ImportPage(ProgressMixin, QWidget):
 
         # Deck name card
         self._deck_card = SettingCard(
-            FIF.FOLDER,
+            FluentIcon.FOLDER,
             "卡片组名称" if is_zh else "Deck Name",
             "选择或输入 Anki 卡片组名称" if is_zh else "Select or enter Anki deck name",
             group
@@ -727,7 +725,7 @@ class ImportPage(ProgressMixin, QWidget):
 
         # Tags card
         self._tags_card = SettingCard(
-            FIF.TAG,
+            FluentIcon.TAG,
             "标签" if is_zh else "Tags",
             "添加标签，用逗号分隔" if is_zh else "Add tags, separated by commas",
             group
@@ -790,7 +788,7 @@ class ImportPage(ProgressMixin, QWidget):
             # Create a simple SettingCard with slider
             from qfluentwidgets import SettingCard
             card = SettingCard(
-                FIF.LABEL,
+                FluentIcon.LABEL,
                 strategy_name,
                 strategy_desc,
                 group
@@ -884,13 +882,13 @@ class ImportPage(ProgressMixin, QWidget):
         self._btn_load_example = PushButton(
             "加载示例" if is_zh else "Load Example"
         )
-        self._btn_load_example.setIcon(FIF.DOCUMENT)
+        self._btn_load_example.setIcon(FluentIcon.DOCUMENT)
         self._btn_load_example.clicked.connect(self._load_example)
 
         self._btn_recommend = PushButton(
             "推荐策略" if is_zh else "Recommend Strategy"
         )
-        self._btn_recommend.setIcon(FIF.ROBOT)
+        self._btn_recommend.setIcon(FluentIcon.ROBOT)
         self._btn_recommend.clicked.connect(self._recommend_strategy)
 
         layout.addWidget(self._btn_load_example)
@@ -971,7 +969,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._btn_cancel = PushButton(
             "取消" if self._main.config.language == "zh" else "Cancel"
         )
-        self._btn_cancel.setIcon(FIF.CLOSE)
+        self._btn_cancel.setIcon(FluentIcon.CLOSE)
         self._btn_cancel.clicked.connect(self._cancel_operation)
         self._btn_cancel.hide()
 
@@ -1019,7 +1017,7 @@ class ImportPage(ProgressMixin, QWidget):
         if item:
             from qfluentwidgets import Action, RoundMenu
             menu = RoundMenu(parent=self)
-            delete_action = Action(FIF.DELETE, "删除" if self._main.config.language == "zh" else "Delete")
+            delete_action = Action(FluentIcon.DELETE, "删除" if self._main.config.language == "zh" else "Delete")
             delete_action.triggered.connect(lambda: self._remove_file_item(item))
             menu.addAction(delete_action)
             menu.exec(self._file_list.mapToGlobal(pos))
@@ -1843,7 +1841,7 @@ class ImportPage(ProgressMixin, QWidget):
             parent=self,
         )
 
-    def closeEvent(self, event):
+    def closeEvent(self, event):  # noqa: N802
         """Ensure background workers are stopped and references released."""
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
@@ -2188,3 +2186,4 @@ class ImportPage(ProgressMixin, QWidget):
         if isDarkTheme():
             return QColor(255, 255, 255)
         return QColor(0, 0, 0)
+

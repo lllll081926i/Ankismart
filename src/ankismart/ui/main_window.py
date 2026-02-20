@@ -564,7 +564,7 @@ NavigationPanel[transparent=true] {{
     def batch_result(self, value):
         self._batch_result = value
 
-    def closeEvent(self, event):
+    def closeEvent(self, event):  # noqa: N802
         """Save window geometry before closing."""
         geometry = self.saveGeometry().toHex().data().decode()
         self.config.window_geometry = geometry

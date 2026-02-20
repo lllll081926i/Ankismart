@@ -26,8 +26,8 @@ jobs:
       - name: Install Dependencies
         run: uv sync --group dev
 
-      - name: Ruff (phase-1 gate rules)
-        run: uv run ruff check src tests --select F821,F401,F811,I001
+      - name: Ruff (phase-2 gate rules)
+        run: uv run ruff check src tests --select E,F,I,N,W --ignore E501
 
   unit-integration:
     runs-on: windows-latest

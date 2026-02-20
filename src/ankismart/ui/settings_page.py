@@ -21,6 +21,7 @@ from qfluentwidgets import (
     BodyLabel,
     ComboBox,
     ExpandLayout,
+    FluentIcon,
     InfoBar,
     InfoBarPosition,
     LineEdit,
@@ -37,9 +38,6 @@ from qfluentwidgets import (
     SwitchButton,
     SwitchSettingCard,
     isDarkTheme,
-)
-from qfluentwidgets import (
-    FluentIcon as FIF,
 )
 
 from ankismart.core.config import LLMProviderConfig, save_config
@@ -238,9 +236,9 @@ class SettingsPage(ScrollArea):
         self.expandLayout = ExpandLayout(self.scrollWidget)
 
         # Initialize UI
-        self.__initWidget()
+        self._init_widget()
 
-    def __initWidget(self):
+    def _init_widget(self):
         """Initialize widgets and layout."""
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -259,7 +257,7 @@ class SettingsPage(ScrollArea):
         self._apply_background_style()
 
         # Initialize layout
-        self.__initLayout()
+        self._init_layout()
 
         # Load current configuration
         self._load_config()
@@ -370,7 +368,7 @@ class SettingsPage(ScrollArea):
             "}"
         )
 
-    def __initLayout(self):
+    def _init_layout(self):
         """Initialize layout and add all setting cards."""
         self.expandLayout.setSpacing(SPACING_MEDIUM)
         self.expandLayout.setContentsMargins(36, 10, 36, 0)
@@ -381,7 +379,7 @@ class SettingsPage(ScrollArea):
         # Provider management card with add button
         self._provider_mgmt_card = PushSettingCard(
             "添加提供商",
-            FIF.ADD,
+            FluentIcon.ADD,
             "LLM 提供商",
             "管理 LLM 服务提供商配置",
         )
@@ -426,7 +424,7 @@ class SettingsPage(ScrollArea):
 
         # Temperature
         self._temperature_card = SettingCard(
-            FIF.FRIGID,
+            FluentIcon.FRIGID,
             "温度",
             "控制生成的随机性（0.0 = 确定性，2.0 = 创造性）",
             self.scrollWidget,
@@ -452,7 +450,7 @@ class SettingsPage(ScrollArea):
 
         # Max Tokens
         self._max_tokens_card = SettingCard(
-            FIF.FONT,
+            FluentIcon.FONT,
             "最大令牌数",
             "生成的最大令牌数（0 = 使用提供商默认值）",
             self.scrollWidget,
@@ -468,7 +466,7 @@ class SettingsPage(ScrollArea):
 
         # LLM Concurrency
         self._concurrency_card = SettingCard(
-            FIF.SPEED_HIGH,
+            FluentIcon.SPEED_HIGH,
             "并发限制",
             "同时处理的最大文件数（0 = 不限制）",
             self.scrollWidget,
@@ -488,7 +486,7 @@ class SettingsPage(ScrollArea):
 
         # AnkiConnect URL
         self._anki_url_card = SettingCard(
-            FIF.LINK,
+            FluentIcon.LINK,
             "AnkiConnect URL",
             "AnkiConnect API 的 URL 地址",
             self.scrollWidget,
@@ -502,7 +500,7 @@ class SettingsPage(ScrollArea):
 
         # AnkiConnect Key
         self._anki_key_card = SettingCard(
-            FIF.FINGERPRINT,
+            FluentIcon.FINGERPRINT,
             "AnkiConnect 密钥",
             "AnkiConnect 的可选 API 密钥",
             self.scrollWidget,
@@ -516,7 +514,7 @@ class SettingsPage(ScrollArea):
 
         # Default Deck
         self._default_deck_card = SettingCard(
-            FIF.BOOK_SHELF,
+            FluentIcon.BOOK_SHELF,
             "默认牌组",
             "新卡片的默认 Anki 牌组",
             self.scrollWidget,
@@ -530,7 +528,7 @@ class SettingsPage(ScrollArea):
 
         # Default Tags
         self._default_tags_card = SettingCard(
-            FIF.TAG,
+            FluentIcon.TAG,
             "默认标签",
             "新卡片的默认标签（逗号分隔）",
             self.scrollWidget,
@@ -545,7 +543,7 @@ class SettingsPage(ScrollArea):
         # Test Connection
         self._test_connection_card = PushSettingCard(
             "测试连接",
-            FIF.SYNC,
+            FluentIcon.SYNC,
             "测试连接",
             "测试与 AnkiConnect 的连接",
         )
@@ -559,7 +557,7 @@ class SettingsPage(ScrollArea):
 
         # Theme
         self._theme_card = SettingCard(
-            FIF.BRUSH,
+            FluentIcon.BRUSH,
             "主题",
             "应用程序主题",
             self.scrollWidget,
@@ -574,7 +572,7 @@ class SettingsPage(ScrollArea):
 
         # Language
         self._language_card = SettingCard(
-            FIF.LANGUAGE,
+            FluentIcon.LANGUAGE,
             "语言",
             "应用程序语言",
             self.scrollWidget,
@@ -588,7 +586,7 @@ class SettingsPage(ScrollArea):
 
         # Proxy Settings
         self._proxy_card = SettingCard(
-            FIF.GLOBE,
+            FluentIcon.GLOBE,
             "代理设置",
             "配置网络代理（默认使用系统代理）",
             self.scrollWidget,
@@ -620,7 +618,7 @@ class SettingsPage(ScrollArea):
 
         # OCR Correction
         self._ocr_correction_card = SettingCard(
-            FIF.EDIT,
+            FluentIcon.EDIT,
             "OCR 校正",
             "启用基于 LLM 的 OCR 文本校正",
             self.scrollWidget,
@@ -643,7 +641,7 @@ class SettingsPage(ScrollArea):
 
         # Create a custom SettingCard with ComboBox
         self._log_level_card = SettingCard(
-            FIF.DOCUMENT,
+            FluentIcon.DOCUMENT,
             t("log.level", self._main.config.language),
             t("log.level_desc", self._main.config.language),
             parent=self._other_group,
@@ -666,7 +664,7 @@ class SettingsPage(ScrollArea):
         # View Logs
         self._view_logs_card = PushSettingCard(
             t("log.open_folder", self._main.config.language),
-            FIF.FOLDER,
+            FluentIcon.FOLDER,
             t("log.view_logs", self._main.config.language),
             t("log.view_logs_desc", self._main.config.language),
         )
@@ -677,7 +675,7 @@ class SettingsPage(ScrollArea):
         self._ocr_group = SettingCardGroup("OCR 设置", self.scrollWidget)
 
         self._ocr_mode_card = SettingCard(
-            FIF.ROBOT,
+            FluentIcon.ROBOT,
             "OCR 模式",
             "切换使用本地模型或云端模型（云端功能开发中）",
             self.scrollWidget,
@@ -690,7 +688,7 @@ class SettingsPage(ScrollArea):
         self._ocr_group.addSettingCard(self._ocr_mode_card)
 
         self._ocr_cuda_auto_card = SwitchSettingCard(
-            FIF.POWER_BUTTON,
+            FluentIcon.POWER_BUTTON,
             "CUDA 自动升档",
             "首次 OCR 前检测到 CUDA 时，自动将模型从轻量档升至标准档",
             parent=self._ocr_group,
@@ -699,7 +697,7 @@ class SettingsPage(ScrollArea):
 
         self._ocr_connectivity_card = PushSettingCard(
             "测试",
-            FIF.HELP,
+            FluentIcon.HELP,
             "OCR 模型连通性测试",
             "本地模式检查模型完整性，云端模式显示开发中状态",
         )
@@ -707,7 +705,7 @@ class SettingsPage(ScrollArea):
         self._ocr_group.addSettingCard(self._ocr_connectivity_card)
 
         self._ocr_model_tier_card = SettingCard(
-            FIF.GLOBE,
+            FluentIcon.GLOBE,
             "OCR 模型",
             "切换 OCR 模型档位",
             self.scrollWidget,
@@ -727,7 +725,7 @@ class SettingsPage(ScrollArea):
         self._ocr_group.addSettingCard(self._ocr_model_tier_card)
 
         self._ocr_source_card = SettingCard(
-            FIF.CLOUD_DOWNLOAD,
+            FluentIcon.CLOUD_DOWNLOAD,
             "模型下载源",
             "首次下载和切换模型时可选择官方地址或国内镜像",
             self.scrollWidget,
@@ -741,7 +739,7 @@ class SettingsPage(ScrollArea):
 
         self._ocr_cuda_detect_card = PushSettingCard(
             "检测",
-            FIF.VPN,
+            FluentIcon.VPN,
             "检测 CUDA 环境",
             "检测是否可使用 GPU，并给出 OCR 模型建议",
         )
@@ -756,7 +754,7 @@ class SettingsPage(ScrollArea):
         # Cache size card
         self._cache_size_card = PushSettingCard(
             "清空缓存",
-            FIF.DELETE,
+            FluentIcon.DELETE,
             "缓存大小",
             "计算中...",
         )
@@ -766,7 +764,7 @@ class SettingsPage(ScrollArea):
         # Cache count card
         self._cache_count_card = PushSettingCard(
             "刷新",
-            FIF.SYNC,
+            FluentIcon.SYNC,
             "缓存文件数",
             "计算中...",
         )
@@ -780,7 +778,7 @@ class SettingsPage(ScrollArea):
 
         # Auto-split enable
         self._auto_split_card = SettingCard(
-            FIF.CUT,
+            FluentIcon.CUT,
             "启用长文档自动分割",
             "当文档超过阈值时自动分割为多个片段处理",
             parent=self._experimental_group,
@@ -793,7 +791,7 @@ class SettingsPage(ScrollArea):
 
         # Split threshold
         self._split_threshold_card = SettingCard(
-            FIF.ALIGNMENT,
+            FluentIcon.ALIGNMENT,
             "分割阈值",
             "触发自动分割的字符数阈值",
             parent=self._experimental_group,
@@ -808,7 +806,7 @@ class SettingsPage(ScrollArea):
 
         # Warning label
         self._warning_card = SettingCard(
-            FIF.INFO,
+            FluentIcon.INFO,
             "注意事项",
             "⚠️ 警告：这是实验性功能，可能影响卡片质量和生成时间。建议仅在处理超长文档时启用。",
             self.scrollWidget,
@@ -821,7 +819,7 @@ class SettingsPage(ScrollArea):
         is_zh = self._main.config.language == "zh"
         self._export_logs_card = PushSettingCard(
             "导出日志" if is_zh else "Export Logs",
-            FIF.DOCUMENT,
+            FluentIcon.DOCUMENT,
             "导出日志" if is_zh else "Export Logs",
             "导出应用日志文件用于问题排查" if is_zh else "Export application logs for troubleshooting",
         )
@@ -830,7 +828,7 @@ class SettingsPage(ScrollArea):
 
         self._reset_card = PushSettingCard(
             "恢复默认",
-            FIF.RETURN,
+            FluentIcon.RETURN,
             "重置设置",
             "将所有设置恢复为默认值",
         )
@@ -1595,3 +1593,4 @@ class SettingsPage(ScrollArea):
         self._apply_theme_styles()
         if self._provider_list_widget:
             self._provider_list_widget.update_theme()
+

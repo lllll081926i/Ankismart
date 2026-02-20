@@ -108,9 +108,6 @@ class CardGenerator:
                 code_block_buffer.append(para)
                 continue
 
-            # Detect table rows (lines starting with |)
-            is_table = para.startswith('|') or '|' in para[:10]
-
             para_length = len(para)
 
             # If single paragraph exceeds threshold, split it by sentences

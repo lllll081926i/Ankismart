@@ -108,8 +108,6 @@ class StrategyRecommender:
         Returns:
             Document type: "textbook", "paper", "notes", or "general"
         """
-        content_lower = content.lower()
-
         # Count pattern matches
         textbook_score = sum(
             1 for pattern in self.TEXTBOOK_PATTERNS if re.search(pattern, content, re.IGNORECASE)
@@ -147,11 +145,9 @@ class StrategyRecommender:
             StrategyRecommendation
         """
         # Analyze content characteristics
-        length = len(content)
         has_definitions = bool(re.search(r"定义[:：]|definition:", content, re.IGNORECASE))
         has_examples = bool(re.search(r"例[题如]|example", content, re.IGNORECASE))
         has_lists = content.count("\n- ") + content.count("\n* ") + content.count("\n1. ")
-        has_code = bool(re.search(r"```|`[^`]+`", content))
 
         # Strategy mix based on document type
         if doc_type == "textbook":

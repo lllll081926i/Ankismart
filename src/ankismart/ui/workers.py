@@ -500,11 +500,13 @@ class BatchConvertWorker(QThread):
         return self._ocr_correction_fn
 
     def _build_converter(self):
-        converter_cls = DocumentConverter
-        if converter_cls is None:
-            from ankismart.converter.converter import DocumentConverter as converter_cls
+        converter_class = DocumentConverter
+        if converter_class is None:
+            from ankismart.converter.converter import DocumentConverter as DocumentConverterClass
 
-        return converter_cls(ocr_correction_fn=self._resolve_ocr_correction_fn())
+            converter_class = DocumentConverterClass
+
+        return converter_class(ocr_correction_fn=self._resolve_ocr_correction_fn())
 
     def _merge_and_convert_images(self, image_files: list[Path]) -> MarkdownResult | None:
         """Merge multiple images into one PDF and convert via OCR."""

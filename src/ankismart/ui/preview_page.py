@@ -112,7 +112,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self._setup_rules()
         self.rehighlight()
 
-    def highlightBlock(self, text: str):
+    def highlightBlock(self, text: str):  # noqa: N802
         """Apply syntax highlighting to a block of text."""
         for pattern, fmt in self._rules:
             for match in pattern.finditer(text):
@@ -276,7 +276,7 @@ class PreviewPage(ProgressMixin, QWidget):
             "}"
         )
 
-    def showEvent(self, event):
+    def showEvent(self, event):  # noqa: N802
         """Handle show event to ensure buttons are enabled when page is displayed."""
         super().showEvent(event)
         # Ensure buttons are enabled when page is shown (unless actively processing)
@@ -345,11 +345,11 @@ class PreviewPage(ProgressMixin, QWidget):
         # Clear and populate file list
         self._file_list.clear()
         for doc in self._documents:
-            item = self._file_list.addItem(doc.file_name)
+            self._file_list.addItem(doc.file_name)
 
         # Add placeholder items for pending documents
         for i in range(pending_files_count):
-            item = self._file_list.addItem(f"转换中... ({i+1})")
+            self._file_list.addItem(f"转换中... ({i+1})")
             # Disable placeholder items
             item_widget = self._file_list.item(len(self._documents) + i)
             if item_widget:
@@ -1269,7 +1269,7 @@ class PreviewPage(ProgressMixin, QWidget):
             self._highlighter.update_theme()
         self._apply_theme_styles()
 
-    def closeEvent(self, event):
+    def closeEvent(self, event):  # noqa: N802
         """Clean up worker threads before closing."""
         # Stop generate worker if running
         if self._generate_worker and self._generate_worker.isRunning():

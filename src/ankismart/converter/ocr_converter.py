@@ -339,9 +339,9 @@ def _should_retry_without_mkldnn(exc: Exception) -> bool:
 def _load_paddle_ocr_class():
     global PaddleOCR
     if PaddleOCR is None:
-        from paddleocr import PaddleOCR as paddle_ocr_cls
+        from paddleocr import PaddleOCR as PaddleOCRClass
 
-        PaddleOCR = paddle_ocr_cls
+        PaddleOCR = PaddleOCRClass
     return PaddleOCR
 
 
