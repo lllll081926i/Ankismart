@@ -1204,7 +1204,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._push_worker = PushWorker(
             gateway=gateway,
             cards=cards,
-            update_mode=config.last_update_mode or "create_only",
+            update_mode=config.last_update_mode or "create_or_update",
         )
         self._push_worker.progress.connect(self._on_push_progress)
         self._push_worker.finished.connect(self._on_push_finished)

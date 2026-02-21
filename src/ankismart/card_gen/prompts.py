@@ -6,6 +6,11 @@ BASIC_SYSTEM_PROMPT = (
     "Rules:\n"
     "- Create concise, clear questions that test understanding of key concepts\n"
     "- Answers should be direct and informative\n"
+    "- Back must follow a two-part structure:\n"
+    '  1) First line: "答案: <one-line answer>" (or "Answer: <...>")\n'
+    '  2) Then "解析:" (or "Explanation:") with layered points on new lines\n'
+    '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
+    "- For long explanations, split into 2+ short paragraphs on new lines (do NOT add numbering prefixes like 1./2.)\n"
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
@@ -20,11 +25,11 @@ BASIC_SYSTEM_PROMPT = (
     "Example output:\n"
     "[\n"
     '  {"Front": "What is photosynthesis?",\n'
-    '   "Back": "The process by which plants convert light energy into '
-    'chemical energy, producing glucose and oxygen from CO2 and water."},\n'
+    '   "Back": "Answer: The process that converts light energy into chemical energy.\\n'
+    'Explanation:\\nOccurs mainly in chloroplasts.\\nProduces glucose and oxygen from CO2 and water."},\n'
     '  {"Front": "What is the Pythagorean theorem?",\n'
-    '   "Back": "In a right triangle, $a^2 + b^2 = c^2$, where $c$ is the '
-    'hypotenuse and $a$, $b$ are the other two sides."}\n'
+    '   "Back": "Answer: In a right triangle, $a^2 + b^2 = c^2$.\\n'
+    'Explanation:\\n$c$ is the hypotenuse.\\n$a$ and $b$ are the other two sides."}\n'
     "]\n"
 )
 
@@ -45,6 +50,7 @@ CLOZE_SYSTEM_PROMPT = (
     "or important facts\n"
     "- Avoid overly simple or overly broad deletions; each cloze should "
     "test a specific, meaningful piece of knowledge\n"
+    '- Extra must be a layered explanation block using multiple lines; do NOT add numbering prefixes like 1./2.\n'
     "- If the content is in Chinese, generate cards in Chinese\n"
     "- For math formulas: use $formula$ for inline (e.g., $x^2 + y^2 = z^2$) "
     "and $$formula$$ for display mode (e.g., $$\\\\int_0^\\\\infty e^{-x^2} dx$$)\n"
@@ -71,7 +77,11 @@ IMAGE_QA_SYSTEM_PROMPT = (
     "- Each card should test recall of one specific element or concept\n"
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- Front: a question asking to identify or recall a specific element\n"
-    "- Back: the answer, including context about location or relationship\n"
+    '- Back must follow a two-part structure:\n'
+    '  1) First line: "答案: <one-line answer>" (or "Answer: <...>")\n'
+    '  2) Then "解析:" (or "Explanation:") with layered points on new lines\n'
+    '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
+    "- For long explanations, split into 2+ short paragraphs on new lines (do NOT add numbering prefixes like 1./2.)\n"
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
     "- For math formulas: use $formula$ for inline (e.g., $x^2 + y^2 = z^2$) "
@@ -82,11 +92,12 @@ IMAGE_QA_SYSTEM_PROMPT = (
     "[\n"
     '  {"Front": "In the cell diagram, what organelle is responsible '
     'for energy production?",\n'
-    '   "Back": "Mitochondria - located in the cytoplasm, '
-    'converts nutrients into ATP."},\n'
+    '   "Back": "Answer: Mitochondria.\\n'
+    'Explanation:\\nLocated in the cytoplasm.\\nConverts nutrients into ATP."},\n'
     '  {"Front": "What formula is shown in the diagram for calculating '
     'kinetic energy?",\n'
-    '   "Back": "$$E_k = \\\\frac{1}{2}mv^2$$ where $m$ is mass and $v$ is velocity."}\n'
+    '   "Back": "Answer: $$E_k = \\\\frac{1}{2}mv^2$$.\\n'
+    'Explanation:\\n$m$ is mass.\\n$v$ is velocity."}\n'
     "]\n"
 )
 
@@ -97,8 +108,11 @@ CONCEPT_SYSTEM_PROMPT = (
     "\n"
     "Rules:\n"
     "- Front: the concept name or phrase (concise)\n"
-    "- Back: a detailed explanation covering the principle, significance, "
-    "and at least one concrete example\n"
+    '- Back must follow a two-part structure:\n'
+    '  1) First line: "答案: <one-line concept summary>" (or "Answer: <...>")\n'
+    '  2) Then "解析:" (or "Explanation:") covering principle/significance/example in layered lines\n'
+    '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
+    "- For long explanations, split into 2+ short paragraphs on new lines (do NOT add numbering prefixes like 1./2.)\n"
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
@@ -111,20 +125,13 @@ CONCEPT_SYSTEM_PROMPT = (
     "Example output:\n"
     "[\n"
     '  {"Front": "Photosynthesis",\n'
-    '   "Back": "The biological process by which green plants convert '
-    "light energy into chemical energy. It occurs in chloroplasts via "
-    "two stages: light-dependent reactions (in thylakoids) and the "
-    "Calvin cycle (in stroma). Significance: it is the primary source "
-    "of oxygen and organic matter on Earth. Example: leaves appear green "
-    'because chlorophyll reflects green light while absorbing red and blue."},\n'
+    '   "Back": "Answer: The process converting light energy to chemical energy in plants.\\n'
+    'Explanation:\\nOccurs in chloroplasts via light reactions and Calvin cycle.\\n'
+    'It is a primary source of oxygen and organic matter on Earth."},\n'
     '  {"Front": "Euler\'s Identity",\n'
-    '   "Back": "The mathematical equation $e^{i\\\\pi} + 1 = 0$, considered '
-    "one of the most beautiful formulas in mathematics. It connects five "
-    "fundamental constants: $e$ (Euler's number), $i$ (imaginary unit), "
-    "$\\\\pi$ (pi), 1, and 0. Significance: it demonstrates the deep "
-    "relationship between exponential functions and trigonometry via "
-    "Euler's formula $e^{ix} = \\\\cos(x) + i\\\\sin(x)$. Example: used in "
-    'signal processing and quantum mechanics."}\n'
+    '   "Back": "Answer: $e^{i\\\\pi} + 1 = 0$.\\n'
+    'Explanation:\\nConnects constants $e$, $i$, $\\\\pi$, 1, and 0.\\n'
+    'Shows relation between exponentials and trigonometry via Euler\'s formula."}\n'
     "]\n"
 )
 
@@ -135,8 +142,11 @@ KEY_TERMS_SYSTEM_PROMPT = (
     "\n"
     "Rules:\n"
     "- Front: the key term or phrase\n"
-    "- Back: a clear definition followed by an example sentence showing "
-    "the term used in context\n"
+    '- Back must follow a two-part structure:\n'
+    '  1) First line: "答案: <one-line definition>" (or "Answer: <...>")\n'
+    '  2) Then "解析:" (or "Explanation:") with layered lines, including context/example\n'
+    '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
+    "- For long explanations, split into 2+ short paragraphs on new lines (do NOT add numbering prefixes like 1./2.)\n"
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
@@ -149,17 +159,13 @@ KEY_TERMS_SYSTEM_PROMPT = (
     "Example output:\n"
     "[\n"
     '  {"Front": "Chloroplast",\n'
-    '   "Back": "Definition: A membrane-bound organelle found in plant cells '
-    "that is the site of photosynthesis. It contains chlorophyll, which "
-    "captures light energy.\\n\\n"
-    'Example: \\"The chloroplasts in leaf cells give plants their green color '
-    'and enable them to produce glucose from sunlight.\\""},\n'
+    '   "Back": "Answer: A plant-cell organelle where photosynthesis happens.\\n'
+    'Explanation:\\nContains chlorophyll to capture light energy.\\n'
+    'Example: chloroplasts enable leaves to produce glucose from sunlight."},\n'
     '  {"Front": "Derivative",\n'
-    '   "Back": "Definition: The rate of change of a function with respect to '
-    "a variable, denoted as $\\\\frac{df}{dx}$ or $f'(x)$. It represents the "
-    "slope of the tangent line at any point on the function's curve.\\n\\n"
-    'Example: \\"The derivative of $f(x) = x^2$ is $f\'(x) = 2x$, meaning the '
-    'slope at $x=3$ is $2(3) = 6$.\\""}' "\n"
+    '   "Back": "Answer: The rate of change of a function, denoted by $\\\\frac{df}{dx}$ or $f\'(x)$.\\n'
+    'Explanation:\\nRepresents tangent slope at a point.\\n'
+    'Example: for $f(x)=x^2$, derivative is $2x$."}' "\n"
     "]\n"
 )
 
@@ -170,7 +176,11 @@ SINGLE_CHOICE_SYSTEM_PROMPT = (
     "Rules:\n"
     "- Output ONLY a JSON array of objects with \"Front\" and \"Back\" fields\n"
     "- Front must contain: question + 4 options labeled A/B/C/D\n"
-    "- Back must contain: the correct option letter and a short explanation\n"
+    '- Back must follow a strict structure:\n'
+    '  1) First line: "答案: <single option letter>"\n'
+    '  2) Then "解析:" with layered lines; each key point on a new line\n'
+    '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
+    "- For long explanations, split into 2+ short paragraphs on new lines (do NOT add numbering prefixes like 1./2.)\n"
     "- Exactly one option should be correct\n"
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
@@ -186,8 +196,8 @@ SINGLE_CHOICE_SYSTEM_PROMPT = (
     "B. $3x^2$\\n"
     "C. $x^2$\\n"
     'D. $3x$",\n'
-    '   "Back": "B\\n\\nUsing the power rule $\\\\frac{d}{dx}(x^n) = nx^{n-1}$, '
-    'we get $f\'(x) = 3x^2$."}\n'
+    '   "Back": "答案: B\\n'
+    '解析:\\nUsing the power rule $\\\\frac{d}{dx}(x^n) = nx^{n-1}$.\\nSo $f\'(x) = 3x^2$."}\n'
     "]\n"
 )
 
@@ -198,7 +208,11 @@ MULTIPLE_CHOICE_SYSTEM_PROMPT = (
     "Rules:\n"
     "- Output ONLY a JSON array of objects with \"Front\" and \"Back\" fields\n"
     "- Front must contain: question + 4 to 5 options labeled A/B/C/D(/E)\n"
-    "- Back must contain: all correct option letters and a short explanation\n"
+    '- Back must follow a strict structure:\n'
+    '  1) First line: "答案: <all correct option letters>"\n'
+    '  2) Then "解析:" with layered lines; each key point on a new line\n'
+    '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
+    "- For long explanations, split into 2+ short paragraphs on new lines (do NOT add numbering prefixes like 1./2.)\n"
     "- Each question should have 2 or more correct options\n"
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
@@ -214,7 +228,8 @@ MULTIPLE_CHOICE_SYSTEM_PROMPT = (
     "B. $x = 2$\\n"
     "C. $x = 3$\\n"
     'D. $x = 6$",\n'
-    '   "Back": "B, C\\n\\nFactoring gives $(x-2)(x-3) = 0$, so $x = 2$ or $x = 3$."}\n'
+    '   "Back": "答案: B, C\\n'
+    '解析:\\nFactoring gives $(x-2)(x-3) = 0$.\\nSo $x = 2$ or $x = 3$."}\n'
     "]\n"
 )
 

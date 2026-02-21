@@ -36,6 +36,20 @@ def _get_icon_path() -> Path:
     return Path(__file__).resolve().parent / "assets" / "icon.ico"
 
 
+def _set_windows_app_user_model_id() -> None:
+    """Set explicit AppUserModelID so taskbar uses the app icon on Windows."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "Ankismart.Desktop"
+        )
+    except Exception as exc:  # pragma: no cover - Windows-only best effort
+        logger.warning(f"Failed to set Windows AppUserModelID: {exc}")
+
+
 def _apply_theme(theme_name: str) -> None:
     """Apply the application theme.
 
@@ -107,6 +121,7 @@ def main() -> int:
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
+    _set_windows_app_user_model_id()
 
     # Create application instance
     app = QApplication(sys.argv)

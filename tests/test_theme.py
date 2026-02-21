@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 from PyQt6.QtWidgets import QApplication
 from qfluentwidgets import Theme, setTheme
 
 from ankismart.anki_gateway.styling import PREVIEW_CARD_EXTRA_CSS
 from ankismart.core.config import AppConfig
 from ankismart.core.models import CardDraft
-from ankismart.ui.card_preview_page import CardRenderer
+from ankismart.ui.card_preview_page import CardPreviewPage, CardRenderer
 from ankismart.ui.main_window import MainWindow
 from ankismart.ui.shortcuts_dialog import ShortcutsHelpDialog
 from ankismart.ui.styles import (
@@ -23,6 +25,14 @@ _APP = QApplication.instance() or QApplication([])
 
 def _get_app() -> QApplication:
     return _APP
+
+
+def _make_card_preview_main() -> MagicMock:
+    main = MagicMock()
+    main.config = AppConfig(language="zh")
+    main.result_page = MagicMock()
+    main.switchTo = MagicMock()
+    return main
 
 
 def test_theme_switching(monkeypatch) -> None:
@@ -80,12 +90,13 @@ def test_cloze_preview_emphasizes_deletion_features() -> None:
     )
     html = CardRenderer.render_card(card)
 
-    assert 'class="cloze cloze-emphasis"' in html
-    assert 'class="cloze-answer-list"' in html
-    assert "挖空要点" in html
+    assert 'class="flat-card"' in html
+    assert html.count('class="flat-block') >= 3
+    assert "问题" in html
+    assert "答案" in html
+    assert "解析" in html
     assert "C1" in html
     assert "C2" in html
-    assert "提示：" in html
 
 
 def test_choice_preview_keeps_question_answer_structure() -> None:
@@ -93,13 +104,59 @@ def test_choice_preview_keeps_question_answer_structure() -> None:
         note_type="Basic",
         tags=["single_choice"],
         fields={
-            "Front": "Python 默认解释器是？\nA. CPython\nB. JVM\nC. CLR",
-            "Back": "答案：A\nCPython 是官方实现。",
+            "Front": (
+                "Python 默认解释器是？ A. CPython B. JVM C. CLR D. Lua"
+            ),
+            "Back": (
+                "答案：A CPython 是官方实现。它与解释器生态兼容性最好，"
+                "并且在多数平台具有成熟支持。"
+            ),
         },
     )
     html = CardRenderer.render_card(card)
 
-    assert 'class="choice-question"' in html
-    assert 'class="choice-options"' in html
-    assert "choice-answer-box" in html
-    assert "choice-explain" in html
+    assert 'class="flat-option-list"' in html
+    assert html.count('class="flat-option-line"') >= 4
+    assert 'class="flat-answer-line"' in html
+    assert 'class="flat-block flat-explain"' in html
+
+
+def test_choice_back_prefixed_answer_is_split() -> None:
+    keys, explanation = CardRenderer._parse_choice_back(
+        "B 该模式面向两条线路存在共线区段，车辆在换乘站区间前后衔接。"
+    )
+
+    assert keys == ["B"]
+    assert "共线区段" in explanation
+
+
+def test_card_preview_push_finished_navigates_to_result(monkeypatch) -> None:
+    main = _make_card_preview_main()
+    page = CardPreviewPage(main)
+    page._all_cards = [CardDraft(fields={"Front": "Q", "Back": "A"})]
+
+    monkeypatch.setattr(
+        "ankismart.ui.card_preview_page.InfoBar",
+        type("_InfoBarStub", (), {"success": staticmethod(lambda *a, **k: None)}),
+    )
+
+    result = MagicMock()
+    page._on_push_finished(result)
+
+    main.result_page.load_result.assert_called_once_with(result, page._all_cards)
+    main.switchTo.assert_called_once_with(main.result_page)
+
+
+def test_card_preview_export_finished_does_not_navigate(monkeypatch) -> None:
+    main = _make_card_preview_main()
+    page = CardPreviewPage(main)
+    page._all_cards = [CardDraft(fields={"Front": "Q", "Back": "A"})]
+
+    monkeypatch.setattr(
+        "ankismart.ui.card_preview_page.InfoBar",
+        type("_InfoBarStub", (), {"success": staticmethod(lambda *a, **k: None)}),
+    )
+
+    page._on_export_finished("D:/tmp/cards.apkg")
+
+    main.switchTo.assert_not_called()

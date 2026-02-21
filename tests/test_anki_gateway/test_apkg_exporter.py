@@ -31,6 +31,10 @@ class TestGetModel:
     def test_basic_model(self) -> None:
         model = _get_model("Basic")
         assert model is not None
+        template = model.templates[0]
+        assert "Review" not in template["afmt"]
+        assert "as-block-title\">问题" in template["qfmt"]
+        assert "as-block-title\">答案" in template["afmt"]
 
     def test_cloze_model(self) -> None:
         model = _get_model("Cloze")

@@ -209,7 +209,7 @@ class ResultPage(QWidget):
         self._update_combo.setFixedHeight(30)
         apply_compact_combo_metrics(self._update_combo)
 
-        default_mode = getattr(self._main.config, "last_update_mode", None) or "create_only"
+        default_mode = getattr(self._main.config, "last_update_mode", None) or "create_or_update"
         for idx in range(self._update_combo.count()):
             if self._update_combo.itemData(idx) == default_mode:
                 self._update_combo.setCurrentIndex(idx)
@@ -674,7 +674,7 @@ class ResultPage(QWidget):
         worker = PushWorker(
             gateway=gateway,
             cards=failed_cards,
-            update_mode=config.last_update_mode or "create_only",
+            update_mode=config.last_update_mode or "create_or_update",
         )
         self._worker = worker
         worker.finished.connect(self._on_retry_done)

@@ -90,6 +90,38 @@ class AnkiConnectClient:
     def get_model_field_names(self, model_name: str) -> list[str]:
         return self._request("modelFieldNames", {"modelName": model_name})
 
+    def get_model_templates(self, model_name: str) -> dict[str, dict[str, str]]:
+        """Get note type template definitions keyed by template name."""
+        return self._request("modelTemplates", {"modelName": model_name})
+
+    def update_model_templates(
+        self,
+        model_name: str,
+        templates: dict[str, dict[str, str]],
+    ) -> None:
+        """Update front/back templates for a note type."""
+        self._request(
+            "updateModelTemplates",
+            {
+                "model": {
+                    "name": model_name,
+                    "templates": templates,
+                }
+            },
+        )
+
+    def update_model_styling(self, model_name: str, css: str) -> None:
+        """Update CSS styling for a note type."""
+        self._request(
+            "updateModelStyling",
+            {
+                "model": {
+                    "name": model_name,
+                    "css": css,
+                }
+            },
+        )
+
     def add_note(self, note_params: dict[str, Any]) -> int:
         """Add a single note. Returns the note ID."""
         result = self._request("addNote", {"note": note_params})

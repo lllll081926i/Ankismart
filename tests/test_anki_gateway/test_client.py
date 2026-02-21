@@ -134,9 +134,35 @@ class TestConvenienceMethods:
         assert AnkiConnectClient().get_model_field_names("Basic") == ["Front", "Back"]
 
     @patch("ankismart.anki_gateway.client.httpx.post")
+    def test_get_model_templates(self, mock_post: MagicMock) -> None:
+        templates = {"Card 1": {"Front": "{{Front}}", "Back": "{{Back}}"}}
+        mock_post.return_value = _mock_response({"error": None, "result": templates})
+        assert AnkiConnectClient().get_model_templates("Basic") == templates
+
+    @patch("ankismart.anki_gateway.client.httpx.post")
     def test_create_deck(self, mock_post: MagicMock) -> None:
         mock_post.return_value = _mock_response({"error": None, "result": 123})
         assert AnkiConnectClient().create_deck("Default") == 123
+
+    @patch("ankismart.anki_gateway.client.httpx.post")
+    def test_update_model_templates(self, mock_post: MagicMock) -> None:
+        mock_post.return_value = _mock_response({"error": None, "result": None})
+        client = AnkiConnectClient()
+        client.update_model_templates("Basic", {"Card 1": {"Front": "Q", "Back": "A"}})
+        call_body = mock_post.call_args[1]["json"]
+        assert call_body["action"] == "updateModelTemplates"
+        assert call_body["params"]["model"]["name"] == "Basic"
+        assert "Card 1" in call_body["params"]["model"]["templates"]
+
+    @patch("ankismart.anki_gateway.client.httpx.post")
+    def test_update_model_styling(self, mock_post: MagicMock) -> None:
+        mock_post.return_value = _mock_response({"error": None, "result": None})
+        client = AnkiConnectClient()
+        client.update_model_styling("Basic", ".card { color: red; }")
+        call_body = mock_post.call_args[1]["json"]
+        assert call_body["action"] == "updateModelStyling"
+        assert call_body["params"]["model"]["name"] == "Basic"
+        assert ".card" in call_body["params"]["model"]["css"]
 
     @patch("ankismart.anki_gateway.client.httpx.post")
     def test_add_note_success(self, mock_post: MagicMock) -> None:

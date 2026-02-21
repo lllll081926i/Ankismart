@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
@@ -17,7 +19,6 @@ from PyQt6.QtWidgets import (
 )
 from qfluentwidgets import (
     BodyLabel,
-    CaptionLabel,
     CardWidget,
     ComboBox,
     FluentIcon,
@@ -48,6 +49,112 @@ if TYPE_CHECKING:
     from ankismart.ui.main_window import MainWindow
 
 logger = get_logger(__name__)
+
+PREVIEW_READABILITY_CSS = """
+.card[data-card-type] {
+    font-size: 19px !important;
+    line-height: 1.95 !important;
+}
+
+.card[data-card-type] .flat-card {
+    max-width: 980px;
+    margin: 0 auto;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    box-shadow: 0 8px 20px rgba(16, 39, 72, 0.12);
+    padding: 14px;
+}
+
+.night_mode .card[data-card-type] .flat-card,
+.nightMode .card[data-card-type] .flat-card {
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.32);
+}
+
+.card[data-card-type] .flat-block {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fbfdff;
+    padding: 14px;
+}
+
+.card[data-card-type] .flat-block + .flat-block {
+    margin-top: 12px;
+}
+
+.card[data-card-type] .flat-answer {
+    border-color: #b7e1c7;
+    background: #f3fcf6;
+}
+
+.card[data-card-type] .flat-explain {
+    background: #f9fbff;
+}
+
+.night_mode .card[data-card-type] .flat-block,
+.nightMode .card[data-card-type] .flat-block,
+.night_mode .card[data-card-type] .flat-explain,
+.nightMode .card[data-card-type] .flat-explain {
+    background: rgba(58, 58, 58, 0.9);
+}
+
+.card[data-card-type] .flat-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.card[data-card-type] .flat-content {
+    font-size: 20px;
+    line-height: 1.85;
+}
+
+.card[data-card-type] .flat-option-list {
+    margin-top: 12px;
+}
+
+.card[data-card-type] .flat-option-line {
+    display: block;
+    margin-top: 6px;
+    font-size: 20px;
+    line-height: 1.85;
+}
+
+.card[data-card-type] .flat-option-key {
+    font-weight: 700;
+    margin-right: 6px;
+}
+
+.card[data-card-type] .flat-answer-line {
+    font-size: 20px;
+    line-height: 1.85;
+}
+
+.card[data-card-type] .flat-explain-wrap {
+    margin-top: 6px;
+}
+
+.card[data-card-type] .flat-explain-stack {
+    margin-top: 6px;
+    display: grid;
+    gap: 8px;
+}
+
+.card[data-card-type] .flat-explain-item {
+    font-size: 20px;
+    margin: 0;
+    line-height: 1.85;
+}
+
+.card[data-card-type] .flat-content *,
+.card[data-card-type] .flat-answer-line *,
+.card[data-card-type] .flat-explain-item *,
+.card[data-card-type] .flat-option-line * {
+    font-size: inherit !important;
+    line-height: 1.85 !important;
+}
+""".strip()
 
 
 class CardRenderer:
@@ -129,6 +236,22 @@ class CardRenderer:
         return [line.strip() for line in plain.splitlines() if line.strip()]
 
     @staticmethod
+    def _strip_leading_index(text: str) -> str:
+        """Remove auto-generated leading line indexes like `1. ` before content."""
+        return re.sub(r"^\s*\d+[\.、\):：\-]\s*", "", text or "").strip()
+
+    @staticmethod
+    def _normalize_html_to_text(text: str) -> str:
+        if not text:
+            return ""
+        plain = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+        plain = re.sub(r"</p\s*>", "\n", plain, flags=re.IGNORECASE)
+        plain = re.sub(r"<[^>]+>", " ", plain)
+        plain = plain.replace("\r", "")
+        plain = re.sub(r"\n{3,}", "\n\n", plain)
+        return plain.strip()
+
+    @staticmethod
     def _extract_answer_keys(raw: str) -> list[str]:
         """Extract unique answer keys in stable order."""
         keys: list[str] = []
@@ -141,7 +264,8 @@ class CardRenderer:
     @staticmethod
     def _parse_choice_front(front: str) -> tuple[str, list[tuple[str, str]]]:
         """Parse question/options from front field."""
-        lines = CardRenderer._extract_plain_lines(front)
+        plain = CardRenderer._normalize_html_to_text(front)
+        lines = [line.strip() for line in plain.splitlines() if line.strip()]
         options: list[tuple[str, str]] = []
         question_lines: list[str] = []
 
@@ -153,7 +277,27 @@ class CardRenderer:
                 question_lines.append(line)
 
         if not options:
-            return front, []
+            compact = re.sub(r"\s+", " ", plain).strip()
+            inline_matches = list(
+                re.finditer(r"(^|\s)([A-Ea-e])[\.、\):：\-]\s*", compact)
+            )
+            if len(inline_matches) >= 2:
+                question = compact[: inline_matches[0].start(2)].strip()
+                for i, match in enumerate(inline_matches):
+                    key = match.group(2).upper()
+                    start = match.end()
+                    end = (
+                        inline_matches[i + 1].start(2)
+                        if i + 1 < len(inline_matches)
+                        else len(compact)
+                    )
+                    option_text = compact[start:end].strip(" ;；")
+                    if option_text:
+                        options.append((key, option_text))
+                if options:
+                    return question, options
+
+            return plain, []
         question = "\n".join(question_lines) if question_lines else lines[0]
         return question, options
 
@@ -172,6 +316,16 @@ class CardRenderer:
         if re.fullmatch(r"[A-Ea-e](?:\s*[,，、/]\s*[A-Ea-e])*", first):
             return CardRenderer._extract_answer_keys(first), "\n".join(lines[1:]).strip()
 
+        prefixed = re.match(
+            r"^([A-Ea-e](?:\s*[,，、/]\s*[A-Ea-e])*)(?:[\.、\):：\-]\s*|\s+)(.+)$",
+            first,
+        )
+        if prefixed:
+            keys = CardRenderer._extract_answer_keys(prefixed.group(1))
+            explanation_lines = [prefixed.group(2).strip(), *lines[1:]]
+            explanation = "\n".join(line for line in explanation_lines if line).strip()
+            return keys, explanation
+
         whole = "\n".join(lines)
         inline = re.search(
             r"(?:答案|正确答案|answer)\s*[:：]?\s*([A-Ea-e](?:\s*[,，、/]\s*[A-Ea-e])*)",
@@ -186,68 +340,190 @@ class CardRenderer:
         return [], whole
 
     @staticmethod
-    def _render_basic(card: CardDraft) -> str:
-        """Render Basic note type - standard Q&A format."""
-        front = CardRenderer._format_text_block(card.fields.get("Front", ""))
-        back = CardRenderer._format_text_block(card.fields.get("Back", ""))
+    def _split_explanation_sections(explanation: str) -> list[str]:
+        text = (explanation or "").strip()
+        if not text:
+            return []
 
-        content = f"""
-        <div class="card-basic">
-            <div class="question-section">
-                <div class="section-label">
-                    <span class="label-icon">Q</span>
-                    <span class="label-text">问题</span>
-                </div>
-                <div class="section-content">{front}</div>
-            </div>
-            <div class="divider"></div>
-            <div class="answer-section">
-                <div class="section-label">
-                    <span class="label-icon">A</span>
-                    <span class="label-text">答案</span>
-                </div>
-                <div class="section-content">{back}</div>
-            </div>
+        lines = [
+            CardRenderer._strip_leading_index(line.strip())
+            for line in text.replace("\r", "").split("\n")
+            if line.strip()
+        ]
+        lines = [line for line in lines if line]
+        if lines:
+            marker_with_text = re.match(r"^(?:解析|explanation)\s*[:：]\s*(.+)$", lines[0], re.IGNORECASE)
+            if marker_with_text:
+                lines[0] = marker_with_text.group(1).strip()
+            while lines and re.match(r"^(?:解析|explanation)\s*[:：]?\s*$", lines[0], re.IGNORECASE):
+                lines = lines[1:]
+        if len(lines) >= 2:
+            return lines
+
+        sentences = [
+            part.strip()
+            for part in re.split(r"(?<=[。！？!?；;])\s*", lines[0])
+            if part.strip()
+        ]
+        if len(sentences) <= 1:
+            return lines
+
+        sections: list[str] = []
+        buffer = ""
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            if buffer and len(buffer) + len(sentence) > 44:
+                sections.append(buffer.strip())
+                buffer = sentence
+            else:
+                buffer = f"{buffer} {sentence}".strip()
+        if buffer:
+            sections.append(buffer.strip())
+        return sections
+
+    @staticmethod
+    def _parse_answer_and_explanation(raw: str) -> tuple[str, str]:
+        lines = CardRenderer._extract_plain_lines(raw)
+        if not lines:
+            return "", ""
+        lines = [CardRenderer._strip_leading_index(line) for line in lines if line.strip()]
+        lines = [line for line in lines if line]
+        if not lines:
+            return "", ""
+
+        first = lines[0]
+        answer_match = re.match(r"^(?:答案|正确答案|answer)\s*[:：]\s*(.+)$", first, re.IGNORECASE)
+        if answer_match:
+            answer = answer_match.group(1).strip()
+            remaining = lines[1:]
+        else:
+            answer = first.strip()
+            remaining = lines[1:]
+
+        if remaining:
+            marker_with_text = re.match(
+                r"^(?:解析|explanation)\s*[:：]\s*(.+)$",
+                remaining[0],
+                re.IGNORECASE,
+            )
+            marker_only = re.match(r"^(?:解析|explanation)\s*[:：]?\s*$", remaining[0], re.IGNORECASE)
+            if marker_with_text:
+                remaining = [marker_with_text.group(1).strip(), *remaining[1:]]
+            elif marker_only:
+                remaining = remaining[1:]
+
+        explanation = "\n".join(line for line in remaining if line).strip()
+        if not explanation:
+            sentences = [
+                part.strip()
+                for part in re.split(r"(?<=[。！？!?；;])\s*", answer)
+                if part.strip()
+            ]
+            if len(sentences) >= 2:
+                answer = sentences[0]
+                explanation = "\n".join(sentences[1:]).strip()
+
+        return answer, explanation
+
+    @staticmethod
+    def _render_explanation_html(explanation: str) -> str:
+        sections = CardRenderer._split_explanation_sections(explanation)
+        if not sections:
+            return '<div class="flat-explain-item"><span class="empty-placeholder">（无解析）</span></div>'
+        if len(sections) == 1:
+            return (
+                '<div class="flat-explain-item">'
+                f"{CardRenderer._format_text_block(sections[0])}"
+                "</div>"
+            )
+        items = "".join(
+            (
+                '<div class="flat-explain-item">'
+                f"{CardRenderer._format_text_block(section)}"
+                "</div>"
+            )
+            for section in sections
+        )
+        return f'<div class="flat-explain-stack">{items}</div>'
+
+    @staticmethod
+    def _render_three_blocks(*, question_html: str, answer_html: str, explanation: str) -> str:
+        explanation_html = CardRenderer._render_explanation_html(explanation)
+        return f"""
+        <div class="flat-card">
+            <section class="flat-block flat-question">
+                <div class="flat-title">问题</div>
+                <div class="flat-content">{question_html}</div>
+            </section>
+            <section class="flat-block flat-answer">
+                <div class="flat-title">答案</div>
+                <div class="flat-answer-line">{answer_html}</div>
+            </section>
+            <section class="flat-block flat-explain">
+                <div class="flat-title">解析</div>
+                <div class="flat-explain-wrap">{explanation_html}</div>
+            </section>
         </div>
         """
 
+    @staticmethod
+    def _render_choice_card(
+        *,
+        question: str,
+        options: list[tuple[str, str]],
+        answer_text: str,
+        explanation: str,
+    ) -> str:
+        question_html = CardRenderer._format_text_block(question, empty_text="（空问题）")
+        option_rows = "".join(
+            (
+                '<div class="flat-option-line">'
+                f'<span class="flat-option-key">{key}.</span>'
+                f'<span class="flat-option-text">{CardRenderer._format_text_block(text)}</span>'
+                "</div>"
+            )
+            for key, text in options
+        )
+        options_html = (
+            f'<div class="flat-option-list">{option_rows}</div>'
+            if option_rows
+            else ""
+        )
+        question_block_html = f"{question_html}{options_html}"
+
+        answer_html = CardRenderer._format_text_block(answer_text, empty_text="（未标注）")
+        return CardRenderer._render_three_blocks(
+            question_html=question_block_html,
+            answer_html=answer_html,
+            explanation=explanation,
+        )
+
+    @staticmethod
+    def _render_basic(card: CardDraft) -> str:
+        """Render Basic note type as question/answer/explanation."""
+        question_html = CardRenderer._format_text_block(card.fields.get("Front", ""))
+        answer_raw = card.fields.get("Back", "")
+        answer_text, explanation = CardRenderer._parse_answer_and_explanation(answer_raw)
+        if not answer_text:
+            answer_text = CardRenderer._normalize_html_to_text(answer_raw)
+        answer_html = CardRenderer._format_text_block(answer_text, empty_text="（空）")
+        content = CardRenderer._render_three_blocks(
+            question_html=question_html,
+            answer_html=answer_html,
+            explanation=explanation,
+        )
         return CardRenderer._wrap_html(content, "basic")
 
     @staticmethod
     def _render_basic_reversed(card: CardDraft) -> str:
-        """Render Basic (and reversed card) note type."""
-        front = CardRenderer._format_text_block(card.fields.get("Front", ""))
-        back = CardRenderer._format_text_block(card.fields.get("Back", ""))
-
-        content = f"""
-        <div class="card-reversed">
-            <div class="reversed-notice">
-                <span class="notice-icon">⇄</span>
-                <span class="notice-text">双向卡片</span>
-            </div>
-            <div class="question-section">
-                <div class="section-label">
-                    <span class="label-icon">Q</span>
-                    <span class="label-text">正面</span>
-                </div>
-                <div class="section-content">{front}</div>
-            </div>
-            <div class="divider"></div>
-            <div class="answer-section">
-                <div class="section-label">
-                    <span class="label-icon">A</span>
-                    <span class="label-text">背面</span>
-                </div>
-                <div class="section-content">{back}</div>
-            </div>
-        </div>
-        """
-
-        return CardRenderer._wrap_html(content, "reversed")
+        """Render reversed basic cards with same visual style as basic cards."""
+        return CardRenderer._render_basic(card)
 
     @staticmethod
     def _render_cloze(card: CardDraft) -> str:
-        """Render Cloze note type with highlighted deletions."""
+        """Render Cloze note type as question/answer/explanation."""
         text = card.fields.get("Text", "")
         cloze_entries: list[tuple[str, str, str]] = []
 
@@ -256,123 +532,61 @@ class CardRenderer:
             answer = (match.group(2) or "").strip()
             hint = (match.group(3) or "").strip()
             cloze_entries.append((idx, answer, hint))
+            return f"[C{idx}: ____]"
 
-            answer_text = CardRenderer._format_text_block(answer, empty_text="（空）")
-            hint_html = (
-                f'<span class="cloze-hint">提示：{CardRenderer._format_text_block(hint)}</span>'
-                if hint
-                else ""
-            )
-            return (
-                f'<span class="cloze cloze-emphasis" data-cloze="{idx}">'
-                f'<span class="cloze-index">C{idx}</span>'
-                '<span class="cloze-gap">____</span>'
-                f'<span class="cloze-content">{answer_text}</span>'
-                f"{hint_html}"
-                "</span>"
-            )
-
-        processed = CardRenderer._CLOZE_PATTERN.sub(_replace_cloze, text)
-        processed = CardRenderer._format_text_block(processed, empty_text="（无填空内容）")
+        question_plain = CardRenderer._CLOZE_PATTERN.sub(_replace_cloze, text)
+        question_html = CardRenderer._format_text_block(question_plain, empty_text="（无填空内容）")
 
         if cloze_entries:
-            chips: list[str] = []
+            answer_lines = []
             for idx, answer, hint in cloze_entries:
-                answer_html = CardRenderer._format_text_block(answer, empty_text="（空）")
-                hint_block = (
-                    f'<span class="cloze-chip-hint">提示：{CardRenderer._format_text_block(hint)}</span>'
-                    if hint
-                    else ""
-                )
-                chips.append(
-                    '<div class="cloze-chip">'
-                    f'<span class="cloze-chip-index">C{idx}</span>'
-                    f'<span class="cloze-chip-answer">{answer_html}</span>'
-                    f"{hint_block}"
-                    "</div>"
-                )
-            answer_list_html = (
-                '<div class="divider divider-subtle"></div>'
-                '<div class="cloze-answer-wrap">'
-                '<div class="section-label">挖空要点</div>'
-                f'<div class="cloze-answer-list">{"".join(chips)}</div>'
-                "</div>"
-            )
+                line = f"C{idx}: {answer or '（空）'}"
+                if hint:
+                    line = f"{line}（提示：{hint}）"
+                answer_lines.append(line)
+            answer_text = "\n".join(answer_lines)
         else:
-            answer_list_html = (
-                '<div class="divider divider-subtle"></div>'
-                '<div class="cloze-answer-wrap">'
-                '<div class="section-label">挖空要点</div>'
-                '<div class="cloze-empty-note">未检测到有效的 {{cN::...}} 挖空标记。</div>'
-                "</div>"
-            )
+            answer_text = "（未检测到有效填空标记）"
 
-        content = f"""
-        <div class="card-cloze">
-            <div class="cloze-notice">
-                <span class="notice-icon">●●●</span>
-                <span class="notice-text">填空题</span>
-            </div>
-            <div class="section-label">原文（含挖空内容）</div>
-            <div class="cloze-content-wrapper">
-                {processed}
-            </div>
-            {answer_list_html}
-        </div>
-        """
-
+        answer_html = CardRenderer._format_text_block(answer_text, empty_text="（空）")
+        explanation = CardRenderer._normalize_html_to_text(card.fields.get("Extra", ""))
+        content = CardRenderer._render_three_blocks(
+            question_html=question_html,
+            answer_html=answer_html,
+            explanation=explanation,
+        )
         return CardRenderer._wrap_html(content, "cloze")
 
     @staticmethod
     def _render_concept(card: CardDraft) -> str:
-        """Render concept explanation cards."""
-        front = CardRenderer._format_text_block(card.fields.get("Front", ""))
-        back = CardRenderer._format_text_block(card.fields.get("Back", ""))
-
-        content = f"""
-        <div class="card-concept">
-            <div class="concept-notice">
-                <span class="notice-icon">📖</span>
-                <span class="notice-text">概念解释</span>
-            </div>
-            <div class="concept-term">
-                <div class="section-label">概念</div>
-                <div class="section-content concept-name">{front}</div>
-            </div>
-            <div class="divider"></div>
-            <div class="concept-explanation">
-                <div class="section-label">解释</div>
-                <div class="section-content">{back}</div>
-            </div>
-        </div>
-        """
-
+        """Render concept cards as question/answer/explanation."""
+        question_html = CardRenderer._format_text_block(card.fields.get("Front", ""))
+        back_raw = card.fields.get("Back", "")
+        answer_text, explanation = CardRenderer._parse_answer_and_explanation(back_raw)
+        if not answer_text:
+            answer_text = CardRenderer._normalize_html_to_text(back_raw)
+        answer_html = CardRenderer._format_text_block(answer_text, empty_text="（空）")
+        content = CardRenderer._render_three_blocks(
+            question_html=question_html,
+            answer_html=answer_html,
+            explanation=explanation,
+        )
         return CardRenderer._wrap_html(content, "concept")
 
     @staticmethod
     def _render_key_terms(card: CardDraft) -> str:
-        """Render key terms cards."""
-        front = CardRenderer._format_text_block(card.fields.get("Front", ""))
-        back = CardRenderer._format_text_block(card.fields.get("Back", ""))
-
-        content = f"""
-        <div class="card-keyterm">
-            <div class="keyterm-notice">
-                <span class="notice-icon">🔑</span>
-                <span class="notice-text">关键术语</span>
-            </div>
-            <div class="keyterm-term">
-                <div class="section-label">术语</div>
-                <div class="section-content keyterm-name">{front}</div>
-            </div>
-            <div class="divider"></div>
-            <div class="keyterm-definition">
-                <div class="section-label">定义</div>
-                <div class="section-content">{back}</div>
-            </div>
-        </div>
-        """
-
+        """Render key term cards as question/answer/explanation."""
+        question_html = CardRenderer._format_text_block(card.fields.get("Front", ""))
+        back_raw = card.fields.get("Back", "")
+        answer_text, explanation = CardRenderer._parse_answer_and_explanation(back_raw)
+        if not answer_text:
+            answer_text = CardRenderer._normalize_html_to_text(back_raw)
+        answer_html = CardRenderer._format_text_block(answer_text, empty_text="（空）")
+        content = CardRenderer._render_three_blocks(
+            question_html=question_html,
+            answer_html=answer_html,
+            explanation=explanation,
+        )
         return CardRenderer._wrap_html(content, "keyterm")
 
     @staticmethod
@@ -383,55 +597,13 @@ class CardRenderer:
         if keys:
             keys = keys[:1]
 
-        options_html = ""
-        if options:
-            items = []
-            for key, text in options:
-                cls = "choice-option"
-                if key in keys:
-                    cls += " is-correct"
-                items.append(
-                    f'<div class="{cls}">'
-                    f'<span class="choice-option-key">{key}</span>'
-                    f'<span class="choice-option-text">{CardRenderer._format_text_block(text)}</span>'
-                    "</div>"
-                )
-            options_html = (
-                '<div class="divider divider-subtle"></div>'
-                f'<div class="choice-options">{"".join(items)}</div>'
-            )
-
-        answer_text = ", ".join(keys) if keys else card.fields.get("Back", "")
-        explanation_html = (
-            '<div class="divider divider-subtle"></div>'
-            '<div class="choice-explain-wrap">'
-            '<div class="section-label">解析</div>'
-            f'<div class="choice-explain">{CardRenderer._format_text_block(explanation)}</div>'
-            '</div>'
-            if explanation
-            else ""
+        answer_text = ", ".join(keys) if keys else "（未标注）"
+        content = CardRenderer._render_choice_card(
+            question=question,
+            options=options,
+            answer_text=answer_text,
+            explanation=explanation,
         )
-
-        content = f"""
-        <div class="card-choice">
-            <div class="choice-notice">
-                <span class="notice-icon">◉</span>
-                <span class="notice-text">单选题</span>
-            </div>
-            <div class="choice-question">
-                <div class="section-label">题目</div>
-                <div class="section-content">{CardRenderer._format_text_block(question)}</div>
-                {options_html}
-            </div>
-            <div class="divider"></div>
-            <div class="choice-answer">
-                <div class="section-label">答案</div>
-                <div class="section-content choice-answer-box">{CardRenderer._format_text_block(answer_text)}</div>
-                {explanation_html}
-            </div>
-        </div>
-        """
-
         return CardRenderer._wrap_html(content, "choice")
 
     @staticmethod
@@ -440,96 +612,66 @@ class CardRenderer:
         question, options = CardRenderer._parse_choice_front(card.fields.get("Front", ""))
         keys, explanation = CardRenderer._parse_choice_back(card.fields.get("Back", ""))
 
-        options_html = ""
-        if options:
-            items = []
-            for key, text in options:
-                cls = "choice-option"
-                if key in keys:
-                    cls += " is-correct"
-                items.append(
-                    f'<div class="{cls}">'
-                    f'<span class="choice-option-key">{key}</span>'
-                    f'<span class="choice-option-text">{CardRenderer._format_text_block(text)}</span>'
-                    "</div>"
-                )
-            options_html = (
-                '<div class="divider divider-subtle"></div>'
-                f'<div class="choice-options">{"".join(items)}</div>'
-            )
-
-        answer_text = ", ".join(keys) if keys else card.fields.get("Back", "")
-        explanation_html = (
-            '<div class="divider divider-subtle"></div>'
-            '<div class="choice-explain-wrap">'
-            '<div class="section-label">解析</div>'
-            f'<div class="choice-explain">{CardRenderer._format_text_block(explanation)}</div>'
-            '</div>'
-            if explanation
-            else ""
+        answer_text = ", ".join(keys) if keys else "（未标注）"
+        content = CardRenderer._render_choice_card(
+            question=question,
+            options=options,
+            answer_text=answer_text,
+            explanation=explanation,
         )
-
-        content = f"""
-        <div class="card-choice">
-            <div class="choice-notice">
-                <span class="notice-icon">☑</span>
-                <span class="notice-text">多选题</span>
-            </div>
-            <div class="choice-question">
-                <div class="section-label">题目</div>
-                <div class="section-content">{CardRenderer._format_text_block(question)}</div>
-                {options_html}
-            </div>
-            <div class="divider"></div>
-            <div class="choice-answer">
-                <div class="section-label">答案</div>
-                <div class="section-content choice-answer-box">{CardRenderer._format_text_block(answer_text)}</div>
-                {explanation_html}
-            </div>
-        </div>
-        """
-
         return CardRenderer._wrap_html(content, "choice")
 
     @staticmethod
     def _render_image_qa(card: CardDraft) -> str:
-        """Render image-based Q&A cards."""
-        front = CardRenderer._format_text_block(card.fields.get("Front", ""))
-        back = CardRenderer._format_text_block(card.fields.get("Back", ""))
-
-        content = f"""
-        <div class="card-image">
-            <div class="image-notice">
-                <span class="notice-icon">🖼️</span>
-                <span class="notice-text">图片问答</span>
-            </div>
-            <div class="image-question">
-                <div class="section-label">问题</div>
-                <div class="section-content">{front}</div>
-            </div>
-            <div class="divider"></div>
-            <div class="image-answer">
-                <div class="section-label">答案</div>
-                <div class="section-content">{back}</div>
-            </div>
-        </div>
-        """
-
+        """Render image Q&A cards as question/answer/explanation."""
+        question_html = CardRenderer._format_text_block(card.fields.get("Front", ""))
+        back_raw = card.fields.get("Back", "")
+        answer_text, explanation = CardRenderer._parse_answer_and_explanation(back_raw)
+        if not answer_text:
+            answer_text = CardRenderer._normalize_html_to_text(back_raw)
+        answer_html = CardRenderer._format_text_block(answer_text, empty_text="（空）")
+        content = CardRenderer._render_three_blocks(
+            question_html=question_html,
+            answer_html=answer_html,
+            explanation=explanation,
+        )
         return CardRenderer._wrap_html(content, "image")
 
     @staticmethod
     def _render_generic(card: CardDraft) -> str:
-        """Render generic card with all fields."""
-        content = '<div class="card-generic">'
-        for field_name, field_value in card.fields.items():
-            rendered_value = CardRenderer._format_text_block(field_value)
-            content += f"""
-            <div class="field">
-                <div class="field-name">{field_name}</div>
-                <div class="field-content">{rendered_value}</div>
-            </div>
-            """
-        content += '</div>'
+        """Render unknown note types using unified question/answer/explanation layout."""
+        question_source = ""
+        for key in ("Front", "Question", "Text"):
+            value = (card.fields.get(key, "") or "").strip()
+            if value:
+                question_source = value
+                break
+        if not question_source and card.fields:
+            question_source = next(iter(card.fields.values()))
+
+        answer_source = ""
+        for key in ("Back", "Answer", "Extra"):
+            value = (card.fields.get(key, "") or "").strip()
+            if value:
+                answer_source = value
+                break
+        if not answer_source:
+            leftovers = [
+                value
+                for key, value in card.fields.items()
+                if key not in {"Front", "Question", "Text"} and str(value).strip()
+            ]
+            answer_source = "\n".join(str(value) for value in leftovers).strip()
+
+        answer_text, explanation = CardRenderer._parse_answer_and_explanation(answer_source)
+        if not answer_text:
+            answer_text = CardRenderer._normalize_html_to_text(answer_source)
+
+        content = CardRenderer._render_three_blocks(
+            question_html=CardRenderer._format_text_block(question_source, empty_text="（空问题）"),
+            answer_html=CardRenderer._format_text_block(answer_text, empty_text="（空）"),
+            explanation=explanation,
+        )
         return CardRenderer._wrap_html(content, "generic")
 
     @staticmethod
@@ -548,6 +690,7 @@ class CardRenderer:
             <style>
             {MODERN_CARD_CSS}
             {PREVIEW_CARD_EXTRA_CSS}
+            {PREVIEW_READABILITY_CSS}
             </style>
         </head>
         <body class="{body_class}">
@@ -581,6 +724,7 @@ class CardPreviewPage(QWidget):
         self._filtered_cards: list[CardDraft] = []
         self._current_index = -1
         self._push_worker = None
+        self._export_worker = None
 
         self._init_ui()
 
@@ -694,13 +838,14 @@ class CardPreviewPage(QWidget):
         info_bar = QHBoxLayout()
         info_bar.setSpacing(SPACING_MEDIUM)
 
-        self._note_type_label = CaptionLabel("类型: -")
+        self._note_type_label = BodyLabel("类型: -")
         info_bar.addWidget(self._note_type_label)
 
-        self._deck_label = CaptionLabel("牌组: -")
+        self._deck_label = BodyLabel("牌组: -")
         info_bar.addWidget(self._deck_label)
 
-        self._tags_label = CaptionLabel("标签: -")
+        self._tags_label = BodyLabel("标签: -")
+        self._tags_label.setWordWrap(True)
         info_bar.addWidget(self._tags_label)
 
         info_bar.addStretch()
@@ -739,6 +884,11 @@ class CardPreviewPage(QWidget):
         self._btn_next.clicked.connect(self._show_next)
         self._btn_next.setEnabled(False)
         layout.addWidget(self._btn_next)
+
+        self._btn_export_apkg = PushButton("导出为 APKG" if self._main.config.language == "zh" else "Export as APKG")
+        self._btn_export_apkg.setIcon(FluentIcon.DOWNLOAD)
+        self._btn_export_apkg.clicked.connect(self._export_apkg)
+        layout.addWidget(self._btn_export_apkg)
 
         # Push to Anki button
         self._btn_push = PrimaryPushButton("推送到 Anki" if self._main.config.language == "zh" else "Push to Anki")
@@ -893,7 +1043,9 @@ class CardPreviewPage(QWidget):
             "QTextBrowser {"
             f"background-color: {palette.background};"
             f"border: 1px solid {palette.border};"
+            f"color: {palette.text};"
             "border-radius: 8px;"
+            "font-size: 18px;"
             "}"
         )
 
@@ -962,6 +1114,7 @@ class CardPreviewPage(QWidget):
         self._list_title_label.setText("问题列表" if is_zh else "Questions")
         self._btn_prev.setText("上一张" if is_zh else "Previous")
         self._btn_next.setText("下一张" if is_zh else "Next")
+        self._btn_export_apkg.setText("导出为 APKG" if is_zh else "Export as APKG")
         self._btn_push.setText("推送到 Anki" if is_zh else "Push to Anki")
 
         if 0 <= self._current_index < len(self._filtered_cards):
@@ -984,9 +1137,23 @@ class CardPreviewPage(QWidget):
             )
             return
 
+        if self._export_worker and self._export_worker.isRunning():
+            InfoBar.info(
+                title="请稍候" if self._main.config.language == "zh" else "Please Wait",
+                content="导出任务进行中，请稍后再推送。"
+                if self._main.config.language == "zh"
+                else "Export is running. Please push after it finishes.",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2500,
+                parent=self,
+            )
+            return
+
         # Disable push button during push
         is_zh = self._main.config.language == "zh"
-        self._btn_push.setEnabled(False)
+        self._set_action_buttons_enabled(False)
         self._progress_bar.show()
         self._count_label.setText("正在推送到 Anki..." if is_zh else "Pushing to Anki...")
         logger.info(
@@ -1022,7 +1189,7 @@ class CardPreviewPage(QWidget):
         self._push_worker = PushWorker(
             gateway=gateway,
             cards=self._all_cards,
-            update_mode=config.last_update_mode or "create_only",
+            update_mode=config.last_update_mode or "create_or_update",
         )
         self._push_worker.progress.connect(self._on_push_progress)
         self._push_worker.finished.connect(self._on_push_finished)
@@ -1040,30 +1207,11 @@ class CardPreviewPage(QWidget):
     def _on_push_finished(self, result):
         """Handle push completion."""
         self._cleanup_push_worker()
-        is_zh = self._main.config.language == "zh"
         self._progress_bar.hide()
-        self._btn_push.setEnabled(True)
+        self._set_action_buttons_enabled(True)
 
-        # Only update result data and keep current page.
         self._main.result_page.load_result(result, self._all_cards)
-        self._count_label.setText(
-            f"推送完成，共 {len(self._all_cards)} 张"
-            if is_zh
-            else f"Push complete, {len(self._all_cards)} cards"
-        )
-        InfoBar.success(
-            title="推送完成" if is_zh else "Push Complete",
-            content=(
-                "结果页已更新，可按需手动查看；当前保持在卡片预览页。"
-                if is_zh
-                else "Result page updated. Stay on card preview; open result page manually if needed."
-            ),
-            orient=Qt.Orientation.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP,
-            duration=3200,
-            parent=self,
-        )
+        self._main.switchTo(self._main.result_page)
         logger.info(
             "push finished",
             extra={"event": "ui.push.finished", "cards_count": len(self._all_cards)},
@@ -1074,7 +1222,7 @@ class CardPreviewPage(QWidget):
         self._cleanup_push_worker()
         is_zh = self._main.config.language == "zh"
         self._progress_bar.hide()
-        self._btn_push.setEnabled(True)
+        self._set_action_buttons_enabled(True)
         self._count_label.setText("推送失败" if is_zh else "Push failed")
         InfoBar.error(
             title="错误" if is_zh else "Error",
@@ -1095,7 +1243,7 @@ class CardPreviewPage(QWidget):
         self._cleanup_push_worker()
         is_zh = self._main.config.language == "zh"
         self._progress_bar.hide()
-        self._btn_push.setEnabled(True)
+        self._set_action_buttons_enabled(True)
         self._count_label.setText("推送已取消" if is_zh else "Push cancelled")
         InfoBar.warning(
             title="已取消" if is_zh else "Cancelled",
@@ -1106,6 +1254,127 @@ class CardPreviewPage(QWidget):
             duration=3000,
             parent=self,
         )
+
+    def _export_apkg(self) -> None:
+        """Export cards to APKG from card preview page."""
+        is_zh = self._main.config.language == "zh"
+        if not self._all_cards:
+            InfoBar.warning(
+                title="警告" if is_zh else "Warning",
+                content="没有卡片需要导出" if is_zh else "No cards to export",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
+            )
+            return
+
+        if self._push_worker and self._push_worker.isRunning():
+            InfoBar.info(
+                title="请稍候" if is_zh else "Please Wait",
+                content="推送任务进行中，请稍后导出。"
+                if is_zh
+                else "Push is running. Please export after it finishes.",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2500,
+                parent=self,
+            )
+            return
+
+        if self._export_worker and self._export_worker.isRunning():
+            InfoBar.info(
+                title="请稍候" if is_zh else "Please Wait",
+                content="已有导出任务进行中" if is_zh else "Another export task is running",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2500,
+                parent=self,
+            )
+            return
+
+        output_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出为 APKG" if is_zh else "Export as APKG",
+            "ankismart_cards.apkg",
+            "Anki Package (*.apkg)",
+        )
+        if not output_path:
+            return
+
+        from ankismart.anki_gateway.apkg_exporter import ApkgExporter
+        from ankismart.ui.workers import ExportWorker
+
+        self._set_action_buttons_enabled(False)
+        self._progress_bar.show()
+        self._count_label.setText(
+            f"正在导出 {len(self._all_cards)} 张卡片..."
+            if is_zh
+            else f"Exporting {len(self._all_cards)} cards..."
+        )
+
+        self._cleanup_export_worker()
+        worker = ExportWorker(
+            exporter=ApkgExporter(),
+            cards=self._all_cards,
+            output_path=Path(output_path),
+        )
+        self._export_worker = worker
+        worker.progress.connect(self._on_export_progress)
+        worker.finished.connect(self._on_export_finished)
+        worker.error.connect(self._on_export_error)
+        worker.start()
+
+    def _on_export_progress(self, message: str) -> None:
+        is_zh = self._main.config.language == "zh"
+        self._count_label.setText(f"导出中：{message}" if is_zh else f"Exporting: {message}")
+
+    def _on_export_finished(self, output_path: str) -> None:
+        is_zh = self._main.config.language == "zh"
+        self._cleanup_export_worker()
+        self._progress_bar.hide()
+        self._set_action_buttons_enabled(True)
+        self._set_count_label_for_current_state()
+
+        InfoBar.success(
+            title="导出成功" if is_zh else "Export Succeeded",
+            content=f"已导出到 {output_path}" if is_zh else f"Exported to {output_path}",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=3200,
+            parent=self,
+        )
+
+    def _on_export_error(self, error: str) -> None:
+        is_zh = self._main.config.language == "zh"
+        self._cleanup_export_worker()
+        self._progress_bar.hide()
+        self._set_action_buttons_enabled(True)
+        self._count_label.setText("导出失败" if is_zh else "Export failed")
+
+        InfoBar.error(
+            title="导出失败" if is_zh else "Export Failed",
+            content=error,
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=5000,
+            parent=self,
+        )
+
+    def _set_count_label_for_current_state(self) -> None:
+        if 0 <= self._current_index < len(self._filtered_cards):
+            self._count_label.setText(f"{self._current_index + 1} / {len(self._filtered_cards)}")
+            return
+        self._set_total_count_text(len(self._filtered_cards))
+
+    def _set_action_buttons_enabled(self, enabled: bool) -> None:
+        self._btn_push.setEnabled(enabled)
+        self._btn_export_apkg.setEnabled(enabled)
 
     def _cleanup_push_worker(self) -> None:
         worker = self.__dict__.get("_push_worker")
@@ -1121,6 +1390,18 @@ class CardPreviewPage(QWidget):
         if hasattr(worker, "deleteLater"):
             worker.deleteLater()
 
+    def _cleanup_export_worker(self) -> None:
+        worker = self.__dict__.get("_export_worker")
+        if worker is None:
+            return
+        if hasattr(worker, "isRunning") and worker.isRunning():
+            worker.wait(200)
+            if worker.isRunning():
+                return
+        self.__dict__["_export_worker"] = None
+        if hasattr(worker, "deleteLater"):
+            worker.deleteLater()
+
     def closeEvent(self, event):  # noqa: N802
         """Ensure push worker is stopped before widget closes."""
         if self._push_worker and self._push_worker.isRunning():
@@ -1130,6 +1411,12 @@ class CardPreviewPage(QWidget):
             if self._push_worker.isRunning():
                 self._push_worker.terminate()
                 self._push_worker.wait()
+        if self._export_worker and self._export_worker.isRunning():
+            self._export_worker.wait(3000)
+            if self._export_worker.isRunning():
+                self._export_worker.terminate()
+                self._export_worker.wait()
         self._cleanup_push_worker()
+        self._cleanup_export_worker()
         super().closeEvent(event)
 

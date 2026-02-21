@@ -72,7 +72,7 @@ class DocumentConverter:
             trace_id=trace_id,
         )
 
-    def convert(self, file_path: Path, *, progress_callback: Callable[[str], None] | None = None) -> MarkdownResult:
+    def convert(self, file_path: Path, *, progress_callback: Callable[..., None] | None = None) -> MarkdownResult:
         with trace_context() as trace_id:
             with timed("convert_total"):
                 metrics.increment("convert_requests_total")
@@ -111,42 +111,51 @@ class DocumentConverter:
                 converter_fn = self._resolve_converter(file_type, trace_id)
 
                 try:
-                    if file_type in ("pdf", "image") and self._ocr_correction_fn is not None:
-                        # Wrap progress_callback to handle exceptions
+                    if file_type in ("pdf", "image"):
                         safe_progress_callback = None
                         if progress_callback is not None:
-                            def safe_progress_callback(msg: str) -> None:
+
+                            def safe_progress_callback(*args) -> None:
                                 try:
-                                    progress_callback(msg)
+                                    progress_callback(*args)
+                                except TypeError:
+                                    # Backward compatibility for callbacks that only accept message text.
+                                    if len(args) == 3:
+                                        try:
+                                            progress_callback(str(args[2]))
+                                            return
+                                        except Exception as cb_exc:
+                                            logger.warning(
+                                                "Progress callback failed",
+                                                extra={"error": str(cb_exc), "trace_id": trace_id},
+                                            )
+                                            return
+                                    logger.warning(
+                                        "Progress callback failed",
+                                        extra={
+                                            "error": "callback signature mismatch",
+                                            "trace_id": trace_id,
+                                        },
+                                    )
                                 except Exception as cb_exc:
                                     logger.warning(
                                         "Progress callback failed",
-                                        extra={"error": str(cb_exc), "trace_id": trace_id}
+                                        extra={"error": str(cb_exc), "trace_id": trace_id},
                                     )
 
-                        result = converter_fn(
-                            file_path, trace_id,
-                            ocr_correction_fn=self._ocr_correction_fn,
-                            progress_callback=safe_progress_callback,
-                        )
-                    elif file_type in ("pdf", "image"):
-                        # Wrap progress_callback to handle exceptions
-                        safe_progress_callback = None
-                        if progress_callback is not None:
-                            def safe_progress_callback(msg: str) -> None:
-                                try:
-                                    progress_callback(msg)
-                                except Exception as cb_exc:
-                                    logger.warning(
-                                        "Progress callback failed",
-                                        extra={"error": str(cb_exc), "trace_id": trace_id}
-                                    )
-
-                        result = converter_fn(
-                            file_path,
-                            trace_id,
-                            progress_callback=safe_progress_callback,
-                        )
+                        if self._ocr_correction_fn is not None:
+                            result = converter_fn(
+                                file_path,
+                                trace_id,
+                                ocr_correction_fn=self._ocr_correction_fn,
+                                progress_callback=safe_progress_callback,
+                            )
+                        else:
+                            result = converter_fn(
+                                file_path,
+                                trace_id,
+                                progress_callback=safe_progress_callback,
+                            )
                     else:
                         result = converter_fn(file_path, trace_id)
                 except ConvertError as exc:

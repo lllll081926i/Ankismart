@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
+from ankismart.ui import import_page
 from ankismart.ui.import_page import ImportPage
 
 from .import_page_test_utils import (
@@ -210,3 +211,52 @@ def test_start_convert_rejects_mixed_mode_without_positive_ratio(monkeypatch):
     assert len(infobar_calls["warning"]) == 1
     assert "占比" in infobar_calls["warning"][0]["content"]
 
+
+def test_download_missing_ocr_models_forwards_progress_callback(monkeypatch):
+    captured = {}
+
+    class _StubModule:
+        @staticmethod
+        def download_missing_ocr_models(**kwargs):
+            captured.update(kwargs)
+            return ["model-a"]
+
+    monkeypatch.setattr(import_page, "_get_ocr_converter_module", lambda: _StubModule())
+    def callback(current, total, msg):  # noqa: ANN001, ANN201
+        return None
+
+    result = import_page.download_missing_ocr_models(
+        progress_callback=callback,
+        model_tier="lite",
+        model_source="official",
+    )
+
+    assert result == ["model-a"]
+    assert captured["progress_callback"] is callback
+    assert captured["model_tier"] == "lite"
+    assert captured["model_source"] == "official"
+
+
+def test_ocr_download_progress_shows_infobar_and_deduplicates(monkeypatch):
+    page = make_page()
+    page._state_tooltip = None
+    page._last_ocr_progress_message = ""
+    infobar_calls = patch_infobar(monkeypatch)
+
+    ImportPage._on_ocr_download_progress(page, 1, 2, "正在下载模型")
+    ImportPage._on_ocr_download_progress(page, 1, 2, "正在下载模型")
+
+    assert len(infobar_calls["info"]) == 1
+    assert "[1/2] 正在下载模型" in infobar_calls["info"][0]["content"]
+
+
+def test_on_page_progress_shows_file_page_infobar_and_deduplicates(monkeypatch):
+    page = make_page()
+    page._last_ocr_page_status_message = ""
+    infobar_calls = patch_infobar(monkeypatch)
+
+    ImportPage._on_page_progress(page, "讲义.pdf", 3, 12)
+    ImportPage._on_page_progress(page, "讲义.pdf", 3, 12)
+
+    assert len(infobar_calls["info"]) == 1
+    assert infobar_calls["info"][0]["content"] == "讲义.pdf 3/12"

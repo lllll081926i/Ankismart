@@ -142,11 +142,27 @@ def configure_ocr_runtime(*, model_tier: str, model_source: str, reset_ocr_insta
         )
 
 
-def download_missing_ocr_models(*, model_tier: str, model_source: str):
-    return _get_ocr_converter_module().download_missing_ocr_models(
-        model_tier=model_tier,
-        model_source=model_source,
-    )
+def download_missing_ocr_models(
+    progress_callback=None,
+    *,
+    model_tier: str,
+    model_source: str,
+):
+    module = _get_ocr_converter_module()
+    try:
+        return module.download_missing_ocr_models(
+            progress_callback=progress_callback,
+            model_tier=model_tier,
+            model_source=model_source,
+        )
+    except TypeError as exc:
+        # Backward compatibility: older runtime doesn't accept progress_callback.
+        if "progress_callback" not in str(exc):
+            raise
+        return module.download_missing_ocr_models(
+            model_tier=model_tier,
+            model_source=model_source,
+        )
 
 
 def get_missing_ocr_models(*, model_tier: str, model_source: str):
@@ -471,6 +487,8 @@ class ImportPage(ProgressMixin, QWidget):
         self._state_tooltip: StateToolTip | None = None
         self._model_check_in_progress = False
         self._auto_generate_after_convert = False  # Flag for auto card generation
+        self._last_ocr_progress_message: str = ""
+        self._last_ocr_page_status_message: str = ""
 
         # Lazy-loaded heavy dependencies
         self._converter = None
@@ -1462,6 +1480,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._progress_bar.show()
         self._progress_bar.setValue(0)
         self._btn_cancel.show()
+        self._last_ocr_page_status_message = ""
         self._status_label.setText(
             "正在转换文件..." if self._main.config.language == "zh" else "Converting files..."
         )
@@ -1573,6 +1592,18 @@ class ImportPage(ProgressMixin, QWidget):
         self._ocr_download_worker.finished.connect(self._on_ocr_download_finished)
         self._ocr_download_worker.error.connect(self._on_ocr_download_error)
         self._ocr_download_worker.start()
+        self._last_ocr_progress_message = ""
+        InfoBar.info(
+            title="开始下载" if is_zh else "Download Started",
+            content="正在下载 OCR 模型，进度会在顶部通知中更新。"
+            if is_zh
+            else "Downloading OCR models. Progress will be updated in top notifications.",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=1800,
+            parent=self,
+        )
 
         return False  # Return False to prevent immediate conversion start
 
@@ -1581,9 +1612,28 @@ class ImportPage(ProgressMixin, QWidget):
         if self._state_tooltip:
             self._state_tooltip.setContent(message)
 
+        is_zh = self._main.config.language == "zh"
+        progress_text = (
+            f"[{current}/{total}] {message}" if total > 0 else message
+        )
+        if progress_text == self._last_ocr_progress_message:
+            return
+
+        self._last_ocr_progress_message = progress_text
+        InfoBar.info(
+            title="下载中" if is_zh else "Downloading",
+            content=progress_text,
+            orient=Qt.Orientation.Horizontal,
+            isClosable=False,
+            position=InfoBarPosition.TOP,
+            duration=1800,
+            parent=self,
+        )
+
     def _on_ocr_download_finished(self, downloaded_models: list[str]):
         """Handle successful OCR model download."""
         self._model_check_in_progress = False
+        self._last_ocr_progress_message = ""
         self._set_generate_actions_enabled(True)
         self._cleanup_ocr_download_worker()
 
@@ -1615,6 +1665,7 @@ class ImportPage(ProgressMixin, QWidget):
     def _on_ocr_download_error(self, error_message: str):
         """Handle OCR model download error."""
         self._model_check_in_progress = False
+        self._last_ocr_progress_message = ""
         self._set_generate_actions_enabled(True)
         self._cleanup_ocr_download_worker()
 
@@ -1751,24 +1802,41 @@ class ImportPage(ProgressMixin, QWidget):
             )
 
             # Calculate overall progress
-            if hasattr(self, '_current_file_index') and hasattr(self, '_total_files'):
-                percentage = int((self._current_file_index / self._total_files) * 100) if self._total_files > 0 else 0
+            current_file_index = self.__dict__.get("_current_file_index")
+            total_files = self.__dict__.get("_total_files")
+            if current_file_index is not None and total_files is not None:
+                percentage = int((current_file_index / total_files) * 100) if total_files > 0 else 0
                 overall_text = get_text(
                     "import.overall_progress",
                     self._main.config.language,
                     percentage=percentage,
-                    current=self._current_file_index,
-                    total=self._total_files
+                    current=current_file_index,
+                    total=total_files
                 )
                 self._status_label.setText(f"{file_text}\n{overall_text}")
             else:
                 self._status_label.setText(file_text)
+
+            page_status_text = f"{filename} {current_page}/{total_pages}"
+            if page_status_text != getattr(self, "_last_ocr_page_status_message", ""):
+                self._last_ocr_page_status_message = page_status_text
+                is_zh = self._main.config.language == "zh"
+                InfoBar.info(
+                    title="OCR 识别中" if is_zh else "OCR In Progress",
+                    content=page_status_text,
+                    orient=Qt.Orientation.Horizontal,
+                    isClosable=False,
+                    position=InfoBarPosition.TOP,
+                    duration=1500,
+                    parent=self,
+                )
 
     def _on_batch_convert_done(self, result: BatchConvertResult):
         """Handle batch conversion completion."""
         self._cleanup_batch_worker()
         self._hide_progress()
         self._set_generate_actions_enabled(True)
+        self._last_ocr_page_status_message = ""
 
         # Show errors if any
         if result.errors:
@@ -1809,6 +1877,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._cleanup_batch_worker()
         self._hide_progress()
         self._set_generate_actions_enabled(True)
+        self._last_ocr_page_status_message = ""
         self._status_label.setText(
             f"转换失败: {error}" if self._main.config.language == "zh" else f"Conversion failed: {error}"
         )
@@ -1845,6 +1914,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._cleanup_batch_worker()
         self._hide_progress()
         self._set_generate_actions_enabled(True)
+        self._last_ocr_page_status_message = ""
         self._status_label.setText(
             "操作已取消" if self._main.config.language == "zh" else "Operation cancelled"
         )

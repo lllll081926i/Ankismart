@@ -137,10 +137,10 @@ def test_update_combo_has_three_items(_qapp):
     assert combo.itemData(2) == "create_or_update"
 
 
-def test_update_combo_default_is_create_only(_qapp):
-    """The default selection of the update-mode combo is 'create_only'."""
+def test_update_combo_default_is_create_or_update(_qapp):
+    """The default selection of the update-mode combo is 'create_or_update'."""
     page = ResultPage(_FakeMainWindow())
-    assert page._update_combo.currentData() == "create_only"
+    assert page._update_combo.currentData() == "create_or_update"
 
 
 def test_cleanup_push_worker_keeps_reference_when_running(_qapp) -> None:

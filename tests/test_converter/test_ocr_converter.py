@@ -63,12 +63,16 @@ class TestGetOcr:
 
         old_instance = mod._ocr_instance
         old_mkldnn = mod._mkldnn_fallback_applied
+        old_gpu = mod._gpu_fallback_applied
+        old_runtime_device = mod._ocr_runtime_device
         old_users = mod._ocr_active_users
         old_deferred = mod._ocr_release_deferred
         try:
             instance = MagicMock()
             mod._ocr_instance = instance
             mod._mkldnn_fallback_applied = True
+            mod._gpu_fallback_applied = True
+            mod._ocr_runtime_device = "cpu"
             mod._ocr_active_users = 0
             mod._ocr_release_deferred = False
 
@@ -76,10 +80,14 @@ class TestGetOcr:
             assert released is True
             assert mod._ocr_instance is None
             assert mod._mkldnn_fallback_applied is False
+            assert mod._gpu_fallback_applied is False
+            assert mod._ocr_runtime_device is None
             assert instance.close.call_count == 1
         finally:
             mod._ocr_instance = old_instance
             mod._mkldnn_fallback_applied = old_mkldnn
+            mod._gpu_fallback_applied = old_gpu
+            mod._ocr_runtime_device = old_runtime_device
             mod._ocr_active_users = old_users
             mod._ocr_release_deferred = old_deferred
 
@@ -87,22 +95,63 @@ class TestGetOcr:
         import ankismart.converter.ocr_converter as mod
 
         old_instance = mod._ocr_instance
+        old_runtime_device = mod._ocr_runtime_device
         old_users = mod._ocr_active_users
         old_deferred = mod._ocr_release_deferred
         try:
             sentinel = MagicMock()
             mod._ocr_instance = sentinel
+            mod._ocr_runtime_device = "gpu:0"
             mod._ocr_active_users = 1
             mod._ocr_release_deferred = False
 
             released = mod.release_ocr_runtime(reason="test", force_gc=False)
             assert released is False
             assert mod._ocr_instance is sentinel
+            assert mod._ocr_runtime_device == "gpu:0"
             assert mod._ocr_release_deferred is True
         finally:
             mod._ocr_instance = old_instance
+            mod._ocr_runtime_device = old_runtime_device
             mod._ocr_active_users = old_users
             mod._ocr_release_deferred = old_deferred
+
+    def test_gpu_init_failure_fallbacks_to_cpu(self) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        old_instance = mod._ocr_instance
+        old_gpu = mod._gpu_fallback_applied
+        old_runtime_device = mod._ocr_runtime_device
+        try:
+            mod._ocr_instance = None
+            mod._gpu_fallback_applied = False
+            mod._ocr_runtime_device = None
+
+            ocr_class = MagicMock()
+            cpu_runtime = MagicMock()
+            ocr_class.side_effect = [RuntimeError("CUDA init failed"), cpu_runtime]
+
+            def _fake_kwargs(device: str) -> dict[str, object]:
+                return {
+                    "device": device,
+                    "text_detection_model_name": "det",
+                    "text_recognition_model_name": "rec",
+                }
+
+            with patch("ankismart.converter.ocr_converter._resolve_ocr_device", return_value="gpu:0"):
+                with patch("ankismart.converter.ocr_converter._build_ocr_kwargs", side_effect=_fake_kwargs):
+                    with patch("ankismart.converter.ocr_converter._load_paddle_ocr_class", return_value=ocr_class):
+                        result = _get_ocr()
+
+            assert result is cpu_runtime
+            assert mod._gpu_fallback_applied is True
+            assert mod._ocr_runtime_device == "cpu"
+            assert ocr_class.call_args_list[0].kwargs["device"] == "gpu:0"
+            assert ocr_class.call_args_list[1].kwargs["device"] == "cpu"
+        finally:
+            mod._ocr_instance = old_instance
+            mod._gpu_fallback_applied = old_gpu
+            mod._ocr_runtime_device = old_runtime_device
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +493,43 @@ class TestOcrImage:
                     finally:
                         mod._mkldnn_fallback_applied = old_flag
 
+    def test_gpu_runtime_error_retries_on_cpu(self) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        ocr = MagicMock()
+        ocr.predict.side_effect = RuntimeError("CUDA out of memory")
+        retry_ocr = MagicMock()
+        retry_ocr.predict.return_value = [{"rec_texts": ["CPU retry ok"]}]
+        image = MagicMock()
+
+        old_runtime_device = mod._ocr_runtime_device
+        try:
+            mod._ocr_runtime_device = "gpu:0"
+            with patch("ankismart.converter.ocr_converter.np.array", return_value="fake_array"):
+                with patch(
+                    "ankismart.converter.ocr_converter._reload_ocr_on_cpu",
+                    return_value=retry_ocr,
+                ) as reload_cpu:
+                    result = _ocr_image(ocr, image)
+        finally:
+            mod._ocr_runtime_device = old_runtime_device
+
+        assert result == "CPU retry ok"
+        reload_cpu.assert_called_once()
+        assert retry_ocr.predict.call_count == 1
+
+    def test_filters_page_marker_lines(self) -> None:
+        ocr = MagicMock()
+        ocr.predict.return_value = [
+            {"rec_texts": ["第 12 页", "Page 3", "2/10", "真正正文", "结尾"]},
+        ]
+        image = MagicMock()
+
+        with patch("ankismart.converter.ocr_converter.np.array", return_value="fake_array"):
+            result = _ocr_image(ocr, image)
+
+        assert result == "真正正文\n结尾"
+
 
 # ---------------------------------------------------------------------------
 # convert (PDF -> Markdown)
@@ -533,6 +619,19 @@ class TestConvert:
                     result = convert(f, trace_id="ocr6")
 
         assert result.content == ""
+
+    def test_text_layer_filters_page_marker_lines(self, tmp_path: Path) -> None:
+        f = tmp_path / "text-layer.pdf"
+        f.write_bytes(b"fake")
+
+        extracted = "## Page 1\n\n第1页\n正文A\n\n---\n\n## Page 2\n\n第2页\n正文B"
+        with patch("ankismart.converter.ocr_converter._extract_pdf_text", return_value=extracted):
+            result = convert(f, trace_id="ocr7")
+
+        assert "第1页" not in result.content
+        assert "第2页" not in result.content
+        assert "正文A" in result.content
+        assert "正文B" in result.content
 
     def test_auto_trace_id(self, tmp_path: Path) -> None:
         f = tmp_path / "auto.pdf"

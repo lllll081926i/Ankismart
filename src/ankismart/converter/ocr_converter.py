@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gc
 import os
+import re
 import threading
 from contextlib import contextmanager
 from pathlib import Path
@@ -40,9 +41,51 @@ PaddleOCR = None
 _ocr_instance: "PaddleOCR | None" = None
 _ocr_lock = threading.Lock()
 _mkldnn_fallback_applied = False
+_gpu_fallback_applied = False
+_ocr_runtime_device: str | None = None
 _ocr_users_lock = threading.Lock()
 _ocr_active_users = 0
 _ocr_release_deferred = False
+
+_PAGE_MARKER_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^[\s\-—–_·.。]*第\s*\d{1,4}\s*[页頁][\s\-—–_·.。]*$", re.IGNORECASE),
+    re.compile(r"^[\s\-—–_·.。]*(?:page|p\.?)\s*\d{1,4}[\s\-—–_·.。]*$", re.IGNORECASE),
+    re.compile(r"^[\s\-—–_·.。]*\d{1,4}\s*/\s*\d{1,4}[\s\-—–_·.。]*$"),
+)
+
+
+def _normalize_marker_candidate(line: str) -> str:
+    candidate = " ".join(line.strip().split())
+    return candidate.strip("()[]{}（）【】")
+
+
+def _is_page_marker_line(line: str) -> bool:
+    candidate = _normalize_marker_candidate(line)
+    if not candidate:
+        return False
+
+    for pattern in _PAGE_MARKER_PATTERNS:
+        if not pattern.fullmatch(candidate):
+            continue
+        if "/" in candidate:
+            parts = [part.strip() for part in candidate.split("/", maxsplit=1)]
+            if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
+                return False
+            left = int(parts[0])
+            right = int(parts[1])
+            return 1 <= left <= right
+        return True
+
+    return False
+
+
+def _remove_page_marker_lines(text: str) -> str:
+    if not text:
+        return text
+    lines = [line for line in text.splitlines() if not _is_page_marker_line(line)]
+    cleaned = "\n".join(lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 def _reset_ocr_runtime_state() -> None:
@@ -51,7 +94,8 @@ def _reset_ocr_runtime_state() -> None:
 
 def release_ocr_runtime(*, reason: str = "manual", force_gc: bool = True) -> bool:
     """Release global OCR runtime instance and return whether an instance existed."""
-    global _ocr_instance, _mkldnn_fallback_applied, _ocr_release_deferred
+    global _ocr_instance, _mkldnn_fallback_applied, _gpu_fallback_applied
+    global _ocr_runtime_device, _ocr_release_deferred
 
     with _ocr_users_lock:
         if _ocr_active_users > 0:
@@ -70,6 +114,8 @@ def release_ocr_runtime(*, reason: str = "manual", force_gc: bool = True) -> boo
         instance = _ocr_instance
         _ocr_instance = None
         _mkldnn_fallback_applied = False
+        _gpu_fallback_applied = False
+        _ocr_runtime_device = None
 
     if instance is None:
         return False
@@ -326,14 +372,63 @@ def _is_onednn_unimplemented_error(exc: Exception) -> bool:
     )
 
 
+def _is_gpu_runtime_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    gpu_markers = (
+        "cuda",
+        "cudnn",
+        "cublas",
+        "gpu",
+        "out of memory",
+        "memory alloc",
+        "device-side assert",
+        "driver",
+    )
+    return any(marker in message for marker in gpu_markers)
+
+
+def _get_runtime_device_for_retry() -> str:
+    runtime_device = _ocr_runtime_device
+    if runtime_device:
+        return runtime_device
+    return _resolve_ocr_device()
+
+
 def _should_retry_without_mkldnn(exc: Exception) -> bool:
     if _mkldnn_fallback_applied:
         return False
-    if _resolve_ocr_device() != "cpu":
+    if _get_runtime_device_for_retry() != "cpu":
         return False
     if not _get_env_bool("ANKISMART_OCR_CPU_MKLDNN", True):
         return False
     return _is_onednn_unimplemented_error(exc)
+
+
+def _should_retry_with_cpu(exc: Exception) -> bool:
+    runtime_device = _get_runtime_device_for_retry()
+    if not runtime_device.startswith("gpu"):
+        return False
+    return _is_gpu_runtime_error(exc)
+
+
+def _reload_ocr_on_cpu(*, reason: str, original_error: Exception | None = None) -> "PaddleOCR":
+    global _ocr_instance, _gpu_fallback_applied, _ocr_runtime_device
+
+    with _ocr_lock:
+        kwargs = _build_ocr_kwargs("cpu")
+        logger.warning(
+            "Retrying OCR on CPU after CUDA runtime failure",
+            extra={
+                "reason": reason,
+                "error": str(original_error) if original_error is not None else "",
+                "det_model": kwargs.get("text_detection_model_name"),
+                "rec_model": kwargs.get("text_recognition_model_name"),
+            },
+        )
+        _ocr_instance = _load_paddle_ocr_class()(**kwargs)
+        _gpu_fallback_applied = True
+        _ocr_runtime_device = "cpu"
+        return _ocr_instance
 
 
 def _load_paddle_ocr_class():
@@ -346,7 +441,7 @@ def _load_paddle_ocr_class():
 
 
 def _reload_ocr_without_mkldnn() -> "PaddleOCR":
-    global _ocr_instance, _mkldnn_fallback_applied
+    global _ocr_instance, _mkldnn_fallback_applied, _ocr_runtime_device
 
     with _ocr_lock:
         os.environ["ANKISMART_OCR_CPU_MKLDNN"] = "0"
@@ -361,17 +456,20 @@ def _reload_ocr_without_mkldnn() -> "PaddleOCR":
         )
         _ocr_instance = _load_paddle_ocr_class()(**kwargs)
         _mkldnn_fallback_applied = True
+        _ocr_runtime_device = "cpu"
         return _ocr_instance
 
 
 def _get_ocr() -> "PaddleOCR":
-    global _ocr_instance
+    global _ocr_instance, _gpu_fallback_applied, _ocr_runtime_device
     if _ocr_instance is not None:
         return _ocr_instance
 
     with _ocr_lock:
         if _ocr_instance is None:
             device = _resolve_ocr_device()
+            if _gpu_fallback_applied and device.startswith("gpu"):
+                device = "cpu"
             kwargs = _build_ocr_kwargs(device)
             logger.info(
                 "Initializing PaddleOCR",
@@ -386,7 +484,20 @@ def _get_ocr() -> "PaddleOCR":
                     "det_limit_type": kwargs.get("text_det_limit_type"),
                 },
             )
-            _ocr_instance = _load_paddle_ocr_class()(**kwargs)
+            try:
+                _ocr_instance = _load_paddle_ocr_class()(**kwargs)
+                _ocr_runtime_device = device
+            except Exception as exc:
+                if not device.startswith("gpu"):
+                    raise
+                logger.warning(
+                    "Failed to initialize PaddleOCR on CUDA, fallback to CPU runtime",
+                    extra={"error": str(exc), "requested_device": device},
+                )
+                cpu_kwargs = _build_ocr_kwargs("cpu")
+                _ocr_instance = _load_paddle_ocr_class()(**cpu_kwargs)
+                _ocr_runtime_device = "cpu"
+                _gpu_fallback_applied = True
 
     return _ocr_instance
 
@@ -413,14 +524,22 @@ def _ocr_image(ocr: "PaddleOCR", image: Image.Image) -> str:
     try:
         result = ocr.predict(img_array, use_textline_orientation=False)
     except Exception as exc:
-        if not _should_retry_without_mkldnn(exc):
+        if _should_retry_with_cpu(exc):
+            logger.warning(
+                "CUDA OCR error detected, fallback to CPU OCR runtime",
+                extra={"error": str(exc)},
+            )
+            retry_ocr = _reload_ocr_on_cpu(reason="predict_failure", original_error=exc)
+            result = retry_ocr.predict(img_array, use_textline_orientation=False)
+        elif not _should_retry_without_mkldnn(exc):
             raise
-        logger.warning(
-            "oneDNN error detected, fallback to non-MKLDNN OCR runtime",
-            extra={"error": str(exc)},
-        )
-        retry_ocr = _reload_ocr_without_mkldnn()
-        result = retry_ocr.predict(img_array, use_textline_orientation=False)
+        else:
+            logger.warning(
+                "oneDNN error detected, fallback to non-MKLDNN OCR runtime",
+                extra={"error": str(exc)},
+            )
+            retry_ocr = _reload_ocr_without_mkldnn()
+            result = retry_ocr.predict(img_array, use_textline_orientation=False)
     finally:
         del img_array
 
@@ -445,7 +564,14 @@ def _ocr_image(ocr: "PaddleOCR", image: Image.Image) -> str:
     if not rec_texts:
         return ""
 
-    lines = [str(text).strip() for text in rec_texts if str(text).strip()]
+    lines: list[str] = []
+    for text in rec_texts:
+        line = str(text).strip()
+        if not line:
+            continue
+        if _is_page_marker_line(line):
+            continue
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -470,6 +596,8 @@ def convert(
 
     extracted_text = _extract_pdf_text(file_path)
     if extracted_text is not None:
+        extracted_text = _remove_page_marker_lines(extracted_text)
+    if extracted_text:
         logger.info(
             "PDF has text layer, using direct extraction",
             extra={"trace_id": trace_id, "event": "ocr.pdf.text_layer"},
@@ -539,6 +667,7 @@ def convert(
                     f"OCR correction failed, using raw text: {exc}",
                     extra={"trace_id": trace_id},
                 )
+        content = _remove_page_marker_lines(content)
 
         if not content.strip():
             logger.warning(
@@ -588,6 +717,7 @@ def convert_image(
                     f"OCR correction failed, using raw text: {exc}",
                     extra={"trace_id": trace_id},
                 )
+        text = _remove_page_marker_lines(text)
 
     return MarkdownResult(
         content=text,

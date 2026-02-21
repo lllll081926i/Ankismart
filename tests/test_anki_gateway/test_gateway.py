@@ -24,6 +24,9 @@ def _fake_client(add_note_return: int = 1001) -> MagicMock:
     client.get_deck_names.return_value = ["Default"]
     client.get_model_names.return_value = ["Basic"]
     client.get_model_field_names.return_value = ["Front", "Back"]
+    client.get_model_templates.return_value = {"Card 1": {"Front": "{{Front}}", "Back": "{{Back}}"}}
+    client.update_model_templates.return_value = None
+    client.update_model_styling.return_value = None
     return client
 
 
@@ -251,6 +254,52 @@ class TestPush:
 
         assert result.succeeded == 2
         client.create_deck.assert_called_once_with("BatchDeck")
+
+    def test_push_syncs_basic_model_style_before_add(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client()
+        gw = AnkiGateway(client)
+
+        result = gw.push([_card(note_type="Basic")])
+
+        assert result.succeeded == 1
+        client.get_model_templates.assert_called_once_with("Basic")
+        client.update_model_templates.assert_called_once()
+        client.update_model_styling.assert_called_once()
+        update_args = client.update_model_templates.call_args[0]
+        assert update_args[0] == "Basic"
+        assert "Card 1" in update_args[1]
+
+    def test_push_style_sync_failure_does_not_block_push(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client()
+        client.get_model_templates.side_effect = AnkiGatewayError("template sync failed")
+        gw = AnkiGateway(client)
+
+        result = gw.push([_card(note_type="Basic")])
+
+        assert result.succeeded == 1
+        assert client.add_note.call_count == 1
+        client.update_model_templates.assert_not_called()
+        client.update_model_styling.assert_not_called()
+
+    def test_push_skips_style_sync_for_unsupported_model(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client()
+        gw = AnkiGateway(client)
+
+        result = gw.push([_card(note_type="CustomModel")])
+
+        assert result.succeeded == 1
+        client.get_model_templates.assert_not_called()
+        client.update_model_templates.assert_not_called()
+        client.update_model_styling.assert_not_called()
 
 
 class TestPushOrUpdate:

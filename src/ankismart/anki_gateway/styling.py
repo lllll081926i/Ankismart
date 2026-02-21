@@ -154,6 +154,93 @@ MODERN_CARD_CSS = """
     background: rgba(54, 54, 54, 0.9);
 }
 
+.as-card {
+    max-width: 940px;
+    margin: 0 auto;
+}
+
+.as-block {
+    border: 1px solid var(--as-border);
+    border-radius: var(--as-radius-md);
+    background: var(--as-surface);
+    box-shadow: var(--as-shadow);
+    padding: 12px 14px;
+}
+
+.as-block + .as-block {
+    margin-top: 12px;
+}
+
+.as-block-title {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    color: var(--as-text-soft);
+}
+
+.as-block-content {
+    font-size: 16px;
+    line-height: 1.8;
+}
+
+.as-choice-list {
+    margin-top: 10px;
+}
+
+.as-choice-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.as-choice-key {
+    min-width: 24px;
+    font-weight: 700;
+}
+
+.as-choice-text {
+    flex: 1;
+}
+
+.as-answer-line {
+    font-size: 16px;
+    line-height: 1.8;
+}
+
+.as-answer-label {
+    font-weight: 700;
+}
+
+.as-explain-wrap {
+    margin-top: 10px;
+    border-top: 1px dashed var(--as-border);
+    padding-top: 10px;
+}
+
+.as-explain-title {
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--as-text-soft);
+}
+
+.as-explain-list {
+    margin: 0;
+    padding-left: 0;
+    list-style: none;
+}
+
+.as-explain-stack {
+    display: grid;
+    gap: 8px;
+}
+
+.as-explain-item {
+    margin: 0;
+    line-height: 1.75;
+}
+
 /* ===== Typography ===== */
 h1, h2, h3, h4, h5, h6 {
     margin-top: 0.85em;

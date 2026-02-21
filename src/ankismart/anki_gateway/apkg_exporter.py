@@ -17,6 +17,243 @@ from .styling import MODERN_CARD_CSS
 
 logger = get_logger("anki_gateway.apkg_exporter")
 
+_CHOICE_FORMATTER_SCRIPT = """
+<script>
+(function () {
+  function escapeHtml(text) {
+    return String(text || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function toText(html) {
+    return String(html || "")
+      .replace(/<br\\s*\\/?>/gi, "\\n")
+      .replace(/<\\/p\\s*>/gi, "\\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\\u00a0/g, " ")
+      .replace(/\\r/g, "")
+      .trim();
+  }
+
+  function formatWithBreaks(text) {
+    return escapeHtml(text).replace(/\\n/g, "<br>");
+  }
+
+  function parseFront(raw) {
+    var compact = raw.replace(/\\s+/g, " ").trim();
+    var re = /(^|\\s)([A-Ea-e])[\\.、\\):：\\-]\\s*/g;
+    var hits = [];
+    var m;
+    while ((m = re.exec(compact)) !== null) {
+      hits.push({
+        labelStart: m.index + m[1].length,
+        valueStart: re.lastIndex,
+        key: m[2].toUpperCase()
+      });
+    }
+    if (hits.length < 2) {
+      return null;
+    }
+
+    var question = compact.slice(0, hits[0].labelStart).trim();
+    var options = [];
+    for (var i = 0; i < hits.length; i++) {
+      var end = i + 1 < hits.length ? hits[i + 1].labelStart : compact.length;
+      var value = compact.slice(hits[i].valueStart, end).trim();
+      if (value) {
+        options.push({ key: hits[i].key, text: value });
+      }
+    }
+    return options.length ? { question: question, options: options } : null;
+  }
+
+  function normalizeAnswerKeys(raw) {
+    var keys = [];
+    String(raw || "").replace(/[A-Ea-e]/g, function (key) {
+      key = key.toUpperCase();
+      if (keys.indexOf(key) < 0) {
+        keys.push(key);
+      }
+      return key;
+    });
+    return keys.join("、");
+  }
+
+  function parseBack(raw) {
+    var text = String(raw || "").trim();
+    if (!text) {
+      return { answer: "（未标注）", explanation: "" };
+    }
+
+    function stripLeadingIndex(line) {
+      return String(line || "")
+        .replace(/^\\s*\\d+[\\.、\\):：-]\\s*/, "")
+        .trim();
+    }
+
+    var lines = text.split(/\\n+/).map(function (line) {
+      return line.trim();
+    }).filter(Boolean);
+    var normalizedLines = lines.map(stripLeadingIndex);
+
+    function normalizeExplanation(rawText) {
+      var explanationLines = String(rawText || "").split(/\\n+/).map(function (line) {
+        return stripLeadingIndex(line);
+      }).filter(Boolean);
+
+      if (!explanationLines.length) {
+        return "";
+      }
+
+      var markerWithText = explanationLines[0].match(/^(?:解析|explanation)\\s*[:：]\\s*(.+)$/i);
+      if (markerWithText) {
+        explanationLines[0] = markerWithText[1].trim();
+      }
+      while (explanationLines.length && /^(?:解析|explanation)\\s*[:：]?\\s*$/i.test(explanationLines[0])) {
+        explanationLines.shift();
+      }
+      return explanationLines.join("\\n").trim();
+    }
+
+    var first = normalizedLines[0] || "";
+    var match = first.match(/^(?:答案|正确答案|answer)?\\s*[:：]?\\s*([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)$/i);
+    if (match) {
+      return {
+        answer: normalizeAnswerKeys(match[1]) || "（未标注）",
+        explanation: normalizeExplanation(normalizedLines.slice(1).join("\\n"))
+      };
+    }
+
+    var answerLine = first.match(/^(?:答案|正确答案|answer)\\s*[:：]\\s*(.+)$/i);
+    if (answerLine) {
+      return {
+        answer: answerLine[1].trim() || "（未标注）",
+        explanation: normalizeExplanation(normalizedLines.slice(1).join("\\n"))
+      };
+    }
+
+    var prefixed = first.match(/^([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)(?:[\\.、\\):：\\-]\\s*|\\s+)(.+)$/);
+    if (prefixed) {
+      return {
+        answer: normalizeAnswerKeys(prefixed[1]) || "（未标注）",
+        explanation: normalizeExplanation([prefixed[2]].concat(normalizedLines.slice(1)).join("\\n"))
+      };
+    }
+
+    var inline = text.match(/(?:答案|正确答案|answer)\\s*[:：]?\\s*([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)/i);
+    if (inline) {
+      return {
+        answer: normalizeAnswerKeys(inline[1]) || "（未标注）",
+        explanation: normalizeExplanation(text.replace(inline[0], "").trim())
+      };
+    }
+
+    if (normalizedLines.length >= 2) {
+      return {
+        answer: normalizedLines[0] || "（未标注）",
+        explanation: normalizeExplanation(normalizedLines.slice(1).join("\\n"))
+      };
+    }
+
+    return { answer: "（未标注）", explanation: normalizeExplanation(normalizedLines.join("\\n")) };
+  }
+
+  function splitExplanation(text) {
+    if (!text) {
+      return [];
+    }
+    var lines = text.split(/\\n+/).map(function (line) {
+      return line.trim();
+    }).filter(Boolean);
+    if (lines.length >= 2) {
+      return lines;
+    }
+
+    var sentenceMatches = lines[0].match(/[^。！？!?；;]+[。！？!?；;]?/g) || [lines[0]];
+    var sentences = sentenceMatches.map(function (item) {
+      return item.trim();
+    }).filter(Boolean);
+    if (sentences.length <= 1) {
+      return lines;
+    }
+
+    var sections = [];
+    var buffer = "";
+    sentences.forEach(function (sentence) {
+      if (buffer && (buffer.length + sentence.length) > 56) {
+        sections.push(buffer.trim());
+        buffer = sentence;
+      } else {
+        buffer = (buffer + " " + sentence).trim();
+      }
+    });
+    if (buffer) {
+      sections.push(buffer.trim());
+    }
+    return sections;
+  }
+
+  function formatFrontById(id) {
+    var el = document.getElementById(id);
+    if (!el) {
+      return;
+    }
+    var parsed = parseFront(toText(el.innerHTML));
+    if (!parsed) {
+      return;
+    }
+    var rows = parsed.options.map(function (opt) {
+      return (
+        '<div class="as-choice-row">' +
+          '<span class="as-choice-key">' + escapeHtml(opt.key) + '.</span>' +
+          '<span class="as-choice-text">' + formatWithBreaks(opt.text) + '</span>' +
+        '</div>'
+      );
+    }).join("");
+    el.innerHTML =
+      '<div class="as-question-text">' + formatWithBreaks(parsed.question) + '</div>' +
+      '<div class="as-choice-list">' + rows + "</div>";
+  }
+
+  function formatBackByIds(answerId, explanationId) {
+    var answerEl = document.getElementById(answerId);
+    var explanationEl = document.getElementById(explanationId);
+    if (!answerEl || !explanationEl) {
+      return;
+    }
+    var parsed = parseBack(toText(answerEl.innerHTML));
+    var sections = splitExplanation(parsed.explanation);
+    var explanationHtml = '<div class="as-explain-item">（无解析）</div>';
+    if (sections.length === 1) {
+      explanationHtml = '<div class="as-explain-item">' + formatWithBreaks(sections[0]) + "</div>";
+    } else if (sections.length > 1) {
+      explanationHtml =
+        '<div class="as-explain-stack">' +
+          sections.map(function (section) {
+            return '<div class="as-explain-item">' + formatWithBreaks(section) + "</div>";
+          }).join("") +
+        "</div>";
+    }
+
+    answerEl.innerHTML =
+      '<div class="as-answer-line">' +
+        '<span class="as-answer-label">答案：</span>' +
+        '<span class="as-answer-value">' + formatWithBreaks(parsed.answer) + "</span>" +
+      "</div>";
+    explanationEl.innerHTML = explanationHtml;
+  }
+
+  formatFrontById("as-front-content");
+  formatFrontById("as-front-side");
+  formatBackByIds("as-back-answer", "as-back-explain");
+})();
+</script>
+""".strip()
+
 # Pre-defined genanki models for standard note types
 _BASIC_MODEL = genanki.Model(
     1607392319,  # Fixed ID for consistency
@@ -26,27 +263,30 @@ _BASIC_MODEL = genanki.Model(
         {
             "name": "Card 1",
             "qfmt": (
-                '<div class="as-wrap as-wrap-front">'
-                '<div class="as-head"><span class="as-chip">Question</span></div>'
-                '<section class="as-section">'
-                '<span class="as-label">Front</span>'
-                '<div class="as-box">{{Front}}</div>'
+                '<div class="as-card as-card-front">'
+                '<section class="as-block as-question-block">'
+                '<div class="as-block-title">问题</div>'
+                '<div id="as-front-content" class="as-block-content">{{Front}}</div>'
                 "</section>"
                 "</div>"
+                + _CHOICE_FORMATTER_SCRIPT
             ),
             "afmt": (
-                '<div class="as-wrap as-wrap-back">'
-                '<div class="as-head"><span class="as-chip">Review</span></div>'
-                '<section class="as-section">'
-                '<span class="as-label">Front</span>'
-                '<div class="as-box">{{FrontSide}}</div>'
+                '<div class="as-card as-card-back">'
+                '<section class="as-block as-question-block">'
+                '<div class="as-block-title">问题</div>'
+                '<div id="as-front-side" class="as-block-content">{{Front}}</div>'
                 "</section>"
-                '<hr id="answer">'
-                '<section class="as-section">'
-                '<span class="as-label">Back</span>'
-                '<div class="as-box as-answer-box">{{Back}}</div>'
+                '<section class="as-block as-answer-block">'
+                '<div class="as-block-title">答案</div>'
+                '<div id="as-back-answer" class="as-block-content as-answer-box">{{Back}}</div>'
+                "</section>"
+                '<section class="as-block as-extra-block">'
+                '<div class="as-block-title">解析</div>'
+                '<div id="as-back-explain" class="as-block-content as-extra">（无解析）</div>'
                 "</section>"
                 "</div>"
+                + _CHOICE_FORMATTER_SCRIPT
             ),
         },
     ],
@@ -61,25 +301,28 @@ _CLOZE_MODEL = genanki.Model(
         {
             "name": "Cloze",
             "qfmt": (
-                '<div class="as-wrap as-wrap-front">'
-                '<div class="as-head"><span class="as-chip">Cloze</span></div>'
-                '<section class="as-section">'
-                '<span class="as-label">Question</span>'
-                '<div class="as-box">{{cloze:Text}}</div>'
+                '<div class="as-card as-card-front">'
+                '<section class="as-block as-question-block">'
+                '<div class="as-block-title">问题</div>'
+                '<div class="as-block-content">{{cloze:Text}}</div>'
                 "</section>"
                 "</div>"
             ),
             "afmt": (
-                '<div class="as-wrap as-wrap-back">'
-                '<div class="as-head"><span class="as-chip">Cloze Review</span></div>'
-                '<section class="as-section">'
-                '<span class="as-label">Answer</span>'
-                '<div class="as-box as-answer-box">{{cloze:Text}}</div>'
+                '<div class="as-card as-card-back">'
+                '<section class="as-block as-question-block">'
+                '<div class="as-block-title">问题</div>'
+                '<div class="as-block-content">{{cloze:Text}}</div>'
                 "</section>"
-                '{{#Extra}}<section class="as-section">'
-                '<span class="as-label">Extra</span>'
-                '<div class="as-box as-extra">{{Extra}}</div>'
-                "</section>{{/Extra}}"
+                '<section class="as-block as-answer-block">'
+                '<div class="as-block-title">答案</div>'
+                '<div class="as-block-content as-answer-box">{{cloze:Text}}</div>'
+                "</section>"
+                '<section class="as-block as-extra-block">'
+                '<div class="as-block-title">解析</div>'
+                '{{#Extra}}<div class="as-block-content as-extra">{{Extra}}</div>{{/Extra}}'
+                '{{^Extra}}<div class="as-block-content as-extra">（无解析）</div>{{/Extra}}'
+                "</section>"
                 "</div>"
             ),
         },

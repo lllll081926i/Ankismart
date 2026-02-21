@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Iterable, Literal
 
 from ankismart.anki_gateway.client import AnkiConnectClient
+from ankismart.anki_gateway.styling import MODERN_CARD_CSS
 from ankismart.anki_gateway.validator import validate_card_draft
 from ankismart.core.errors import AnkiGatewayError
 from ankismart.core.logging import get_logger
@@ -12,6 +13,340 @@ from ankismart.core.tracing import metrics, timed, trace_context
 logger = get_logger("anki_gateway")
 
 UpdateMode = Literal["create_only", "update_only", "create_or_update"]
+
+_BASIC_LIKE_MODELS = {
+    "Basic",
+    "Basic (and reversed card)",
+    "Basic (optional reversed card)",
+    "Basic (type in the answer)",
+}
+_STYLEABLE_MODELS = _BASIC_LIKE_MODELS | {"Cloze"}
+
+_ANKI_TEMPLATE_FORMATTER_SCRIPT = """
+<script>
+(function () {
+  function escapeHtml(text) {
+    return String(text || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function toText(html) {
+    return String(html || "")
+      .replace(/<br\\s*\\/?>/gi, "\\n")
+      .replace(/<\\/p\\s*>/gi, "\\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\\u00a0/g, " ")
+      .replace(/\\r/g, "")
+      .trim();
+  }
+
+  function formatWithBreaks(text) {
+    return escapeHtml(text).replace(/\\n/g, "<br>");
+  }
+
+  function parseFront(raw) {
+    var compact = raw.replace(/\\s+/g, " ").trim();
+    var re = /(^|\\s)([A-Ea-e])[\\.、\\):：\\-]\\s*/g;
+    var hits = [];
+    var m;
+    while ((m = re.exec(compact)) !== null) {
+      hits.push({
+        labelStart: m.index + m[1].length,
+        valueStart: re.lastIndex,
+        key: m[2].toUpperCase()
+      });
+    }
+    if (hits.length < 2) {
+      return null;
+    }
+
+    var question = compact.slice(0, hits[0].labelStart).trim();
+    var options = [];
+    for (var i = 0; i < hits.length; i++) {
+      var end = i + 1 < hits.length ? hits[i + 1].labelStart : compact.length;
+      var value = compact.slice(hits[i].valueStart, end).trim();
+      if (value) {
+        options.push({ key: hits[i].key, text: value });
+      }
+    }
+    return options.length ? { question: question, options: options } : null;
+  }
+
+  function normalizeAnswerKeys(raw) {
+    var keys = [];
+    String(raw || "").replace(/[A-Ea-e]/g, function (key) {
+      key = key.toUpperCase();
+      if (keys.indexOf(key) < 0) {
+        keys.push(key);
+      }
+      return key;
+    });
+    return keys.join("、");
+  }
+
+  function parseBack(raw) {
+    var text = String(raw || "").trim();
+    if (!text) {
+      return { answer: "（未标注）", explanation: "" };
+    }
+
+    function stripLeadingIndex(line) {
+      return String(line || "")
+        .replace(/^\\s*\\d+[\\.、\\):：-]\\s*/, "")
+        .trim();
+    }
+
+    var lines = text.split(/\\n+/).map(function (line) {
+      return line.trim();
+    }).filter(Boolean);
+    var normalizedLines = lines.map(stripLeadingIndex);
+
+    function normalizeExplanation(rawText) {
+      var normalized = String(rawText || "");
+      var explanationLines = normalized.split(/\\n+/).map(function (line) {
+        return stripLeadingIndex(line);
+      }).filter(Boolean);
+
+      if (!explanationLines.length) {
+        return "";
+      }
+
+      var firstLineWithText = explanationLines[0].match(/^(?:解析|explanation)\\s*[:：]\\s*(.+)$/i);
+      if (firstLineWithText) {
+        explanationLines[0] = firstLineWithText[1].trim();
+      }
+      while (explanationLines.length && /^(?:解析|explanation)\\s*[:：]?\\s*$/i.test(explanationLines[0])) {
+        explanationLines.shift();
+      }
+      return explanationLines.join("\\n").trim();
+    }
+
+    var first = normalizedLines[0] || "";
+    var match = first.match(/^(?:答案|正确答案|answer)?\\s*[:：]?\\s*([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)$/i);
+    if (match) {
+      return {
+        answer: normalizeAnswerKeys(match[1]) || "（未标注）",
+        explanation: normalizeExplanation(normalizedLines.slice(1).join("\\n"))
+      };
+    }
+
+    var answerLine = first.match(/^(?:答案|正确答案|answer)\\s*[:：]\\s*(.+)$/i);
+    if (answerLine) {
+      return {
+        answer: answerLine[1].trim() || "（未标注）",
+        explanation: normalizeExplanation(normalizedLines.slice(1).join("\\n"))
+      };
+    }
+
+    var prefixed = first.match(/^([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)(?:[\\.、\\):：\\-]\\s*|\\s+)(.+)$/);
+    if (prefixed) {
+      return {
+        answer: normalizeAnswerKeys(prefixed[1]) || "（未标注）",
+        explanation: normalizeExplanation([prefixed[2]].concat(normalizedLines.slice(1)).join("\\n"))
+      };
+    }
+
+    var inline = text.match(/(?:答案|正确答案|answer)\\s*[:：]?\\s*([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)/i);
+    if (inline) {
+      return {
+        answer: normalizeAnswerKeys(inline[1]) || "（未标注）",
+        explanation: normalizeExplanation(text.replace(inline[0], "").trim())
+      };
+    }
+
+    if (normalizedLines.length >= 2) {
+      return {
+        answer: normalizedLines[0] || "（未标注）",
+        explanation: normalizeExplanation(normalizedLines.slice(1).join("\\n"))
+      };
+    }
+
+    return { answer: "（未标注）", explanation: normalizeExplanation(normalizedLines.join("\\n")) };
+  }
+
+  function splitExplanation(text) {
+    if (!text) {
+      return [];
+    }
+    var lines = text.split(/\\n+/).map(function (line) {
+      return line.trim();
+    }).filter(Boolean);
+    if (lines.length >= 2) {
+      return lines;
+    }
+
+    var sentenceMatches = lines[0].match(/[^。！？!?；;]+[。！？!?；;]?/g) || [lines[0]];
+    var sentences = sentenceMatches.map(function (item) {
+      return item.trim();
+    }).filter(Boolean);
+    if (sentences.length <= 1) {
+      return lines;
+    }
+
+    var sections = [];
+    var buffer = "";
+    sentences.forEach(function (sentence) {
+      if (buffer && (buffer.length + sentence.length) > 56) {
+        sections.push(buffer.trim());
+        buffer = sentence;
+      } else {
+        buffer = (buffer + " " + sentence).trim();
+      }
+    });
+    if (buffer) {
+      sections.push(buffer.trim());
+    }
+    return sections;
+  }
+
+  function renderExplanation(sections) {
+    if (!sections.length) {
+      return '<div class="as-explain-item">（无解析）</div>';
+    }
+    if (sections.length === 1) {
+      return '<div class="as-explain-item">' + formatWithBreaks(sections[0]) + "</div>";
+    }
+    return (
+      '<div class="as-explain-stack">' +
+      sections.map(function (section) {
+        return '<div class="as-explain-item">' + formatWithBreaks(section) + "</div>";
+      }).join("") +
+      "</div>"
+    );
+  }
+
+  function formatFrontById(id) {
+    var el = document.getElementById(id);
+    if (!el) {
+      return;
+    }
+    var parsed = parseFront(toText(el.innerHTML));
+    if (!parsed) {
+      return;
+    }
+    var rows = parsed.options.map(function (opt) {
+      return (
+        '<div class="as-choice-row">' +
+        '<span class="as-choice-key">' + escapeHtml(opt.key) + '.</span>' +
+        '<span class="as-choice-text">' + formatWithBreaks(opt.text) + "</span>" +
+        "</div>"
+      );
+    }).join("");
+    el.innerHTML =
+      '<div class="as-question-text">' + formatWithBreaks(parsed.question) + "</div>" +
+      '<div class="as-choice-list">' + rows + "</div>";
+  }
+
+  function formatBackByIds(answerId, explanationId) {
+    var answerEl = document.getElementById(answerId);
+    var explanationEl = document.getElementById(explanationId);
+    if (!answerEl || !explanationEl) {
+      return;
+    }
+    var parsed = parseBack(toText(answerEl.innerHTML));
+    answerEl.innerHTML =
+      '<div class="as-answer-line">' +
+      '<span class="as-answer-label">答案：</span>' +
+      '<span class="as-answer-value">' + formatWithBreaks(parsed.answer) + "</span>" +
+      "</div>";
+    explanationEl.innerHTML = renderExplanation(splitExplanation(parsed.explanation));
+  }
+
+  function formatExplainById(id) {
+    var el = document.getElementById(id);
+    if (!el) {
+      return;
+    }
+    el.innerHTML = renderExplanation(splitExplanation(toText(el.innerHTML)));
+  }
+
+  formatFrontById("as-front-content");
+  formatFrontById("as-front-side");
+  formatBackByIds("as-back-answer", "as-back-explain");
+  formatExplainById("as-cloze-explain");
+})();
+</script>
+""".strip()
+
+_ANKI_BASIC_QFMT = (
+    '<div class="as-card as-card-front">'
+    '<section class="as-block as-question-block">'
+    '<div class="as-block-title">问题</div>'
+    '<div id="as-front-content" class="as-block-content">{{Front}}</div>'
+    "</section>"
+    "</div>"
+    + _ANKI_TEMPLATE_FORMATTER_SCRIPT
+)
+
+_ANKI_BASIC_AFMT = (
+    '<div class="as-card as-card-back">'
+    '<section class="as-block as-question-block">'
+    '<div class="as-block-title">问题</div>'
+    '<div id="as-front-side" class="as-block-content">{{Front}}</div>'
+    "</section>"
+    '<section class="as-block as-answer-block">'
+    '<div class="as-block-title">答案</div>'
+    '<div id="as-back-answer" class="as-block-content as-answer-box">{{Back}}</div>'
+    "</section>"
+    '<section class="as-block as-extra-block">'
+    '<div class="as-block-title">解析</div>'
+    '<div id="as-back-explain" class="as-block-content as-extra">（无解析）</div>'
+    "</section>"
+    "</div>"
+    + _ANKI_TEMPLATE_FORMATTER_SCRIPT
+)
+
+_ANKI_CLOZE_QFMT = (
+    '<div class="as-card as-card-front">'
+    '<section class="as-block as-question-block">'
+    '<div class="as-block-title">问题</div>'
+    '<div class="as-block-content">{{cloze:Text}}</div>'
+    "</section>"
+    "</div>"
+)
+
+_ANKI_CLOZE_AFMT = (
+    '<div class="as-card as-card-back">'
+    '<section class="as-block as-question-block">'
+    '<div class="as-block-title">问题</div>'
+    '<div class="as-block-content">{{cloze:Text}}</div>'
+    "</section>"
+    '<section class="as-block as-answer-block">'
+    '<div class="as-block-title">答案</div>'
+    '<div class="as-answer-line">'
+    '<span class="as-answer-label">答案：</span>'
+    '<span class="as-answer-value">{{cloze:Text}}</span>'
+    "</div>"
+    "</section>"
+    '<section class="as-block as-extra-block">'
+    '<div class="as-block-title">解析</div>'
+    '<div id="as-cloze-explain" class="as-block-content as-extra">'
+    '{{#Extra}}{{Extra}}{{/Extra}}{{^Extra}}（无解析）{{/Extra}}'
+    "</div>"
+    "</section>"
+    "</div>"
+    + _ANKI_TEMPLATE_FORMATTER_SCRIPT
+)
+
+
+def _build_anki_templates_payload(
+    note_type: str,
+    template_names: Iterable[str],
+) -> dict[str, dict[str, str]]:
+    names = [name for name in template_names if name]
+    if note_type in _BASIC_LIKE_MODELS:
+        if not names:
+            names = ["Card 1"]
+        return {name: {"Front": _ANKI_BASIC_QFMT, "Back": _ANKI_BASIC_AFMT} for name in names}
+    if note_type == "Cloze":
+        if not names:
+            names = ["Cloze"]
+        return {name: {"Front": _ANKI_CLOZE_QFMT, "Back": _ANKI_CLOZE_AFMT} for name in names}
+    return {}
 
 
 def _card_to_note_params(card: CardDraft) -> dict[str, Any]:
@@ -77,6 +412,7 @@ class AnkiGateway:
         """Create a note or update it if a duplicate front field exists."""
         deck_cache = self._fetch_deck_cache()
         self._ensure_deck_exists(card.deck_name, deck_cache)
+        self._sync_model_styling([card])
         validate_card_draft(card, self._client)
         existing_id = self._find_existing_note(card)
         if existing_id is not None:
@@ -105,6 +441,7 @@ class AnkiGateway:
                 succeeded = 0
                 failed = 0
                 deck_cache = self._fetch_deck_cache()
+                self._sync_model_styling(cards)
 
                 for i, card in enumerate(cards):
                     try:
@@ -227,3 +564,38 @@ class AnkiGateway:
         self._client.create_deck(name)
         cache.add(name)
         logger.info("Deck created automatically", extra={"deck_name": name})
+
+    def _sync_model_styling(self, cards: list[CardDraft]) -> None:
+        """Best-effort sync of Anki note templates/CSS to Ankismart style."""
+        if not cards:
+            return
+        model_names = {
+            (card.note_type or "").strip()
+            for card in cards
+            if (card.note_type or "").strip() in _STYLEABLE_MODELS
+        }
+        for model_name in model_names:
+            try:
+                raw_templates = self._client.get_model_templates(model_name)
+                template_names = (
+                    list(raw_templates.keys())
+                    if isinstance(raw_templates, dict)
+                    else []
+                )
+                payload = _build_anki_templates_payload(model_name, template_names)
+                if not payload:
+                    continue
+                self._client.update_model_templates(model_name, payload)
+                self._client.update_model_styling(model_name, MODERN_CARD_CSS)
+                logger.info(
+                    "Synchronized Anki model style",
+                    extra={
+                        "model_name": model_name,
+                        "template_count": len(payload),
+                    },
+                )
+            except AnkiGatewayError as exc:
+                logger.warning(
+                    "Failed to sync model style, continue pushing",
+                    extra={"model_name": model_name, "error": exc.message},
+                )
