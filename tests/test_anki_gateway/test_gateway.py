@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from ankismart.anki_gateway.gateway import AnkiGateway, _card_to_note_params
+from ankismart.anki_gateway.gateway import (
+    _ANKI_TEMPLATE_FORMATTER_SCRIPT,
+    ANKISMART_BASIC_MODEL,
+    AnkiGateway,
+    _card_to_note_params,
+)
 from ankismart.core.errors import AnkiGatewayError, ErrorCode
 from ankismart.core.models import (
     CardDraft,
@@ -95,6 +100,12 @@ class TestCardToNoteParams:
         assert scope_opts["deckName"] == "Mining"
         assert scope_opts["checkChildren"] is True
         assert scope_opts["checkAllModels"] is True
+
+    def test_template_script_is_latex_aware(self) -> None:
+        assert "containsLatex" in _ANKI_TEMPLATE_FORMATTER_SCRIPT
+        assert "mathRe" in _ANKI_TEMPLATE_FORMATTER_SCRIPT
+        assert "var labeled = text.match" in _ANKI_TEMPLATE_FORMATTER_SCRIPT
+        assert "normalizedLines.length >= 2" not in _ANKI_TEMPLATE_FORMATTER_SCRIPT
 
 
 # ---------------------------------------------------------------------------
@@ -265,11 +276,11 @@ class TestPush:
         result = gw.push([_card(note_type="Basic")])
 
         assert result.succeeded == 1
-        client.get_model_templates.assert_called_once_with("Basic")
+        client.get_model_templates.assert_called_once_with(ANKISMART_BASIC_MODEL)
         client.update_model_templates.assert_called_once()
         client.update_model_styling.assert_called_once()
         update_args = client.update_model_templates.call_args[0]
-        assert update_args[0] == "Basic"
+        assert update_args[0] == ANKISMART_BASIC_MODEL
         assert "Card 1" in update_args[1]
 
     def test_push_style_sync_failure_does_not_block_push(self, monkeypatch) -> None:
@@ -316,6 +327,21 @@ class TestPushOrUpdate:
         assert 'note:"Basic"' in query
         assert 'deck:"Default"' in query
         assert '"Front:Question"' in query
+
+    def test_find_existing_note_escapes_special_characters(self) -> None:
+        client = _fake_client()
+        client.find_notes.return_value = []
+        gw = AnkiGateway(client)
+
+        card = _card(
+            note_type='Basic"X',
+            deck_name='Deck"X',
+            fields={"Front": 'A\\B"C', "Back": "A"},
+        )
+        gw._find_existing_note(card)
+
+        query = client.find_notes.call_args[0][0]
+        assert query == 'note:"Basic\\"X" deck:"Deck\\"X" "Front:A\\\\B\\"C"'
 
     def test_push_or_update_updates_when_existing(self, monkeypatch) -> None:
         monkeypatch.setattr(
@@ -427,6 +453,22 @@ class TestCreateOrUpdateNote:
         with pytest.raises(AnkiGatewayError, match="bad"):
             gw.create_or_update_note(_card())
 
+    def test_lookup_error_propagates_and_skips_add(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client()
+        client.find_notes.side_effect = AnkiGatewayError(
+            "query failed",
+            code=ErrorCode.E_ANKICONNECT_ERROR,
+        )
+        gw = AnkiGateway(client)
+        import pytest
+
+        with pytest.raises(AnkiGatewayError, match="query failed"):
+            gw.create_or_update_note(_card())
+        client.add_note.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # AnkiGateway.push with update_mode parameter
@@ -498,6 +540,24 @@ class TestPushUpdateMode:
         assert result.succeeded == 1
         assert result.results[0].note_id == 300
         client.update_note_fields.assert_called_once_with(300, {"Front": "Q", "Back": "A"})
+        client.add_note.assert_not_called()
+
+    def test_create_or_update_fails_when_lookup_errors(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client()
+        client.find_notes.side_effect = AnkiGatewayError(
+            "query failed",
+            code=ErrorCode.E_ANKICONNECT_ERROR,
+        )
+        gw = AnkiGateway(client)
+
+        result = gw.push([_card()], update_mode="create_or_update")
+
+        assert result.succeeded == 0
+        assert result.failed == 1
+        assert "query failed" in result.results[0].error
         client.add_note.assert_not_called()
 
     def test_default_update_mode_is_create_only(self, monkeypatch) -> None:

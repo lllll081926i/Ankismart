@@ -18,8 +18,10 @@ def _detect_encoding(raw: bytes) -> str:
 
 
 def _normalize(text: str) -> str:
-    lines = [line.rstrip() for line in text.splitlines()]
-    return "\n".join(lines) + "\n"
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    if normalized.endswith("\n"):
+        return normalized
+    return normalized + "\n"
 
 
 def convert(file_path: Path, trace_id: str = "") -> MarkdownResult:

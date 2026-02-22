@@ -33,11 +33,10 @@ class TestDetectEncoding:
 # ---------------------------------------------------------------------------
 
 class TestNormalize:
-    def test_strips_trailing_spaces(self) -> None:
+    def test_preserves_trailing_spaces(self) -> None:
         text = "line1   \nline2  \n"
         result = _normalize(text)
-        # splitlines() on "line1   \nline2  \n" gives ["line1   ", "line2  "]
-        assert result == "line1\nline2\n"
+        assert result == "line1   \nline2  \n"
 
     def test_preserves_content(self) -> None:
         text = "# Title\n\nParagraph"
@@ -56,7 +55,12 @@ class TestNormalize:
     def test_multiple_lines(self) -> None:
         text = "a  \nb  \nc  "
         result = _normalize(text)
-        assert result == "a\nb\nc\n"
+        assert result == "a  \nb  \nc  \n"
+
+    def test_normalize_crlf_to_lf(self) -> None:
+        text = "a\r\nb\r\n"
+        result = _normalize(text)
+        assert result == "a\nb\n"
 
 
 # ---------------------------------------------------------------------------
@@ -74,12 +78,12 @@ class TestConvert:
         assert "# Hello" in result.content
         assert "World" in result.content
 
-    def test_convert_strips_trailing_whitespace(self, tmp_path: Path) -> None:
+    def test_convert_preserves_trailing_whitespace(self, tmp_path: Path) -> None:
         f = tmp_path / "spaces.md"
         f.write_text("line1   \nline2   \n", encoding="utf-8")
         result = convert(f, trace_id="md2")
-        assert "line1   " not in result.content
-        assert "line1" in result.content
+        assert "line1   \n" in result.content
+        assert "line2   \n" in result.content
 
     def test_convert_file_not_found(self, tmp_path: Path) -> None:
         f = tmp_path / "missing.md"

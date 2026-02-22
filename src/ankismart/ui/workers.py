@@ -725,11 +725,17 @@ class BatchGenerateWorker(QThread):
             # Extract configuration
             target_total = self._generation_config.get("target_total", 20)
             strategy_mix = self._generation_config.get("strategy_mix", [])
-            max_workers = getattr(self._config, "llm_concurrency", 2) if self._config else 2
+            configured_workers = getattr(self._config, "llm_concurrency", 2) if self._config else 2
+            try:
+                configured_workers = int(configured_workers)
+            except (TypeError, ValueError):
+                configured_workers = 2
 
-            # 0 means unlimited
-            if max_workers == 0:
-                max_workers = None
+            # 0 means auto-size by document count, avoiding ThreadPoolExecutor default cap.
+            if configured_workers <= 0:
+                max_workers = max(1, len(self._documents))
+            else:
+                max_workers = configured_workers
 
             logger.info(
                 "batch generation started",
@@ -737,7 +743,7 @@ class BatchGenerateWorker(QThread):
                     "event": "worker.batch_generate.started",
                     "documents_count": len(self._documents),
                     "target_total": target_total,
-                    "max_workers": max_workers if max_workers is not None else "auto",
+                    "max_workers": max_workers,
                 },
             )
 

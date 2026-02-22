@@ -294,6 +294,37 @@ def _get_env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _get_env_int(name: str, default: int, *, min_value: int | None = None) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        value = default
+    else:
+        text = raw.strip()
+        if not text:
+            value = default
+        else:
+            try:
+                value = int(text)
+            except ValueError:
+                logger.warning(
+                    "Invalid integer environment variable, fallback to default",
+                    extra={"env_var": name, "raw_value": raw, "default_value": default},
+                )
+                value = default
+
+    if min_value is not None and value < min_value:
+        logger.warning(
+            "Integer environment variable below minimum, clamp to minimum",
+            extra={
+                "env_var": name,
+                "resolved_value": value,
+                "minimum": min_value,
+            },
+        )
+        return min_value
+    return value
+
+
 def _resolve_ocr_device() -> str:
     requested = os.getenv("ANKISMART_OCR_DEVICE", "auto").strip().lower()
     has_cuda = _cuda_available()
@@ -342,8 +373,16 @@ def _build_ocr_kwargs(device: str) -> dict[str, object]:
         "use_doc_unwarping": False,
         "use_textline_orientation": False,
         "text_det_limit_type": os.getenv("ANKISMART_OCR_DET_LIMIT_TYPE", "max"),
-        "text_det_limit_side_len": int(os.getenv("ANKISMART_OCR_DET_LIMIT_SIDE_LEN", "640")),
-        "text_recognition_batch_size": int(os.getenv("ANKISMART_OCR_REC_BATCH_SIZE", "1")),
+        "text_det_limit_side_len": _get_env_int(
+            "ANKISMART_OCR_DET_LIMIT_SIDE_LEN",
+            640,
+            min_value=1,
+        ),
+        "text_recognition_batch_size": _get_env_int(
+            "ANKISMART_OCR_REC_BATCH_SIZE",
+            1,
+            min_value=1,
+        ),
         "device": device,
     }
 
@@ -354,8 +393,10 @@ def _build_ocr_kwargs(device: str) -> dict[str, object]:
 
     if device == "cpu":
         kwargs["enable_mkldnn"] = _get_env_bool("ANKISMART_OCR_CPU_MKLDNN", True)
-        kwargs["cpu_threads"] = int(
-            os.getenv("ANKISMART_OCR_CPU_THREADS", str(min(4, os.cpu_count() or 1)))
+        kwargs["cpu_threads"] = _get_env_int(
+            "ANKISMART_OCR_CPU_THREADS",
+            min(4, os.cpu_count() or 1),
+            min_value=1,
         )
 
     return kwargs

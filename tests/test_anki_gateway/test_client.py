@@ -96,6 +96,32 @@ class TestRequest:
         client = AnkiConnectClient()
         assert client._request("someAction") is None
 
+    @patch("ankismart.anki_gateway.client.httpx.post")
+    def test_request_non_json_response_is_wrapped(self, mock_post: MagicMock) -> None:
+        response = httpx.Response(
+            200,
+            text="<html>not json</html>",
+            request=httpx.Request("POST", "http://test"),
+        )
+        mock_post.return_value = response
+        client = AnkiConnectClient()
+        with pytest.raises(AnkiGatewayError, match="non-JSON response") as exc_info:
+            client._request("version")
+        assert exc_info.value.code == ErrorCode.E_ANKICONNECT_ERROR
+
+    @patch("ankismart.anki_gateway.client.httpx.post")
+    def test_request_non_object_json_is_wrapped(self, mock_post: MagicMock) -> None:
+        response = httpx.Response(
+            200,
+            json=["not", "a", "dict"],
+            request=httpx.Request("POST", "http://test"),
+        )
+        mock_post.return_value = response
+        client = AnkiConnectClient()
+        with pytest.raises(AnkiGatewayError, match="invalid response payload") as exc_info:
+            client._request("version")
+        assert exc_info.value.code == ErrorCode.E_ANKICONNECT_ERROR
+
 
 # ---------------------------------------------------------------------------
 # check_connection
@@ -163,6 +189,24 @@ class TestConvenienceMethods:
         assert call_body["action"] == "updateModelStyling"
         assert call_body["params"]["model"]["name"] == "Basic"
         assert ".card" in call_body["params"]["model"]["css"]
+
+    @patch("ankismart.anki_gateway.client.httpx.post")
+    def test_create_model(self, mock_post: MagicMock) -> None:
+        mock_post.return_value = _mock_response({"error": None, "result": {"created": True}})
+        client = AnkiConnectClient()
+        result = client.create_model(
+            model_name="AnkiSmart Basic",
+            fields=["Front", "Back"],
+            templates=[{"Name": "Card 1", "Front": "{{Front}}", "Back": "{{Back}}"}],
+            css=".card { color: #000; }",
+            is_cloze=False,
+        )
+        call_body = mock_post.call_args[1]["json"]
+        assert call_body["action"] == "createModel"
+        assert call_body["params"]["modelName"] == "AnkiSmart Basic"
+        assert call_body["params"]["inOrderFields"] == ["Front", "Back"]
+        assert call_body["params"]["isCloze"] is False
+        assert result == {"created": True}
 
     @patch("ankismart.anki_gateway.client.httpx.post")
     def test_add_note_success(self, mock_post: MagicMock) -> None:

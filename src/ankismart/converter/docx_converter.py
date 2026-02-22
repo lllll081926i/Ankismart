@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from docx import Document
@@ -20,6 +21,10 @@ _HEADING_MAP = {
     "Heading 5": "##### ",
     "Heading 6": "###### ",
 }
+
+_LATEX_HINT_RE = re.compile(
+    r"(\\[a-zA-Z]+|\\begin\{[a-zA-Z*]+\}|\\end\{[a-zA-Z*]+\}|\$\$|\$|\\\(|\\\)|\\\[|\\\]|\^|_|\{|\})"
+)
 
 
 def _convert_table(table: DocxTable) -> str:
@@ -76,10 +81,15 @@ def _get_list_level(paragraph) -> int:
 
 def _render_paragraph_runs(paragraph) -> str:
     """Render paragraph runs with bold/italic Markdown formatting."""
+    raw_text = paragraph.text or ""
+    contains_latex = bool(_LATEX_HINT_RE.search(raw_text))
     parts: list[str] = []
     for run in paragraph.runs:
         text = run.text
         if not text:
+            continue
+        if contains_latex:
+            parts.append(text)
             continue
         is_bold = run.bold
         is_italic = run.italic

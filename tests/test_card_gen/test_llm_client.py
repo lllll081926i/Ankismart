@@ -335,6 +335,47 @@ class TestLLMClientProxy:
         assert "http_client" not in call_kwargs
 
 
+class TestLLMClientLifecycle:
+    @patch("ankismart.card_gen.llm_client.httpx.Client")
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_close_releases_openai_and_proxy_client(self, mock_openai_cls, mock_http_client_cls):
+        mock_openai = MagicMock()
+        mock_http_client = MagicMock()
+        mock_openai_cls.return_value = mock_openai
+        mock_http_client_cls.return_value = mock_http_client
+
+        client = LLMClient(api_key="test-key", proxy_url="http://proxy:8080")
+        client.close()
+
+        mock_openai.close.assert_called_once()
+        mock_http_client.close.assert_called_once()
+
+    @patch("ankismart.card_gen.llm_client.httpx.Client")
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_close_is_idempotent(self, mock_openai_cls, mock_http_client_cls):
+        mock_openai = MagicMock()
+        mock_http_client = MagicMock()
+        mock_openai_cls.return_value = mock_openai
+        mock_http_client_cls.return_value = mock_http_client
+
+        client = LLMClient(api_key="test-key", proxy_url="http://proxy:8080")
+        client.close()
+        client.close()
+
+        mock_openai.close.assert_called_once()
+        mock_http_client.close.assert_called_once()
+
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_context_manager_closes_client(self, mock_openai_cls):
+        mock_openai = MagicMock()
+        mock_openai_cls.return_value = mock_openai
+
+        with LLMClient(api_key="test-key") as client:
+            assert client._model == "gpt-4o"
+
+        mock_openai.close.assert_called_once()
+
+
 class TestRpmThrottle:
     @patch("ankismart.card_gen.llm_client.time.sleep")
     @patch("ankismart.card_gen.llm_client.time.monotonic")

@@ -17,6 +17,9 @@ from .styling import MODERN_CARD_CSS
 
 logger = get_logger("anki_gateway.apkg_exporter")
 
+ANKISMART_BASIC_MODEL = "AnkiSmart Basic"
+ANKISMART_CLOZE_MODEL = "AnkiSmart Cloze"
+
 _CHOICE_FORMATTER_SCRIPT = """
 <script>
 (function () {
@@ -40,10 +43,32 @@ _CHOICE_FORMATTER_SCRIPT = """
   }
 
   function formatWithBreaks(text) {
-    return escapeHtml(text).replace(/\\n/g, "<br>");
+    var raw = String(text || "");
+    if (!raw) {
+      return "";
+    }
+
+    var mathRe = /(\\$\\$[\\s\\S]*?\\$\\$|\\\\\\[[\\s\\S]*?\\\\\\]|\\\\\\([\\s\\S]*?\\\\\\)|\\\\begin\\{[a-zA-Z*]+\\}[\\s\\S]*?\\\\end\\{[a-zA-Z*]+\\}|\\$[^$\\n]+\\$)/g;
+    var output = "";
+    var lastIndex = 0;
+    var match;
+    while ((match = mathRe.exec(raw)) !== null) {
+      output += escapeHtml(raw.slice(lastIndex, match.index)).replace(/\\n/g, "<br>");
+      output += escapeHtml(match[0]);
+      lastIndex = mathRe.lastIndex;
+    }
+    output += escapeHtml(raw.slice(lastIndex)).replace(/\\n/g, "<br>");
+    return output;
+  }
+
+  function containsLatex(text) {
+    return /(\\$\\$[\\s\\S]*?\\$\\$|\\\\\\[[\\s\\S]*?\\\\\\]|\\\\\\([\\s\\S]*?\\\\\\)|\\\\begin\\{[a-zA-Z*]+\\}|\\\\[a-zA-Z]{2,})/.test(String(text || ""));
   }
 
   function parseFront(raw) {
+    if (containsLatex(raw)) {
+      return null;
+    }
     var compact = raw.replace(/\\s+/g, " ").trim();
     var re = /(^|\\s)([A-Ea-e])[\\.、\\):：\\-]\\s*/g;
     var hits = [];
@@ -87,6 +112,14 @@ _CHOICE_FORMATTER_SCRIPT = """
     var text = String(raw || "").trim();
     if (!text) {
       return { answer: "（未标注）", explanation: "" };
+    }
+
+    var labeled = text.match(/^(?:答案|正确答案|answer)\\s*[:：]\\s*([\\s\\S]+?)\\n(?:解析|explanation)\\s*[:：]\\s*([\\s\\S]+)$/i);
+    if (labeled) {
+      return {
+        answer: labeled[1].trim() || "（未标注）",
+        explanation: labeled[2].trim()
+      };
     }
 
     function stripLeadingIndex(line) {
@@ -152,14 +185,7 @@ _CHOICE_FORMATTER_SCRIPT = """
       };
     }
 
-    if (normalizedLines.length >= 2) {
-      return {
-        answer: normalizedLines[0] || "（未标注）",
-        explanation: normalizeExplanation(normalizedLines.slice(1).join("\\n"))
-      };
-    }
-
-    return { answer: "（未标注）", explanation: normalizeExplanation(normalizedLines.join("\\n")) };
+    return { answer: text, explanation: "" };
   }
 
   function splitExplanation(text) {
@@ -257,7 +283,7 @@ _CHOICE_FORMATTER_SCRIPT = """
 # Pre-defined genanki models for standard note types
 _BASIC_MODEL = genanki.Model(
     1607392319,  # Fixed ID for consistency
-    "Basic",
+    ANKISMART_BASIC_MODEL,
     fields=[{"name": "Front"}, {"name": "Back"}],
     templates=[
         {
@@ -295,7 +321,7 @@ _BASIC_MODEL = genanki.Model(
 
 _CLOZE_MODEL = genanki.Model(
     1607392320,
-    "Cloze",
+    ANKISMART_CLOZE_MODEL,
     fields=[{"name": "Text"}, {"name": "Extra"}],
     templates=[
         {
@@ -332,6 +358,8 @@ _CLOZE_MODEL = genanki.Model(
 )
 
 _MODEL_MAP: dict[str, genanki.Model] = {
+    ANKISMART_BASIC_MODEL: _BASIC_MODEL,
+    ANKISMART_CLOZE_MODEL: _CLOZE_MODEL,
     "Basic": _BASIC_MODEL,
     "Basic (and reversed card)": _BASIC_MODEL,
     "Basic (optional reversed card)": _BASIC_MODEL,

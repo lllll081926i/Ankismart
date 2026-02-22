@@ -60,7 +60,27 @@ class AnkiConnectClient:
                 trace_id=trace_id,
             ) from exc
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            preview = (resp.text or "").strip()
+            if len(preview) > 200:
+                preview = f"{preview[:200]}..."
+            raise AnkiGatewayError(
+                (
+                    f"AnkiConnect returned non-JSON response (HTTP {resp.status_code})"
+                    + (f": {preview}" if preview else "")
+                ),
+                code=ErrorCode.E_ANKICONNECT_ERROR,
+                trace_id=trace_id,
+            ) from exc
+
+        if not isinstance(data, dict):
+            raise AnkiGatewayError(
+                f"AnkiConnect returned invalid response payload: {type(data).__name__}",
+                code=ErrorCode.E_ANKICONNECT_ERROR,
+                trace_id=trace_id,
+            )
         error = data.get("error")
         if error:
             raise AnkiGatewayError(
@@ -119,6 +139,27 @@ class AnkiConnectClient:
                     "name": model_name,
                     "css": css,
                 }
+            },
+        )
+
+    def create_model(
+        self,
+        *,
+        model_name: str,
+        fields: list[str],
+        templates: list[dict[str, str]],
+        css: str,
+        is_cloze: bool = False,
+    ) -> Any:
+        """Create a new Anki note type (model)."""
+        return self._request(
+            "createModel",
+            {
+                "modelName": model_name,
+                "inOrderFields": fields,
+                "cardTemplates": templates,
+                "css": css,
+                "isCloze": is_cloze,
             },
         )
 

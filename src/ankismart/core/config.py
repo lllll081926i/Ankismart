@@ -119,7 +119,7 @@ class AppConfig(BaseModel):
     log_level: str = "INFO"
     llm_temperature: float = 0.3
     llm_max_tokens: int = 0  # 0 means use provider default
-    llm_concurrency: int = 2  # Max concurrent LLM requests (0 = unlimited)
+    llm_concurrency: int = 2  # Max concurrent LLM requests (0 = auto by document count)
 
     # Persistence: last-used values
     last_deck: str = ""
@@ -330,6 +330,7 @@ def save_config(config: AppConfig) -> None:
     try:
         config_path = CONFIG_PATH
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(
             yaml.safe_dump(data, default_flow_style=False, sort_keys=False),
             encoding="utf-8",

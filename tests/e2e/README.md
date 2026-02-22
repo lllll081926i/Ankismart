@@ -6,7 +6,7 @@
 
 - `E2E-MAIN-DOCX-001` / `E2E-MAIN-MD-002`: `scenarios/test_main_workflow.py`
 - `E2E-OCR-PDF-003`: `scenarios/test_ocr.py`
-- `E2E-ERROR-ANKI-004`: `scenarios/test_error_handling.py`
+- `E2E-ERROR-ANKI-004` / `E2E-ERROR-NET-006` / `E2E-ERROR-FILE-007`: `scenarios/test_error_handling.py`
 - `E2E-SUPPLIER-SWITCH-005`: `scenarios/test_supplier.py`
 - `Gate-Real-P0`（更少 mock）: `gate/test_gate_workflow.py`
 

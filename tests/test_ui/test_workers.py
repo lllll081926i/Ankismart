@@ -160,6 +160,59 @@ def test_batch_generate_worker_has_cancel() -> None:
     assert worker._cancelled is True
 
 
+def test_batch_generate_worker_zero_concurrency_uses_document_count(monkeypatch) -> None:
+    import concurrent.futures
+    from types import SimpleNamespace
+
+    docs = [
+        ConvertedDocument(
+            result=MarkdownResult(
+                content="demo",
+                source_path=f"{i}.md",
+                source_format="markdown",
+                trace_id=f"trace-{i}",
+            ),
+            file_name=f"{i}.md",
+        )
+        for i in range(3)
+    ]
+
+    captured = {"max_workers": None}
+
+    class _FakeExecutor:
+        def __init__(self, max_workers=None, **kwargs):
+            captured["max_workers"] = max_workers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, fn, *args, **kwargs):
+            future = concurrent.futures.Future()
+            try:
+                future.set_result(fn(*args, **kwargs))
+            except Exception as exc:  # pragma: no cover - defensive for test helper
+                future.set_exception(exc)
+            return future
+
+    monkeypatch.setattr("concurrent.futures.ThreadPoolExecutor", _FakeExecutor)
+    monkeypatch.setattr("ankismart.ui.workers.CardGenerator.generate", lambda _self, _request: [])
+
+    worker = BatchGenerateWorker(
+        documents=docs,
+        generation_config={"target_total": 3, "strategy_mix": [{"strategy": "basic", "ratio": 1}]},
+        llm_client=object(),
+        deck_name="Default",
+        tags=[],
+        config=SimpleNamespace(llm_concurrency=0),
+    )
+    worker.run()
+
+    assert captured["max_workers"] == len(docs)
+
+
 def test_batch_generate_worker_emits_structured_error_when_all_failed(monkeypatch) -> None:
     doc = ConvertedDocument(
         result=MarkdownResult(

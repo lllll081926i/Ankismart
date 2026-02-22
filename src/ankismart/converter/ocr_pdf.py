@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -11,6 +12,39 @@ from ankismart.core.errors import ConvertError, ErrorCode
 from ankismart.core.logging import get_logger
 
 logger = get_logger("ocr_pdf")
+
+
+def _get_env_float(name: str, default: float, *, min_value: float | None = None) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        value = default
+    else:
+        text = raw.strip()
+        if not text:
+            value = default
+        else:
+            try:
+                value = float(text)
+            except ValueError:
+                logger.warning(
+                    "Invalid float environment variable, fallback to default",
+                    extra={"env_var": name, "raw_value": raw, "default_value": default},
+                )
+                value = default
+    if not math.isfinite(value):
+        logger.warning(
+            "Non-finite float environment variable, fallback to default",
+            extra={"env_var": name, "resolved_value": value, "default_value": default},
+        )
+        value = default
+
+    if min_value is not None and value < min_value:
+        logger.warning(
+            "Float environment variable below minimum, clamp to minimum",
+            extra={"env_var": name, "resolved_value": value, "minimum": min_value},
+        )
+        return min_value
+    return value
 
 
 def count_pdf_pages(file_path: Path, *, pdfium_module=pdfium) -> int:
@@ -29,7 +63,11 @@ def _pdf_to_images(file_path: Path, *, pdfium_module=pdfium) -> Iterator[Image.I
     pdf = None
     try:
         pdf = pdfium_module.PdfDocument(str(file_path))
-        render_scale = float(os.getenv("ANKISMART_OCR_PDF_RENDER_SCALE", str(300 / 72)))
+        render_scale = _get_env_float(
+            "ANKISMART_OCR_PDF_RENDER_SCALE",
+            300 / 72,
+            min_value=0.1,
+        )
         for i in range(len(pdf)):
             page = None
             bitmap = None

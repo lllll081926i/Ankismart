@@ -16,6 +16,23 @@ _cuda_detection_cache_key: tuple[str | None, str | None, str | None] | None = No
 _cuda_detection_lock = threading.Lock()
 
 
+def _get_env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    text = raw.strip()
+    if not text:
+        return default
+    try:
+        return int(text)
+    except ValueError:
+        logger.warning(
+            "Invalid integer environment variable, fallback to default",
+            extra={"env_var": name, "raw_value": raw, "default_value": default},
+        )
+        return default
+
+
 def _cuda_devices_visible() -> bool:
     visible_devices = os.getenv("CUDA_VISIBLE_DEVICES")
     if visible_devices is None:
@@ -81,7 +98,7 @@ def _perform_cuda_detection() -> bool:
 def detect_cuda_environment(*, force_refresh: bool = False) -> bool:
     global _cuda_detection_cache, _cuda_detection_cache_ts, _cuda_detection_cache_key
 
-    cache_ttl = int(os.getenv("ANKISMART_CUDA_CACHE_TTL_SECONDS", "300"))
+    cache_ttl = _get_env_int("ANKISMART_CUDA_CACHE_TTL_SECONDS", 300)
     now = time.time()
     cache_key = (
         os.getenv("CUDA_VISIBLE_DEVICES"),

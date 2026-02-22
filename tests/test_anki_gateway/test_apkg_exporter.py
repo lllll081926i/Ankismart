@@ -7,7 +7,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ankismart.anki_gateway.apkg_exporter import ApkgExporter, _get_model
+from ankismart.anki_gateway.apkg_exporter import (
+    _CHOICE_FORMATTER_SCRIPT,
+    ANKISMART_BASIC_MODEL,
+    ANKISMART_CLOZE_MODEL,
+    ApkgExporter,
+    _get_model,
+)
 from ankismart.core.errors import AnkiGatewayError, ErrorCode
 from ankismart.core.models import CardDraft
 
@@ -31,6 +37,7 @@ class TestGetModel:
     def test_basic_model(self) -> None:
         model = _get_model("Basic")
         assert model is not None
+        assert model.name == ANKISMART_BASIC_MODEL
         template = model.templates[0]
         assert "Review" not in template["afmt"]
         assert "as-block-title\">问题" in template["qfmt"]
@@ -39,6 +46,7 @@ class TestGetModel:
     def test_cloze_model(self) -> None:
         model = _get_model("Cloze")
         assert model is not None
+        assert model.name == ANKISMART_CLOZE_MODEL
 
     def test_basic_variants(self) -> None:
         for variant in (
@@ -52,6 +60,12 @@ class TestGetModel:
         with pytest.raises(AnkiGatewayError, match="No APKG model template") as exc_info:
             _get_model("CustomModel")
         assert exc_info.value.code == ErrorCode.E_MODEL_NOT_FOUND
+
+    def test_choice_formatter_script_is_latex_aware(self) -> None:
+        assert "containsLatex" in _CHOICE_FORMATTER_SCRIPT
+        assert "mathRe" in _CHOICE_FORMATTER_SCRIPT
+        assert "var labeled = text.match" in _CHOICE_FORMATTER_SCRIPT
+        assert "normalizedLines.length >= 2" not in _CHOICE_FORMATTER_SCRIPT
 
 
 # ---------------------------------------------------------------------------

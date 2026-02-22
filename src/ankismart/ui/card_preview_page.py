@@ -1403,19 +1403,15 @@ class CardPreviewPage(QWidget):
             worker.deleteLater()
 
     def closeEvent(self, event):  # noqa: N802
-        """Ensure push worker is stopped before widget closes."""
+        """Force-stop workers quickly during application shutdown."""
         if self._push_worker and self._push_worker.isRunning():
             if hasattr(self._push_worker, "cancel"):
                 self._push_worker.cancel()
-            self._push_worker.wait(3000)
-            if self._push_worker.isRunning():
-                self._push_worker.terminate()
-                self._push_worker.wait()
+            self._push_worker.terminate()
+            self._push_worker.wait(100)
         if self._export_worker and self._export_worker.isRunning():
-            self._export_worker.wait(3000)
-            if self._export_worker.isRunning():
-                self._export_worker.terminate()
-                self._export_worker.wait()
+            self._export_worker.terminate()
+            self._export_worker.wait(100)
         self._cleanup_push_worker()
         self._cleanup_export_worker()
         super().closeEvent(event)

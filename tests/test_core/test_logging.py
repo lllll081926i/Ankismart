@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
+import ankismart.core.logging as logging_module
 from ankismart.core.logging import JsonFormatter, get_logger, setup_logging
 
 
@@ -184,3 +185,37 @@ class TestGetLogger:
         b = get_logger("bbb")
         assert a is not b
         assert a.name != b.name
+
+
+class TestResolveAppDir:
+    def test_env_app_dir_has_highest_priority(self, monkeypatch, tmp_path: Path):
+        override = tmp_path / "custom-app-dir"
+        monkeypatch.setenv("ANKISMART_APP_DIR", str(override))
+
+        result = logging_module._resolve_app_dir()
+        assert result == override.resolve()
+
+    def test_portable_mode_uses_project_config_dir(self, monkeypatch, tmp_path: Path):
+        root = tmp_path / "portable-root"
+        root.mkdir(parents=True, exist_ok=True)
+        (root / ".portable").write_text("", encoding="utf-8")
+
+        monkeypatch.delenv("ANKISMART_APP_DIR", raising=False)
+        monkeypatch.setattr(logging_module, "_resolve_project_root", lambda: root)
+        monkeypatch.setattr(logging_module.sys, "frozen", False, raising=False)
+
+        result = logging_module._resolve_app_dir()
+        assert result == root / "config"
+
+    def test_frozen_windows_uses_localappdata(self, monkeypatch, tmp_path: Path):
+        local_app_data = tmp_path / "LocalAppData"
+        local_app_data.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.delenv("ANKISMART_APP_DIR", raising=False)
+        monkeypatch.setattr(logging_module.sys, "frozen", True, raising=False)
+        monkeypatch.setattr(logging_module.sys, "platform", "win32")
+        monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+        monkeypatch.setattr(logging_module, "_is_portable_mode", lambda: False)
+
+        result = logging_module._resolve_app_dir()
+        assert result == (local_app_data / "ankismart").resolve()

@@ -134,6 +134,28 @@ class TestLoadConfig:
             cfg = load_config()
         assert cfg.llm_providers[0].api_key == "sk-provider-secret"
 
+    def test_decrypts_field_with_master_key_across_machine(self, tmp_path: Path, monkeypatch):
+        from ankismart.core.crypto import encrypt
+
+        monkeypatch.setenv("ANKISMART_MASTER_KEY", "shared-master-key")
+        with patch("ankismart.core.crypto.platform") as mock_platform:
+            mock_platform.node.return_value = "host-a"
+            mock_platform.machine.return_value = "x86_64"
+            encrypted_key = encrypt("cross-machine-secret")
+
+        config_file = tmp_path / "config.yaml"
+        data = {"anki_connect_key": f"encrypted:{encrypted_key}"}
+        config_file.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+        with (
+            patch("ankismart.core.crypto.platform") as mock_platform,
+            patch("ankismart.core.config.CONFIG_PATH", config_file),
+        ):
+            mock_platform.node.return_value = "host-b"
+            mock_platform.machine.return_value = "arm64"
+            cfg = load_config()
+        assert cfg.anki_connect_key == "cross-machine-secret"
+
     def test_decrypt_failure_falls_back_to_empty(self, tmp_path: Path):
         config_file = tmp_path / "config.yaml"
         data = {"anki_connect_key": "encrypted:INVALID_CIPHERTEXT"}
@@ -261,6 +283,21 @@ class TestMigration:
 
 
 class TestSaveConfig:
+    def test_creates_custom_config_path_parent_directory(self, tmp_path: Path):
+        config_dir = tmp_path / ".ankismart"
+        custom_path = tmp_path / "nested" / "custom" / "config.yaml"
+        cfg = AppConfig(default_deck="CustomPathDeck")
+
+        with (
+            patch("ankismart.core.config.CONFIG_DIR", config_dir),
+            patch("ankismart.core.config.CONFIG_PATH", custom_path),
+        ):
+            save_config(cfg)
+
+        assert custom_path.exists()
+        saved = yaml.safe_load(custom_path.read_text(encoding="utf-8"))
+        assert saved["default_deck"] == "CustomPathDeck"
+
     def test_saves_yaml_with_encrypted_fields(self, tmp_path: Path):
         config_dir = tmp_path / ".ankismart"
         config_file = config_dir / "config.yaml"

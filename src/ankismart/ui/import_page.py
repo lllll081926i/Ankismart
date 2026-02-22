@@ -71,6 +71,7 @@ _OCR_FILE_SUFFIXES = {
     ".tiff",
     ".webp",
 }
+_MERGED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"}
 
 _RIGHT_OPTION_CARD_MAX_HEIGHT = 92
 _RIGHT_CONFIG_GROUP_MAX_HEIGHT = 360
@@ -480,7 +481,8 @@ class ImportPage(ProgressMixin, QWidget):
         super().__init__()
         self._main = main_window
         self._file_paths: list[Path] = []
-        self._file_status: dict[str, str] = {}  # file_name -> status (pending/converting/completed)
+        self._file_status: dict[str, str] = {}  # file_key -> status (pending/converting/completed)
+        self._file_name_to_keys: dict[str, list[str]] = {}  # file_name -> ordered file keys
         self._worker: BatchConvertWorker | None = None
         self._deck_loader: DeckLoaderWorker | None = None
         self._ocr_download_worker: OCRModelDownloadWorker | None = None
@@ -1007,10 +1009,12 @@ class ImportPage(ProgressMixin, QWidget):
         """Add files to the file list."""
         for file_path in file_paths:
             if file_path not in self._file_paths:
+                file_key = self._to_file_key(file_path)
                 self._file_paths.append(file_path)
-                self._file_status[file_path.name] = "pending"
+                self._file_status[file_key] = "pending"
+                self._file_name_to_keys.setdefault(file_path.name, []).append(file_key)
                 item = QListWidgetItem(file_path.name)
-                item.setData(Qt.ItemDataRole.UserRole, str(file_path))
+                item.setData(Qt.ItemDataRole.UserRole, file_key)
                 # Pending items use muted color and must stay theme-aware.
                 item.setForeground(self._get_pending_item_color())
                 self._file_list.addItem(item)
@@ -1043,11 +1047,26 @@ class ImportPage(ProgressMixin, QWidget):
 
     def _remove_file_item(self, item: QListWidgetItem):
         """Remove a file item from the list."""
-        file_path_str = item.data(Qt.ItemDataRole.UserRole)
-        file_path = Path(file_path_str)
+        file_key = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        file_path = Path(file_key) if file_key else None
 
-        if file_path in self._file_paths:
-            self._file_paths.remove(file_path)
+        if file_key:
+            self._file_status.pop(file_key, None)
+
+        if file_path is not None:
+            name = file_path.name
+            keys = self._file_name_to_keys.get(name, [])
+            if file_key in keys:
+                keys.remove(file_key)
+            if keys:
+                self._file_name_to_keys[name] = keys
+            else:
+                self._file_name_to_keys.pop(name, None)
+
+            for index, current in enumerate(list(self._file_paths)):
+                if self._to_file_key(current) == file_key:
+                    self._file_paths.pop(index)
+                    break
 
         row = self._file_list.row(item)
         self._file_list.takeItem(row)
@@ -1057,8 +1076,44 @@ class ImportPage(ProgressMixin, QWidget):
     def _clear_files(self):
         """Clear all files from the list."""
         self._file_paths.clear()
+        self._file_status.clear()
+        self._file_name_to_keys.clear()
         self._file_list.clear()
         self._update_file_count()
+
+    @staticmethod
+    def _to_file_key(file_path: Path) -> str:
+        try:
+            return str(file_path.resolve())
+        except OSError:
+            return str(file_path)
+
+    def _resolve_status_key_for_filename(self, filename: str) -> str | None:
+        if filename in self._file_status:
+            return filename
+        keys = self._file_name_to_keys.get(filename, [])
+        if not keys:
+            return None
+        for key in keys:
+            if self._file_status.get(key) != "completed":
+                return key
+        return keys[0]
+
+    def _refresh_file_item_colors(self) -> None:
+        for i in range(self._file_list.count()):
+            item = self._file_list.item(i)
+            if item is None:
+                continue
+            file_key = ""
+            item_data = getattr(item, "data", None)
+            if callable(item_data):
+                file_key = str(item_data(Qt.ItemDataRole.UserRole) or "")
+            item_text = item.text() if hasattr(item, "text") and callable(item.text) else ""
+            status = self._file_status.get(file_key, self._file_status.get(item_text, "pending"))
+            if status == "completed":
+                item.setForeground(self._get_completed_item_color())
+            else:
+                item.setForeground(self._get_pending_item_color())
 
     def _load_decks(self):
         """Load deck names from Anki in background."""
@@ -1721,8 +1776,9 @@ class ImportPage(ProgressMixin, QWidget):
         from ankismart.ui.i18n import get_text
 
         # Update file status to converting
-        if filename in self._file_status:
-            self._file_status[filename] = "converting"
+        status_key = self._resolve_status_key_for_filename(filename)
+        if status_key is not None:
+            self._file_status[status_key] = "converting"
 
         percentage = int((current / total) * 100) if total > 0 else 0
         self._progress_bar.setValue(percentage)
@@ -1753,22 +1809,19 @@ class ImportPage(ProgressMixin, QWidget):
 
     def _on_file_completed(self, filename: str, document: ConvertedDocument):
         """Handle single file conversion completion."""
-        # Update file status to completed
-        if filename in self._file_status:
-            self._file_status[filename] = "completed"
-
-        # Update file list item color to normal
-        for i in range(self._file_list.count()):
-            item = self._file_list.item(i)
-            if item and item.text() == filename:
-                item.setForeground(self._get_completed_item_color())
-                break
+        # 图片先合并为一个 PDF，再按页 OCR。完成后标记所有图片源文件为 completed。
+        if filename == "图片合集":
+            for file_key in list(self._file_status):
+                if Path(file_key).suffix.lower() in _MERGED_IMAGE_SUFFIXES:
+                    self._file_status[file_key] = "completed"
+        else:
+            status_key = self._resolve_status_key_for_filename(filename)
+            if status_key is not None:
+                self._file_status[status_key] = "completed"
+        self._refresh_file_item_colors()
 
         # Update preview page if it's already showing
         if hasattr(self._main, 'batch_result') and self._main.batch_result:
-            # Add document to existing batch result
-            self._main.batch_result.documents.append(document)
-
             # Update preview page if visible
             preview_page = getattr(self._main, 'preview_page', None)
             if preview_page and preview_page.isVisible():
@@ -1777,6 +1830,8 @@ class ImportPage(ProgressMixin, QWidget):
                 # Count remaining pending files
                 pending_count = sum(1 for status in self._file_status.values() if status != "completed")
                 preview_page.update_converting_status(pending_count)
+            else:
+                self._main.batch_result.documents.append(document)
         else:
             # Create initial batch result with first document
             from ankismart.core.models import BatchConvertResult
@@ -1933,25 +1988,19 @@ class ImportPage(ProgressMixin, QWidget):
         )
 
     def closeEvent(self, event):  # noqa: N802
-        """Ensure background workers are stopped and references released."""
+        """Stop background workers quickly for fast application shutdown."""
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
-            self._worker.wait(3000)
-            if self._worker.isRunning():
-                self._worker.terminate()
-                self._worker.wait()
+            self._worker.terminate()
+            self._worker.wait(100)
 
         if self._ocr_download_worker and self._ocr_download_worker.isRunning():
-            self._ocr_download_worker.wait(3000)
-            if self._ocr_download_worker.isRunning():
-                self._ocr_download_worker.terminate()
-                self._ocr_download_worker.wait()
+            self._ocr_download_worker.terminate()
+            self._ocr_download_worker.wait(100)
 
         if self._deck_loader and self._deck_loader.isRunning():
-            self._deck_loader.wait(3000)
-            if self._deck_loader.isRunning():
-                self._deck_loader.terminate()
-                self._deck_loader.wait()
+            self._deck_loader.terminate()
+            self._deck_loader.wait(100)
 
         self._cleanup_batch_worker()
         self._cleanup_ocr_download_worker()
@@ -2254,15 +2303,7 @@ class ImportPage(ProgressMixin, QWidget):
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""
-        for i in range(self._file_list.count()):
-            item = self._file_list.item(i)
-            if item is None:
-                continue
-            status = self._file_status.get(item.text(), "pending")
-            if status == "completed":
-                item.setForeground(self._get_completed_item_color())
-            else:
-                item.setForeground(self._get_pending_item_color())
+        self._refresh_file_item_colors()
 
     @staticmethod
     def _get_pending_item_color() -> QColor:

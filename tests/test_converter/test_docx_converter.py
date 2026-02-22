@@ -9,6 +9,7 @@ import pytest
 from ankismart.converter.docx_converter import (
     _convert_table,
     _is_list_style,
+    _render_paragraph_runs,
     convert,
 )
 from ankismart.core.errors import ConvertError, ErrorCode
@@ -299,3 +300,17 @@ class TestConvert:
 
         # Empty paragraph should not appear in output
         assert result.content.strip() == ""
+
+
+class TestRenderParagraphRuns:
+    def test_keeps_latex_runs_without_markdown_emphasis(self) -> None:
+        paragraph = MagicMock()
+        paragraph.text = r"$\frac{a_b}{c}$"
+        run = MagicMock()
+        run.text = r"$\frac{a_b}{c}$"
+        run.bold = True
+        run.italic = True
+        paragraph.runs = [run]
+
+        rendered = _render_paragraph_runs(paragraph)
+        assert rendered == r"$\frac{a_b}{c}$"

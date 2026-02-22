@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import ankismart.converter.cache as cache_module
 from ankismart.converter.cache import (
     clear_cache,
     get_cache_count,
@@ -270,3 +271,32 @@ class TestCacheStatsAndClear:
         assert stats["count"] == 2
         assert cleared is True
         assert count_after == 0
+
+
+class TestResolveAppDir:
+    def test_env_app_dir_has_highest_priority(self, monkeypatch, tmp_path: Path) -> None:
+        override = tmp_path / "custom-cache-root"
+        monkeypatch.setenv("ANKISMART_APP_DIR", str(override))
+        assert cache_module._resolve_app_dir() == override.resolve()
+
+    def test_portable_mode_uses_project_config_dir(self, monkeypatch, tmp_path: Path) -> None:
+        root = tmp_path / "portable-root"
+        root.mkdir(parents=True, exist_ok=True)
+        (root / ".portable").write_text("", encoding="utf-8")
+
+        monkeypatch.delenv("ANKISMART_APP_DIR", raising=False)
+        monkeypatch.setattr(cache_module, "_resolve_project_root", lambda: root)
+        monkeypatch.setattr(cache_module.sys, "frozen", False, raising=False)
+        assert cache_module._resolve_app_dir() == root / "config"
+
+    def test_frozen_windows_uses_localappdata(self, monkeypatch, tmp_path: Path) -> None:
+        local_app_data = tmp_path / "LocalAppData"
+        local_app_data.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.delenv("ANKISMART_APP_DIR", raising=False)
+        monkeypatch.setattr(cache_module.sys, "frozen", True, raising=False)
+        monkeypatch.setattr(cache_module.sys, "platform", "win32")
+        monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+        monkeypatch.setattr(cache_module, "_is_portable_mode", lambda: False)
+
+        assert cache_module._resolve_app_dir() == (local_app_data / "ankismart").resolve()

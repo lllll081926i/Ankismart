@@ -1144,14 +1144,12 @@ class ResultPage(QWidget):
             worker.deleteLater()
 
     def closeEvent(self, event):  # noqa: N802
-        """Ensure push worker is stopped before widget closes."""
+        """Stop push worker quickly during application shutdown."""
         if self._worker and self._worker.isRunning():
             if hasattr(self._worker, "cancel"):
                 self._worker.cancel()
-            self._worker.wait(3000)
-            if self._worker.isRunning():
-                self._worker.terminate()
-                self._worker.wait()
+            self._worker.terminate()
+            self._worker.wait(100)
         self._cleanup_push_worker()
         super().closeEvent(event)
 

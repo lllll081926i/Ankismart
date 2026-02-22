@@ -1,6 +1,7 @@
 """Tests for ankismart.converter.ocr_converter."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -194,6 +195,51 @@ class TestPdfToImages:
 
         assert images == []
 
+    def test_invalid_render_scale_env_fallbacks_to_default(self) -> None:
+        mock_image = MagicMock()
+        mock_bitmap = MagicMock()
+        mock_bitmap.to_pil.return_value = mock_image
+        copied = MagicMock()
+        mock_image.copy.return_value = copied
+
+        mock_page = MagicMock()
+        mock_page.render.return_value = mock_bitmap
+
+        mock_pdf = MagicMock()
+        mock_pdf.__len__ = MagicMock(return_value=1)
+        mock_pdf.__getitem__ = MagicMock(return_value=mock_page)
+
+        with patch.dict("os.environ", {"ANKISMART_OCR_PDF_RENDER_SCALE": "bad"}, clear=False):
+            with patch("ankismart.converter.ocr_converter.pdfium.PdfDocument", return_value=mock_pdf):
+                images = list(_pdf_to_images(Path("test.pdf")))
+
+        assert len(images) == 1
+        assert images[0] is copied
+        mock_page.render.assert_called_once_with(scale=300 / 72)
+
+    @pytest.mark.parametrize("raw_value", ["nan", "inf", "-inf"])
+    def test_non_finite_render_scale_env_fallbacks_to_default(self, raw_value: str) -> None:
+        mock_image = MagicMock()
+        mock_bitmap = MagicMock()
+        mock_bitmap.to_pil.return_value = mock_image
+        copied = MagicMock()
+        mock_image.copy.return_value = copied
+
+        mock_page = MagicMock()
+        mock_page.render.return_value = mock_bitmap
+
+        mock_pdf = MagicMock()
+        mock_pdf.__len__ = MagicMock(return_value=1)
+        mock_pdf.__getitem__ = MagicMock(return_value=mock_page)
+
+        with patch.dict("os.environ", {"ANKISMART_OCR_PDF_RENDER_SCALE": raw_value}, clear=False):
+            with patch("ankismart.converter.ocr_converter.pdfium.PdfDocument", return_value=mock_pdf):
+                images = list(_pdf_to_images(Path("test.pdf")))
+
+        assert len(images) == 1
+        assert images[0] is copied
+        mock_page.render.assert_called_once_with(scale=300 / 72)
+
 
 # ---------------------------------------------------------------------------
 # OCR config helpers
@@ -236,6 +282,25 @@ class TestOcrConfigHelpers:
     def test_detect_cuda_environment_false_when_devices_hidden(self) -> None:
         with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "-1"}, clear=False):
             assert detect_cuda_environment() is False
+
+    def test_detect_cuda_environment_invalid_ttl_fallbacks_to_default(self) -> None:
+        import ankismart.converter.ocr_device as device_mod
+
+        old_cache = device_mod._cuda_detection_cache
+        old_cache_ts = device_mod._cuda_detection_cache_ts
+        old_cache_key = device_mod._cuda_detection_cache_key
+        try:
+            device_mod._cuda_detection_cache = None
+            device_mod._cuda_detection_cache_ts = 0.0
+            device_mod._cuda_detection_cache_key = None
+
+            with patch.dict("os.environ", {"ANKISMART_CUDA_CACHE_TTL_SECONDS": "oops"}, clear=False):
+                with patch("ankismart.converter.ocr_device._perform_cuda_detection", return_value=False):
+                    assert detect_cuda_environment(force_refresh=True) is False
+        finally:
+            device_mod._cuda_detection_cache = old_cache
+            device_mod._cuda_detection_cache_ts = old_cache_ts
+            device_mod._cuda_detection_cache_key = old_cache_key
 
     def test_is_cuda_available_uses_nvidia_smi_fallback(self) -> None:
         with patch("ankismart.converter.ocr_converter._cuda_available", return_value=False):
@@ -282,6 +347,23 @@ class TestOcrConfigHelpers:
         assert kwargs["device"] == "cpu"
         assert kwargs["enable_mkldnn"] is True
         assert kwargs["cpu_threads"] == 2
+
+    def test_build_kwargs_with_invalid_numeric_env_values_fallbacks_to_defaults(self) -> None:
+        default_threads = min(4, os.cpu_count() or 1)
+        with patch.dict(
+            "os.environ",
+            {
+                "ANKISMART_OCR_DET_LIMIT_SIDE_LEN": "bad",
+                "ANKISMART_OCR_REC_BATCH_SIZE": "",
+                "ANKISMART_OCR_CPU_THREADS": "bad",
+            },
+            clear=True,
+        ):
+            kwargs = _build_ocr_kwargs("cpu")
+
+        assert kwargs["text_det_limit_side_len"] == 640
+        assert kwargs["text_recognition_batch_size"] == 1
+        assert kwargs["cpu_threads"] == default_threads
 
     def test_model_root_can_be_overridden_by_env(self, tmp_path: Path) -> None:
         with patch.dict(

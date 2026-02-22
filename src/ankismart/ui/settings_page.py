@@ -472,14 +472,14 @@ class SettingsPage(ScrollArea):
         self._concurrency_card = SettingCard(
             FluentIcon.SPEED_HIGH,
             "并发限制",
-            "同时处理的最大文件数（0 = 不限制）",
+            "同时处理的最大文件数（0 = 按文档数自动）",
             self.scrollWidget,
         )
         self._concurrency_spin = SpinBox(self._concurrency_card)
         self._concurrency_spin.setRange(0, 10)
         self._concurrency_spin.setSingleStep(1)
         self._concurrency_spin.setValue(2)
-        self._concurrency_spin.setSpecialValueText("不限制")
+        self._concurrency_spin.setSpecialValueText("自动")
         self._concurrency_spin.setMinimumWidth(200)
         self._concurrency_card.hBoxLayout.addWidget(self._concurrency_spin)
         self._concurrency_card.hBoxLayout.addSpacing(16)
@@ -1622,19 +1622,15 @@ class SettingsPage(ScrollArea):
             worker.deleteLater()
 
     def closeEvent(self, event):  # noqa: N802
-        """Ensure autosave timer and test workers are stopped before widget closes."""
+        """Force-stop test workers quickly during application shutdown."""
         if self._autosave_timer.isActive():
             self._autosave_timer.stop()
         if self._provider_test_worker and self._provider_test_worker.isRunning():
-            self._provider_test_worker.wait(3000)
-            if self._provider_test_worker.isRunning():
-                self._provider_test_worker.terminate()
-                self._provider_test_worker.wait()
+            self._provider_test_worker.terminate()
+            self._provider_test_worker.wait(100)
         if self._anki_test_worker and self._anki_test_worker.isRunning():
-            self._anki_test_worker.wait(3000)
-            if self._anki_test_worker.isRunning():
-                self._anki_test_worker.terminate()
-                self._anki_test_worker.wait()
+            self._anki_test_worker.terminate()
+            self._anki_test_worker.wait(100)
         self._cleanup_provider_test_worker()
         self._cleanup_anki_test_worker()
         super().closeEvent(event)

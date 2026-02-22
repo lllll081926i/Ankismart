@@ -76,15 +76,55 @@ class LLMClient:
         proxy_url: str = "",
     ) -> None:
         kwargs: dict[str, object] = {"api_key": api_key}
+        self._http_client: httpx.Client | None = None
         if base_url:
             kwargs["base_url"] = base_url
         if proxy_url:
-            kwargs["http_client"] = httpx.Client(proxy=proxy_url)
+            self._http_client = httpx.Client(proxy=proxy_url)
+            kwargs["http_client"] = self._http_client
         self._client = OpenAI(**kwargs)
         self._model = model
         self._throttle = _RpmThrottle(rpm_limit)
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._close_lock = threading.Lock()
+        self._closed = False
+
+    def close(self) -> None:
+        """Release underlying OpenAI and HTTP resources."""
+        with self._close_lock:
+            if self._closed:
+                return
+
+            close_openai = getattr(self._client, "close", None)
+            if callable(close_openai):
+                try:
+                    close_openai()
+                except Exception as exc:  # pragma: no cover - defensive cleanup
+                    logger.debug(f"Failed to close OpenAI client cleanly: {exc}")
+
+            if self._http_client is not None:
+                try:
+                    self._http_client.close()
+                except Exception as exc:  # pragma: no cover - defensive cleanup
+                    logger.debug(f"Failed to close HTTP client cleanly: {exc}")
+                finally:
+                    self._http_client = None
+
+            self._closed = True
+
+    def __enter__(self) -> LLMClient:
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            # Never propagate cleanup errors from GC finalizer.
+            pass
 
     def validate_connection(self) -> bool:
         """Test if the configured model endpoint is reachable via chat completion."""

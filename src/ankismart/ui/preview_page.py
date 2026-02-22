@@ -519,7 +519,16 @@ class PreviewPage(ProgressMixin, QWidget):
         Args:
             document: The converted document to add
         """
-        self._documents.append(document)
+        doc_key = (document.file_name, document.result.source_path)
+        replaced_in_documents = False
+        for idx, existing in enumerate(self._documents):
+            existing_key = (existing.file_name, existing.result.source_path)
+            if existing_key == doc_key:
+                self._documents[idx] = document
+                replaced_in_documents = True
+                break
+        if not replaced_in_documents:
+            self._documents.append(document)
         self._ready_documents.add(document.file_name)
 
         # Find and replace placeholder item
@@ -535,7 +544,15 @@ class PreviewPage(ProgressMixin, QWidget):
 
         # Update main batch result
         if hasattr(self._main, 'batch_result') and self._main.batch_result:
-            self._main.batch_result.documents.append(document)
+            replaced_in_batch = False
+            for idx, existing in enumerate(self._main.batch_result.documents):
+                existing_key = (existing.file_name, existing.result.source_path)
+                if existing_key == doc_key:
+                    self._main.batch_result.documents[idx] = document
+                    replaced_in_batch = True
+                    break
+            if not replaced_in_batch:
+                self._main.batch_result.documents.append(document)
 
         # Update UI state
         self._update_ui_state()
@@ -1322,29 +1339,23 @@ class PreviewPage(ProgressMixin, QWidget):
         self._apply_theme_styles()
 
     def closeEvent(self, event):  # noqa: N802
-        """Clean up worker threads before closing."""
+        """Force-stop worker threads for fast application shutdown."""
         # Stop generate worker if running
         if self._generate_worker and self._generate_worker.isRunning():
             self._generate_worker.cancel()
-            self._generate_worker.wait(3000)  # Wait up to 3 seconds
-            if self._generate_worker.isRunning():
-                self._generate_worker.terminate()
-                self._generate_worker.wait()
+            self._generate_worker.terminate()
+            self._generate_worker.wait(100)
 
         # Stop push worker if running
         if self._push_worker and self._push_worker.isRunning():
             self._push_worker.cancel()
-            self._push_worker.wait(3000)  # Wait up to 3 seconds
-            if self._push_worker.isRunning():
-                self._push_worker.terminate()
-                self._push_worker.wait()
+            self._push_worker.terminate()
+            self._push_worker.wait(100)
 
         # Stop sample worker if running
         if self._sample_worker and self._sample_worker.isRunning():
-            self._sample_worker.wait(3000)
-            if self._sample_worker.isRunning():
-                self._sample_worker.terminate()
-                self._sample_worker.wait()
+            self._sample_worker.terminate()
+            self._sample_worker.wait(100)
 
         self._cleanup_generate_worker()
         self._cleanup_push_worker()

@@ -2,7 +2,7 @@
 
 **文档版本**：4.0
 **创建日期**：2026年2月10日
-**更新日期**：2026年2月11日
+**更新日期**：2026年2月22日
 **规划定位**：AnkiSmart 发布驱动路线图
 **唯一上游依据**：`docs/AnkiSmart 产品需求文档.md` v3.0
 
@@ -112,12 +112,33 @@
 
 | 编号 | 任务 | 优先级 | 状态 |
 |---|---|---|---|
-| RC-1 | E2E 冒烟测试补全 | P0 | 🔧 |
+| RC-1 | E2E 冒烟测试补全 | P0 | ✅ |
 | RC-2 | 打包方案验证（PyInstaller / Nuitka 可行性） | P0 | 📋 |
 | RC-3 | 安装向导与首次运行引导 | P1 | 📋 |
 | RC-4 | 文档与代码对齐（本次重构） | P0 | 🔧 |
 | RC-5 | 版本号更新至 1.0.0-rc | P1 | 📋 |
-| RC-6 | 已知缺陷修复与回归验证 | P0 | 🔧 |
+| RC-6 | 已知缺陷修复与回归验证 | P0 | ✅ |
+
+### 3.2.1 RC-6 回归验证清单（2026-02-22）
+
+| 缺陷主题 | 修复范围 | 回归用例 | 结果 |
+|---|---|---|---|
+| Anki 模板覆盖用户模型 | 独立模型与样式同步 | `tests/test_anki_gateway/test_gateway.py` `tests/test_anki_gateway/test_apkg_exporter.py` | ✅ |
+| 窗口关闭后线程残留 | UI 关闭流程强制终止线程 | `tests/test_ui/test_workers.py` `tests/e2e/gate/test_gate_workflow.py` | ✅ |
+| 图片合并 PDF 后 OCR 状态不一致 | 导入页/预览页状态键与去重修复 | `tests/test_ui/test_workers.py` `tests/e2e/scenarios/test_ocr.py` | ✅ |
+| AnkiConnect 非 JSON 响应崩溃 | 客户端响应容错 | `tests/test_anki_gateway/test_client.py` | ✅ |
+| LLM 代理连接未释放 | `LLMClient` 生命周期与资源释放 | `tests/test_card_gen/test_llm_client.py` | ✅ |
+| 并发参数 `0` 语义偏差 | `0=按文档数自动并发` | `tests/test_ui/test_workers.py` | ✅ |
+| 打包模式目录分歧（config/log/cache） | 统一 app dir 解析逻辑 | `tests/test_core/test_logging.py` `tests/test_converter/test_cache.py` | ✅ |
+| 密钥跨环境解密失败 | `ANKISMART_MASTER_KEY` + 旧密钥兼容 | `tests/test_core/test_crypto.py` `tests/test_core/test_config.py` | ✅ |
+| LaTeX 导出格式错乱 | 导出模板与 Word/MD 转换链路修复 | `tests/test_anki_gateway/test_apkg_exporter.py` `tests/test_anki_gateway/test_gateway.py` `tests/test_converter/test_docx_converter.py` `tests/test_converter/test_markdown_converter.py` | ✅ |
+| 异常场景恢复能力 | 网络重试、无效文件恢复、Anki 降级导出 | `tests/e2e/scenarios/test_error_handling.py` | ✅ |
+
+本轮 RC-6 验证执行记录：
+
+- `uv run pytest -q tests/test_anki_gateway/test_client.py tests/test_anki_gateway/test_gateway.py tests/test_anki_gateway/test_apkg_exporter.py tests/test_card_gen/test_llm_client.py tests/test_ui/test_workers.py tests/test_converter/test_markdown_converter.py tests/test_converter/test_docx_converter.py tests/test_core/test_crypto.py tests/test_core/test_config.py tests/test_core/test_logging.py` -> `206 passed`
+- `uv run pytest -q tests/e2e/scenarios -m "p0"` -> `4 passed, 3 deselected`
+- `uv run pytest -q tests/e2e/gate -m "p0 and gate_real"` -> `2 passed`
 
 ### 3.3 发布门禁（v1.0-rc Checklist）
 

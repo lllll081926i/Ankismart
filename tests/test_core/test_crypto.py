@@ -60,3 +60,27 @@ class TestEncryptDecrypt:
         assert a != b
         # But both decrypt to the same value
         assert decrypt(a) == decrypt(b) == "same"
+
+    def test_master_key_is_cross_machine_stable(self, monkeypatch):
+        monkeypatch.setenv("ANKISMART_MASTER_KEY", "team-shared-master-key")
+        with patch("ankismart.core.crypto.platform") as mock_platform:
+            mock_platform.node.return_value = "host-a"
+            mock_platform.machine.return_value = "x86_64"
+            ciphertext = encrypt("shared-secret")
+
+        with patch("ankismart.core.crypto.platform") as mock_platform:
+            mock_platform.node.return_value = "host-b"
+            mock_platform.machine.return_value = "arm64"
+            assert decrypt(ciphertext) == "shared-secret"
+
+    def test_decrypt_with_master_key_keeps_legacy_machine_compatibility(self, monkeypatch):
+        with patch("ankismart.core.crypto.platform") as mock_platform:
+            mock_platform.node.return_value = "host-legacy"
+            mock_platform.machine.return_value = "x86_64"
+            legacy_ciphertext = encrypt("legacy-secret")
+
+        monkeypatch.setenv("ANKISMART_MASTER_KEY", "new-master-key")
+        with patch("ankismart.core.crypto.platform") as mock_platform:
+            mock_platform.node.return_value = "host-legacy"
+            mock_platform.machine.return_value = "x86_64"
+            assert decrypt(legacy_ciphertext) == "legacy-secret"

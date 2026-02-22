@@ -55,11 +55,29 @@ def _resolve_project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _is_portable_mode() -> bool:
+    root = _resolve_project_root()
+    portable_flag = root / ".portable"
+    return portable_flag.exists()
+
+
 def _resolve_app_dir() -> Path:
     env_app_dir = os.getenv("ANKISMART_APP_DIR", "").strip()
     if env_app_dir:
         return Path(env_app_dir).expanduser().resolve()
-    return _resolve_project_root() / ".local" / "ankismart"
+
+    root = _resolve_project_root()
+    if _is_portable_mode():
+        return root / "config"
+
+    if getattr(sys, "frozen", False):
+        if sys.platform == "win32":
+            app_data = Path(os.getenv("LOCALAPPDATA", "~/.local"))
+        else:
+            app_data = Path.home() / ".local" / "share"
+        return (app_data / "ankismart").expanduser().resolve()
+
+    return root / ".local" / "ankismart"
 
 
 class JsonFormatter(logging.Formatter):

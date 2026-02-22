@@ -14,13 +14,16 @@ logger = get_logger("anki_gateway")
 
 UpdateMode = Literal["create_only", "update_only", "create_or_update"]
 
+ANKISMART_BASIC_MODEL = "AnkiSmart Basic"
+ANKISMART_CLOZE_MODEL = "AnkiSmart Cloze"
+
 _BASIC_LIKE_MODELS = {
     "Basic",
     "Basic (and reversed card)",
     "Basic (optional reversed card)",
     "Basic (type in the answer)",
 }
-_STYLEABLE_MODELS = _BASIC_LIKE_MODELS | {"Cloze"}
+_STYLEABLE_MODELS = {ANKISMART_BASIC_MODEL, ANKISMART_CLOZE_MODEL}
 
 _ANKI_TEMPLATE_FORMATTER_SCRIPT = """
 <script>
@@ -45,10 +48,32 @@ _ANKI_TEMPLATE_FORMATTER_SCRIPT = """
   }
 
   function formatWithBreaks(text) {
-    return escapeHtml(text).replace(/\\n/g, "<br>");
+    var raw = String(text || "");
+    if (!raw) {
+      return "";
+    }
+
+    var mathRe = /(\\$\\$[\\s\\S]*?\\$\\$|\\\\\\[[\\s\\S]*?\\\\\\]|\\\\\\([\\s\\S]*?\\\\\\)|\\\\begin\\{[a-zA-Z*]+\\}[\\s\\S]*?\\\\end\\{[a-zA-Z*]+\\}|\\$[^$\\n]+\\$)/g;
+    var output = "";
+    var lastIndex = 0;
+    var match;
+    while ((match = mathRe.exec(raw)) !== null) {
+      output += escapeHtml(raw.slice(lastIndex, match.index)).replace(/\\n/g, "<br>");
+      output += escapeHtml(match[0]);
+      lastIndex = mathRe.lastIndex;
+    }
+    output += escapeHtml(raw.slice(lastIndex)).replace(/\\n/g, "<br>");
+    return output;
+  }
+
+  function containsLatex(text) {
+    return /(\\$\\$[\\s\\S]*?\\$\\$|\\\\\\[[\\s\\S]*?\\\\\\]|\\\\\\([\\s\\S]*?\\\\\\)|\\\\begin\\{[a-zA-Z*]+\\}|\\\\[a-zA-Z]{2,})/.test(String(text || ""));
   }
 
   function parseFront(raw) {
+    if (containsLatex(raw)) {
+      return null;
+    }
     var compact = raw.replace(/\\s+/g, " ").trim();
     var re = /(^|\\s)([A-Ea-e])[\\.、\\):：\\-]\\s*/g;
     var hits = [];
@@ -92,6 +117,14 @@ _ANKI_TEMPLATE_FORMATTER_SCRIPT = """
     var text = String(raw || "").trim();
     if (!text) {
       return { answer: "（未标注）", explanation: "" };
+    }
+
+    var labeled = text.match(/^(?:答案|正确答案|answer)\\s*[:：]\\s*([\\s\\S]+?)\\n(?:解析|explanation)\\s*[:：]\\s*([\\s\\S]+)$/i);
+    if (labeled) {
+      return {
+        answer: labeled[1].trim() || "（未标注）",
+        explanation: labeled[2].trim()
+      };
     }
 
     function stripLeadingIndex(line) {
@@ -158,14 +191,7 @@ _ANKI_TEMPLATE_FORMATTER_SCRIPT = """
       };
     }
 
-    if (normalizedLines.length >= 2) {
-      return {
-        answer: normalizedLines[0] || "（未标注）",
-        explanation: normalizeExplanation(normalizedLines.slice(1).join("\\n"))
-      };
-    }
-
-    return { answer: "（未标注）", explanation: normalizeExplanation(normalizedLines.join("\\n")) };
+    return { answer: text, explanation: "" };
   }
 
   function splitExplanation(text) {
@@ -333,16 +359,32 @@ _ANKI_CLOZE_AFMT = (
 )
 
 
+def _resolve_target_note_type(note_type: str) -> str:
+    name = (note_type or "").strip()
+    if name in _BASIC_LIKE_MODELS or name == ANKISMART_BASIC_MODEL:
+        return ANKISMART_BASIC_MODEL
+    if name in {"Cloze", ANKISMART_CLOZE_MODEL}:
+        return ANKISMART_CLOZE_MODEL
+    return name
+
+
+def _resolve_card_note_type(card: CardDraft) -> CardDraft:
+    target = _resolve_target_note_type(card.note_type)
+    if target == card.note_type:
+        return card
+    return card.model_copy(update={"note_type": target})
+
+
 def _build_anki_templates_payload(
     note_type: str,
     template_names: Iterable[str],
 ) -> dict[str, dict[str, str]]:
     names = [name for name in template_names if name]
-    if note_type in _BASIC_LIKE_MODELS:
+    if note_type in _BASIC_LIKE_MODELS or note_type == ANKISMART_BASIC_MODEL:
         if not names:
             names = ["Card 1"]
         return {name: {"Front": _ANKI_BASIC_QFMT, "Back": _ANKI_BASIC_AFMT} for name in names}
-    if note_type == "Cloze":
+    if note_type in {"Cloze", ANKISMART_CLOZE_MODEL}:
         if not names:
             names = ["Cloze"]
         return {name: {"Front": _ANKI_CLOZE_QFMT, "Back": _ANKI_CLOZE_AFMT} for name in names}
@@ -379,6 +421,10 @@ def _card_to_note_params(card: CardDraft) -> dict[str, Any]:
     return params
 
 
+def _escape_anki_query_value(value: str) -> str:
+    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+
 class AnkiGateway:
     def __init__(self, client: AnkiConnectClient) -> None:
         self._client = client
@@ -410,16 +456,20 @@ class AnkiGateway:
 
     def create_or_update_note(self, card: CardDraft) -> CardPushStatus:
         """Create a note or update it if a duplicate front field exists."""
+        resolved_card = _resolve_card_note_type(card)
+        available_models = self._ensure_ankismart_models([resolved_card])
+        if resolved_card.note_type in _STYLEABLE_MODELS and resolved_card.note_type not in available_models:
+            resolved_card = card
         deck_cache = self._fetch_deck_cache()
-        self._ensure_deck_exists(card.deck_name, deck_cache)
-        self._sync_model_styling([card])
-        validate_card_draft(card, self._client)
-        existing_id = self._find_existing_note(card)
+        self._ensure_deck_exists(resolved_card.deck_name, deck_cache)
+        self._sync_model_styling([resolved_card])
+        validate_card_draft(resolved_card, self._client)
+        existing_id = self._find_existing_note(resolved_card)
         if existing_id is not None:
-            self._client.update_note_fields(existing_id, card.fields)
+            self._client.update_note_fields(existing_id, resolved_card.fields)
             logger.info("Updated existing note", extra={"note_id": existing_id})
             return CardPushStatus(index=0, note_id=existing_id, success=True)
-        note_params = _card_to_note_params(card)
+        note_params = _card_to_note_params(resolved_card)
         note_id = self._client.add_note(note_params)
         return CardPushStatus(index=0, note_id=note_id, success=True)
 
@@ -440,10 +490,17 @@ class AnkiGateway:
                 results: list[CardPushStatus] = []
                 succeeded = 0
                 failed = 0
+                prepared_cards = [_resolve_card_note_type(card) for card in cards]
+                available_models = self._ensure_ankismart_models(prepared_cards)
+                prepared_cards = self._fallback_cards_without_models(
+                    original_cards=cards,
+                    prepared_cards=prepared_cards,
+                    available_models=available_models,
+                )
                 deck_cache = self._fetch_deck_cache()
-                self._sync_model_styling(cards)
+                self._sync_model_styling(prepared_cards)
 
-                for i, card in enumerate(cards):
+                for i, card in enumerate(prepared_cards):
                     try:
                         self._ensure_deck_exists(card.deck_name, deck_cache)
                         validate_card_draft(card, self._client)
@@ -537,15 +594,13 @@ class AnkiGateway:
         front = card.fields.get("Front") or card.fields.get("Text")
         if not front:
             return None
-        escaped = front.replace('"', '\\"')
         field_name = "Front" if "Front" in card.fields else "Text"
-        model_name = card.note_type.replace('"', '\\"')
-        query = f'note:"{model_name}" deck:"{card.deck_name}" "{field_name}:{escaped}"'
-        try:
-            note_ids = self._client.find_notes(query)
-            return note_ids[0] if note_ids else None
-        except AnkiGatewayError:
-            return None
+        model_name = _escape_anki_query_value(card.note_type)
+        deck_name = _escape_anki_query_value(card.deck_name)
+        field_query = _escape_anki_query_value(f"{field_name}:{front}")
+        query = f'note:"{model_name}" deck:"{deck_name}" "{field_query}"'
+        note_ids = self._client.find_notes(query)
+        return note_ids[0] if note_ids else None
 
     def _fetch_deck_cache(self) -> set[str]:
         """Fetch existing deck names, falling back to an empty cache on gateway errors."""
@@ -565,9 +620,100 @@ class AnkiGateway:
         cache.add(name)
         logger.info("Deck created automatically", extra={"deck_name": name})
 
+    @staticmethod
+    def _fallback_cards_without_models(
+        *,
+        original_cards: list[CardDraft],
+        prepared_cards: list[CardDraft],
+        available_models: set[str],
+    ) -> list[CardDraft]:
+        if not prepared_cards:
+            return []
+        if not available_models:
+            return [
+                original
+                if prepared.note_type in _STYLEABLE_MODELS
+                else prepared
+                for original, prepared in zip(original_cards, prepared_cards)
+            ]
+        return [
+            original
+            if prepared.note_type in _STYLEABLE_MODELS and prepared.note_type not in available_models
+            else prepared
+            for original, prepared in zip(original_cards, prepared_cards)
+        ]
+
+    def _ensure_ankismart_models(self, cards: list[CardDraft]) -> set[str]:
+        """Ensure Ankismart-specific note types exist before validation/push."""
+        if not cards:
+            return set()
+
+        model_names = {
+            (card.note_type or "").strip()
+            for card in cards
+            if (card.note_type or "").strip() in _STYLEABLE_MODELS
+        }
+        if not model_names:
+            return set()
+
+        get_model_names = getattr(self._client, "get_model_names", None)
+        create_model = getattr(self._client, "create_model", None)
+        if not callable(get_model_names) or not callable(create_model):
+            logger.warning(
+                "Client does not support model auto-creation, skip Ankismart model ensure",
+                extra={"missing_get_model_names": not callable(get_model_names), "missing_create_model": not callable(create_model)},
+            )
+            return set()
+
+        try:
+            existing_models = set(get_model_names())
+        except AnkiGatewayError as exc:
+            logger.warning(
+                "Failed to query model list before Ankismart model ensure",
+                extra={"error": exc.message},
+            )
+            return set()
+
+        available_models = set(existing_models) & model_names
+        for model_name in model_names:
+            if model_name in available_models:
+                continue
+            if model_name == ANKISMART_BASIC_MODEL:
+                fields = ["Front", "Back"]
+                templates = [{"Name": "Card 1", "Front": _ANKI_BASIC_QFMT, "Back": _ANKI_BASIC_AFMT}]
+                is_cloze = False
+            elif model_name == ANKISMART_CLOZE_MODEL:
+                fields = ["Text", "Extra"]
+                templates = [{"Name": "Cloze", "Front": _ANKI_CLOZE_QFMT, "Back": _ANKI_CLOZE_AFMT}]
+                is_cloze = True
+            else:
+                continue
+
+            try:
+                create_model(
+                    model_name=model_name,
+                    fields=fields,
+                    templates=templates,
+                    css=MODERN_CARD_CSS,
+                    is_cloze=is_cloze,
+                )
+                available_models.add(model_name)
+                logger.info("Created Ankismart note type", extra={"model_name": model_name})
+            except AnkiGatewayError as exc:
+                logger.warning(
+                    "Failed to create Ankismart note type, fallback to existing model",
+                    extra={"model_name": model_name, "error": exc.message},
+                )
+        return available_models
+
     def _sync_model_styling(self, cards: list[CardDraft]) -> None:
         """Best-effort sync of Anki note templates/CSS to Ankismart style."""
         if not cards:
+            return
+        get_templates = getattr(self._client, "get_model_templates", None)
+        update_templates = getattr(self._client, "update_model_templates", None)
+        update_styling = getattr(self._client, "update_model_styling", None)
+        if not callable(get_templates) or not callable(update_templates) or not callable(update_styling):
             return
         model_names = {
             (card.note_type or "").strip()
@@ -576,7 +722,7 @@ class AnkiGateway:
         }
         for model_name in model_names:
             try:
-                raw_templates = self._client.get_model_templates(model_name)
+                raw_templates = get_templates(model_name)
                 template_names = (
                     list(raw_templates.keys())
                     if isinstance(raw_templates, dict)
@@ -585,8 +731,8 @@ class AnkiGateway:
                 payload = _build_anki_templates_payload(model_name, template_names)
                 if not payload:
                     continue
-                self._client.update_model_templates(model_name, payload)
-                self._client.update_model_styling(model_name, MODERN_CARD_CSS)
+                update_templates(model_name, payload)
+                update_styling(model_name, MODERN_CARD_CSS)
                 logger.info(
                     "Synchronized Anki model style",
                     extra={
