@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -26,8 +28,8 @@ jobs:
       - name: Install Dependencies
         run: uv sync --group dev
 
-      - name: Ruff (phase-2 gate rules)
-        run: uv run ruff check src tests --select E,F,I,N,W --ignore E501
+      - name: Ruff
+        run: uv run ruff check src tests
 
   unit-integration:
     runs-on: windows-latest
@@ -88,6 +90,56 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: uv run pytest tests/e2e/gate -m "p0 and gate_real" -q --maxfail=1
 
+  package-verify:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    needs: unit-integration
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Dependencies
+        run: uv sync --group dev
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: |
+          $isccX86 = "C:/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          $isccX64 = "C:/Program Files/Inno Setup 6/ISCC.exe"
+          $isccLocal = "$env:LOCALAPPDATA/Programs/Inno Setup 6/ISCC.exe"
+          if ((Test-Path $isccX86) -or (Test-Path $isccX64) -or (Test-Path $isccLocal)) {
+            Write-Host "Inno Setup already installed."
+          } else {
+            choco install innosetup --no-progress -y
+          }
+
+      - name: Verify Inno Setup Path
+        run: uv run python -c "import importlib.util,pathlib,sys; p=pathlib.Path('packaging/build.py').resolve(); spec=importlib.util.spec_from_file_location('ankibuild', p); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); iscc=m.resolve_iscc(); print(iscc or 'ISCC_NOT_FOUND'); sys.exit(0 if iscc else 1)"
+
+      - name: Verify Packaging Build (Portable + Installer)
+        run: uv run --with pyinstaller==6.19.0 python packaging/build.py --clean
+
+      - name: Upload Packaging Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaging-verify-windows
+          path: |
+            dist/release/portable/*.zip
+            dist/release/installer/*.exe
+            build/ankismart/warn-ankismart.txt
+          if-no-files-found: error
+
   ui-risk-coverage:
     runs-on: windows-latest
     timeout-minutes: 25
@@ -119,4 +171,4 @@ jobs:
           --cov=ankismart.ui.result_page
           --cov=ankismart.ui.workers
           --cov-report=term-missing
-          --cov-fail-under=35
+          --cov-fail-under=50

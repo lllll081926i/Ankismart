@@ -35,8 +35,8 @@ source .venv/bin/activate
 3. **安装依赖**
 
 ```bash
-# 安装项目依赖和开发工具
-pip install -e ".[dev]"
+# 推荐：使用 uv 安装项目依赖和开发工具
+uv sync --group dev
 ```
 
 这将安装：
@@ -69,10 +69,10 @@ active_provider_id: "test123"
 
 ```bash
 # 运行测试
-pytest
+uv run pytest -q
 
 # 启动应用
-python -m ankismart.ui.app
+uv run ankismart
 ```
 
 ---
@@ -97,21 +97,26 @@ src = ["src"]
 select = ["E", "F", "I", "N", "W"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["E501", "N802", "N806"]
+"tests/**/*.py" = ["N802", "N806"]
 ```
 
 #### 运行代码检查
 
 ```bash
-# 检查代码
-ruff check src/
+# 统一质量门禁（与 CI 一致）
+uv run ruff check src tests
 
-# 自动修复问题
-ruff check --fix src/
+# 自动修复可修复问题
+uv run ruff check src tests --fix
 
 # 格式化代码
-ruff format src/
+uv run ruff format src tests
 ```
+
+当前阶段规则：
+- `E501` 已切换为全量门禁，`uv run ruff check src tests` 必须通过。
+- UI 风险模块覆盖率门禁当前为 `50%`。
+- 打包校验门禁已启用，CI 执行 `uv run --with pyinstaller==6.19.0 python packaging/build.py --clean`（含安装版与便携版）。
 
 ### 命名规范
 
@@ -291,12 +296,12 @@ git checkout -b feat/my-new-feature
 # 进行开发
 # ...
 
-# 运行代码检查
-ruff check src/
-ruff format src/
+# 运行代码检查（与 CI 对齐）
+uv run ruff check src tests
+uv run ruff format src tests
 
 # 运行测试
-pytest
+uv run pytest -q
 
 # 提交更改
 git add .
@@ -326,9 +331,9 @@ git push origin feat/my-new-feature
 
 提交 PR 前请确保：
 
-- [ ] 代码通过 Ruff 检查（`ruff check src/`）
-- [ ] 代码已格式化（`ruff format src/`）
-- [ ] 所有测试通过（`pytest`）
+- [ ] 代码通过 Ruff 检查（`uv run ruff check src tests`）
+- [ ] 代码已格式化（`uv run ruff format src tests`）
+- [ ] 所有测试通过（`uv run pytest -q`）
 - [ ] 添加了必要的测试用例
 - [ ] 更新了相关文档
 - [ ] 提交消息符合 Conventional Commits 规范
@@ -384,26 +389,34 @@ Closes #123
 
 ```bash
 # 运行所有测试
-pytest
+uv run pytest -q
 
 # 运行特定模块的测试
-pytest tests/test_converter.py
+uv run pytest tests/test_converter.py -q
 
 # 运行特定测试函数
-pytest tests/test_converter.py::test_docx_conversion
+uv run pytest tests/test_converter.py::test_docx_conversion -q
 
 # 显示详细输出
-pytest -v
+uv run pytest -v
 
 # 显示打印输出
-pytest -s
+uv run pytest -s
 ```
 
 ### 测试覆盖率
 
 ```bash
-# 生成覆盖率报告
-pytest --cov=ankismart --cov-report=html
+# 生成覆盖率报告（本地全量趋势）
+uv run pytest -q --cov=src/ankismart --cov-report=term
+
+# UI 风险模块门禁（与 CI 一致）
+uv run pytest tests --ignore=tests/e2e -q \
+  --cov=ankismart.ui.import_page \
+  --cov=ankismart.ui.result_page \
+  --cov=ankismart.ui.workers \
+  --cov-report=term-missing \
+  --cov-fail-under=50
 
 # 查看报告
 # 打开 htmlcov/index.html
@@ -515,10 +528,10 @@ git checkout -b feat/my-feature
 # ...
 
 # 运行测试
-pytest
+uv run pytest -q
 
 # 检查代码
-ruff check src/
+uv run ruff check src tests
 ```
 
 3. **提交更改**
@@ -630,7 +643,7 @@ def test_main_window(qtbot):
 
 ### Q: 代码检查失败怎么办？
 
-A: 运行 `ruff check --fix src/` 自动修复大部分问题。
+A: 先运行 `uv run ruff check src tests --fix` 自动修复，再手动处理剩余问题。
 
 ### Q: 如何贡献文档？
 
