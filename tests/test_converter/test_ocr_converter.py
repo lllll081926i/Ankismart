@@ -1,8 +1,10 @@
 """Tests for ankismart.converter.ocr_converter."""
+
 from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,10 +26,12 @@ from ankismart.converter.ocr_converter import (
     resolve_ocr_model_source,
 )
 from ankismart.core.errors import ConvertError, ErrorCode
+from ankismart.core.models import MarkdownResult
 
 # ---------------------------------------------------------------------------
 # _get_ocr (singleton)
 # ---------------------------------------------------------------------------
+
 
 class TestGetOcr:
     def test_returns_paddle_ocr_instance(self) -> None:
@@ -51,6 +55,7 @@ class TestGetOcr:
 
     def test_returns_cached_instance(self) -> None:
         import ankismart.converter.ocr_converter as mod
+
         old = mod._ocr_instance
         try:
             sentinel = MagicMock()
@@ -139,9 +144,16 @@ class TestGetOcr:
                     "text_recognition_model_name": "rec",
                 }
 
-            with patch("ankismart.converter.ocr_converter._resolve_ocr_device", return_value="gpu:0"):
-                with patch("ankismart.converter.ocr_converter._build_ocr_kwargs", side_effect=_fake_kwargs):
-                    with patch("ankismart.converter.ocr_converter._load_paddle_ocr_class", return_value=ocr_class):
+            with patch(
+                "ankismart.converter.ocr_converter._resolve_ocr_device", return_value="gpu:0"
+            ):
+                with patch(
+                    "ankismart.converter.ocr_converter._build_ocr_kwargs", side_effect=_fake_kwargs
+                ):
+                    with patch(
+                        "ankismart.converter.ocr_converter._load_paddle_ocr_class",
+                        return_value=ocr_class,
+                    ):
                         result = _get_ocr()
 
             assert result is cpu_runtime
@@ -158,6 +170,7 @@ class TestGetOcr:
 # ---------------------------------------------------------------------------
 # _pdf_to_images
 # ---------------------------------------------------------------------------
+
 
 class TestPdfToImages:
     def test_converts_pages_to_images(self) -> None:
@@ -181,7 +194,10 @@ class TestPdfToImages:
         assert images[0] is copied
 
     def test_raises_on_failure(self) -> None:
-        with patch("ankismart.converter.ocr_converter.pdfium.PdfDocument", side_effect=RuntimeError("bad pdf")):
+        with patch(
+            "ankismart.converter.ocr_converter.pdfium.PdfDocument",
+            side_effect=RuntimeError("bad pdf"),
+        ):
             with pytest.raises(ConvertError) as exc_info:
                 list(_pdf_to_images(Path("bad.pdf")))
             assert exc_info.value.code == ErrorCode.E_OCR_FAILED
@@ -210,7 +226,9 @@ class TestPdfToImages:
         mock_pdf.__getitem__ = MagicMock(return_value=mock_page)
 
         with patch.dict("os.environ", {"ANKISMART_OCR_PDF_RENDER_SCALE": "bad"}, clear=False):
-            with patch("ankismart.converter.ocr_converter.pdfium.PdfDocument", return_value=mock_pdf):
+            with patch(
+                "ankismart.converter.ocr_converter.pdfium.PdfDocument", return_value=mock_pdf
+            ):
                 images = list(_pdf_to_images(Path("test.pdf")))
 
         assert len(images) == 1
@@ -233,7 +251,9 @@ class TestPdfToImages:
         mock_pdf.__getitem__ = MagicMock(return_value=mock_page)
 
         with patch.dict("os.environ", {"ANKISMART_OCR_PDF_RENDER_SCALE": raw_value}, clear=False):
-            with patch("ankismart.converter.ocr_converter.pdfium.PdfDocument", return_value=mock_pdf):
+            with patch(
+                "ankismart.converter.ocr_converter.pdfium.PdfDocument", return_value=mock_pdf
+            ):
                 images = list(_pdf_to_images(Path("test.pdf")))
 
         assert len(images) == 1
@@ -244,6 +264,7 @@ class TestPdfToImages:
 # ---------------------------------------------------------------------------
 # OCR config helpers
 # ---------------------------------------------------------------------------
+
 
 class TestOcrConfigHelpers:
     def test_resolve_ocr_model_pair_for_all_tiers(self) -> None:
@@ -294,8 +315,12 @@ class TestOcrConfigHelpers:
             device_mod._cuda_detection_cache_ts = 0.0
             device_mod._cuda_detection_cache_key = None
 
-            with patch.dict("os.environ", {"ANKISMART_CUDA_CACHE_TTL_SECONDS": "oops"}, clear=False):
-                with patch("ankismart.converter.ocr_device._perform_cuda_detection", return_value=False):
+            with patch.dict(
+                "os.environ", {"ANKISMART_CUDA_CACHE_TTL_SECONDS": "oops"}, clear=False
+            ):
+                with patch(
+                    "ankismart.converter.ocr_device._perform_cuda_detection", return_value=False
+                ):
                     assert detect_cuda_environment(force_refresh=True) is False
         finally:
             device_mod._cuda_detection_cache = old_cache
@@ -475,6 +500,7 @@ class TestOcrConfigHelpers:
 # _ocr_image
 # ---------------------------------------------------------------------------
 
+
 class TestOcrImage:
     def test_extracts_text_lines(self) -> None:
         ocr = MagicMock()
@@ -530,7 +556,8 @@ class TestOcrImage:
     def test_onednn_error_retries_without_mkldnn(self) -> None:
         ocr = MagicMock()
         ocr.predict.side_effect = RuntimeError(
-            "Conversion failed: (Unimplemented) oneDNN ConvertPirAttribute2RuntimeAttribute not support"
+            "Conversion failed: (Unimplemented) oneDNN "
+            "ConvertPirAttribute2RuntimeAttribute not support"
         )
         retry_ocr = MagicMock()
         retry_ocr.predict.return_value = [{"rec_texts": ["Retry OK"]}]
@@ -558,7 +585,8 @@ class TestOcrImage:
     def test_onednn_error_not_retried_when_flag_already_applied(self) -> None:
         ocr = MagicMock()
         ocr.predict.side_effect = RuntimeError(
-            "Conversion failed: (Unimplemented) oneDNN ConvertPirAttribute2RuntimeAttribute not support"
+            "Conversion failed: (Unimplemented) oneDNN "
+            "ConvertPirAttribute2RuntimeAttribute not support"
         )
         image = MagicMock()
 
@@ -617,6 +645,7 @@ class TestOcrImage:
 # convert (PDF -> Markdown)
 # ---------------------------------------------------------------------------
 
+
 class TestConvert:
     def test_file_not_found(self, tmp_path: Path) -> None:
         f = tmp_path / "missing.pdf"
@@ -642,8 +671,12 @@ class TestConvert:
         mock_image = MagicMock()
 
         with patch("ankismart.converter.ocr_converter._get_ocr", return_value=mock_ocr):
-            with patch("ankismart.converter.ocr_converter._pdf_to_images", return_value=[mock_image]):
-                with patch("ankismart.converter.ocr_converter._ocr_image", return_value="Page one text"):
+            with patch(
+                "ankismart.converter.ocr_converter._pdf_to_images", return_value=[mock_image]
+            ):
+                with patch(
+                    "ankismart.converter.ocr_converter._ocr_image", return_value="Page one text"
+                ):
                     result = convert(f, trace_id="ocr3")
 
         assert result.source_format == "pdf"
@@ -662,8 +695,13 @@ class TestConvert:
         texts = iter(["First page", "Second page"])
 
         with patch("ankismart.converter.ocr_converter._get_ocr", return_value=mock_ocr):
-            with patch("ankismart.converter.ocr_converter._pdf_to_images", return_value=[img1, img2]):
-                with patch("ankismart.converter.ocr_converter._ocr_image", side_effect=lambda o, i: next(texts)):
+            with patch(
+                "ankismart.converter.ocr_converter._pdf_to_images", return_value=[img1, img2]
+            ):
+                with patch(
+                    "ankismart.converter.ocr_converter._ocr_image",
+                    side_effect=lambda o, i: next(texts),
+                ):
                     result = convert(f, trace_id="ocr4")
 
         assert "## Page 1" in result.content
@@ -681,8 +719,13 @@ class TestConvert:
         texts = iter(["Content", "   "])
 
         with patch("ankismart.converter.ocr_converter._get_ocr", return_value=mock_ocr):
-            with patch("ankismart.converter.ocr_converter._pdf_to_images", return_value=[img1, img2]):
-                with patch("ankismart.converter.ocr_converter._ocr_image", side_effect=lambda o, i: next(texts)):
+            with patch(
+                "ankismart.converter.ocr_converter._pdf_to_images", return_value=[img1, img2]
+            ):
+                with patch(
+                    "ankismart.converter.ocr_converter._ocr_image",
+                    side_effect=lambda o, i: next(texts),
+                ):
                     result = convert(f, trace_id="ocr5")
 
         assert "## Page 1" in result.content
@@ -722,7 +765,9 @@ class TestConvert:
         mock_ocr = MagicMock()
 
         with patch("ankismart.converter.ocr_converter._get_ocr", return_value=mock_ocr):
-            with patch("ankismart.converter.ocr_converter._pdf_to_images", return_value=[MagicMock()]):
+            with patch(
+                "ankismart.converter.ocr_converter._pdf_to_images", return_value=[MagicMock()]
+            ):
                 with patch("ankismart.converter.ocr_converter._ocr_image", return_value="text"):
                     result = convert(f)
 
@@ -732,6 +777,7 @@ class TestConvert:
 # ---------------------------------------------------------------------------
 # convert_image
 # ---------------------------------------------------------------------------
+
 
 class TestConvertImage:
     def test_file_not_found(self, tmp_path: Path) -> None:
@@ -749,7 +795,9 @@ class TestConvertImage:
 
         with patch("ankismart.converter.ocr_converter._get_ocr", return_value=mock_ocr):
             with patch("ankismart.converter.ocr_converter.Image.open", return_value=mock_pil_image):
-                with patch("ankismart.converter.ocr_converter._ocr_image", return_value="Extracted text"):
+                with patch(
+                    "ankismart.converter.ocr_converter._ocr_image", return_value="Extracted text"
+                ):
                     result = convert_image(f, trace_id="img2")
 
         assert result.source_format == "image"
@@ -766,3 +814,320 @@ class TestConvertImage:
                     result = convert_image(f)
 
         assert result.trace_id != ""
+
+
+class TestCloudMode:
+    def test_convert_routes_to_cloud_when_enabled(self, tmp_path: Path) -> None:
+        f = tmp_path / "cloud.pdf"
+        f.write_bytes(b"fake")
+
+        expected = MarkdownResult(
+            content="cloud-md",
+            source_path=str(f),
+            source_format="pdf",
+            trace_id="trace-cloud",
+        )
+
+        with patch(
+            "ankismart.converter.ocr_converter._convert_via_cloud", return_value=expected
+        ) as cloud_fn:
+            result = convert(
+                f,
+                trace_id="trace-cloud",
+                ocr_mode="cloud",
+                cloud_provider="mineru",
+                cloud_endpoint="https://mineru.net",
+                cloud_api_key="token",
+            )
+
+        assert result is expected
+        cloud_fn.assert_called_once()
+
+    def test_convert_image_routes_to_cloud_when_enabled(self, tmp_path: Path) -> None:
+        f = tmp_path / "cloud.png"
+        f.write_bytes(b"fake")
+
+        expected = MarkdownResult(
+            content="cloud-md",
+            source_path=str(f),
+            source_format="image",
+            trace_id="trace-cloud-img",
+        )
+
+        with patch(
+            "ankismart.converter.ocr_converter._convert_via_cloud", return_value=expected
+        ) as cloud_fn:
+            result = convert_image(
+                f,
+                trace_id="trace-cloud-img",
+                ocr_mode="cloud",
+                cloud_provider="mineru",
+                cloud_endpoint="https://mineru.net",
+                cloud_api_key="token",
+            )
+
+        assert result is expected
+        cloud_fn.assert_called_once()
+
+    def test_cloud_flow_uses_auto_submitted_batch_id(self, tmp_path: Path) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        f = tmp_path / "cloud-auto-submit.pdf"
+        f.write_bytes(b"fake")
+        data_id = "abcdef123456"
+        transport = MagicMock()
+        client = MagicMock()
+        transport.__enter__.return_value = client
+        transport.__exit__.return_value = None
+
+        with patch(
+            "ankismart.converter.ocr_converter.uuid.uuid4",
+            return_value=SimpleNamespace(hex=f"{data_id}7890"),
+        ):
+            with patch("ankismart.converter.ocr_converter.httpx.Client", return_value=transport):
+                with patch("ankismart.converter.ocr_converter._upload_cloud_file") as upload_fn:
+                    with patch(
+                        "ankismart.converter.ocr_converter._pdf.count_pdf_pages",
+                        return_value=1,
+                    ):
+                        with patch(
+                            "ankismart.converter.ocr_converter._request_cloud_json",
+                            side_effect=[
+                                (
+                                    {
+                                        "code": 0,
+                                        "data": {
+                                            "file_urls": [{"url": "https://upload.example.com/file"}],
+                                            "batch_id": "batch-001",
+                                        },
+                                    },
+                                    "https://mineru.net/api/v4/file-urls/batch",
+                                ),
+                                (
+                                    {
+                                        "code": 0,
+                                        "data": {
+                                            "extract_result": [
+                                                {
+                                                    "data_id": data_id,
+                                                    "state": "done",
+                                                    "md_content": "cloud-md",
+                                                }
+                                            ]
+                                        },
+                                    },
+                                    "https://mineru.net/api/v4/extract-results/batch/batch-001",
+                                ),
+                            ],
+                        ) as request_fn:
+                            result = mod._convert_via_cloud(
+                                file_path=f,
+                                source_format="pdf",
+                                trace_id="trace-cloud-auto",
+                                cloud_provider="mineru",
+                                cloud_endpoint="https://mineru.net",
+                                cloud_api_key="token",
+                            )
+
+        assert result.content == "cloud-md"
+        upload_fn.assert_called_once()
+        paths = [call.kwargs["path"] for call in request_fn.call_args_list]
+        assert paths == ["file-urls/batch", "extract-results/batch/batch-001"]
+
+    def test_cloud_rejects_files_larger_than_200mb(self, tmp_path: Path) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        f = tmp_path / "oversize.pdf"
+        f.write_bytes(b"x")
+
+        with patch(
+            "pathlib.Path.stat",
+            return_value=SimpleNamespace(st_size=mod._OCR_CLOUD_MAX_FILE_SIZE_BYTES + 1),
+        ):
+            with pytest.raises(ConvertError) as exc_info:
+                mod._convert_via_cloud(
+                    file_path=f,
+                    source_format="pdf",
+                    trace_id="trace-cloud-size",
+                    cloud_provider="mineru",
+                    cloud_endpoint="https://mineru.net",
+                    cloud_api_key="token",
+                )
+
+        assert exc_info.value.code == ErrorCode.E_CONFIG_INVALID
+        assert "200MB" in str(exc_info.value)
+
+    def test_cloud_rejects_pdf_over_600_pages(self, tmp_path: Path) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        f = tmp_path / "too-many-pages.pdf"
+        f.write_bytes(b"x")
+
+        with patch("ankismart.converter.ocr_converter._pdf.count_pdf_pages", return_value=601):
+            with patch("ankismart.converter.ocr_converter.httpx.Client") as client_cls:
+                with pytest.raises(ConvertError) as exc_info:
+                    mod._convert_via_cloud(
+                        file_path=f,
+                        source_format="pdf",
+                        trace_id="trace-cloud-pages",
+                        cloud_provider="mineru",
+                        cloud_endpoint="https://mineru.net",
+                        cloud_api_key="token",
+                    )
+
+        assert exc_info.value.code == ErrorCode.E_CONFIG_INVALID
+        assert "600-page" in str(exc_info.value)
+        client_cls.assert_not_called()
+
+    def test_cloud_page_count_validation_failure_is_blocking(self, tmp_path: Path) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        f = tmp_path / "page-count-fail.pdf"
+        f.write_bytes(b"x")
+
+        with patch(
+            "ankismart.converter.ocr_converter._pdf.count_pdf_pages",
+            side_effect=ValueError("bad"),
+        ):
+            with patch("ankismart.converter.ocr_converter.httpx.Client") as client_cls:
+                with pytest.raises(ConvertError) as exc_info:
+                    mod._convert_via_cloud(
+                        file_path=f,
+                        source_format="pdf",
+                        trace_id="trace-cloud-pages-fail",
+                        cloud_provider="mineru",
+                        cloud_endpoint="https://mineru.net",
+                        cloud_api_key="token",
+                    )
+
+        assert exc_info.value.code == ErrorCode.E_CONFIG_INVALID
+        assert "cannot validate pdf page count" in str(exc_info.value).lower()
+        client_cls.assert_not_called()
+
+    def test_cloud_rejects_disallowed_markdown_result_url(self, tmp_path: Path) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        f = tmp_path / "bad-url.pdf"
+        f.write_bytes(b"fake")
+        data_id = "abcdef123456"
+        transport = MagicMock()
+        client = MagicMock()
+        transport.__enter__.return_value = client
+        transport.__exit__.return_value = None
+
+        with patch(
+            "ankismart.converter.ocr_converter.uuid.uuid4",
+            return_value=SimpleNamespace(hex=f"{data_id}7890"),
+        ):
+            with patch("ankismart.converter.ocr_converter.httpx.Client", return_value=transport):
+                with patch("ankismart.converter.ocr_converter._upload_cloud_file"):
+                    with patch(
+                        "ankismart.converter.ocr_converter._pdf.count_pdf_pages",
+                        return_value=1,
+                    ):
+                        with patch(
+                            "ankismart.converter.ocr_converter._request_cloud_json",
+                            side_effect=[
+                                (
+                                    {
+                                        "code": 0,
+                                        "data": {
+                                            "file_urls": [{"url": "https://upload.example.com/file"}],
+                                            "batch_id": "batch-001",
+                                        },
+                                    },
+                                    "https://mineru.net/api/v4/file-urls/batch",
+                                ),
+                                (
+                                    {
+                                        "code": 0,
+                                        "data": {
+                                            "extract_result": [
+                                                {
+                                                    "data_id": data_id,
+                                                    "state": "done",
+                                                    "md_url": "https://127.0.0.1/result.md",
+                                                }
+                                            ]
+                                        },
+                                    },
+                                    "https://mineru.net/api/v4/extract-results/batch/batch-001",
+                                ),
+                            ],
+                        ):
+                            with pytest.raises(ConvertError) as exc_info:
+                                mod._convert_via_cloud(
+                                    file_path=f,
+                                    source_format="pdf",
+                                    trace_id="trace-cloud-url-block",
+                                    cloud_provider="mineru",
+                                    cloud_endpoint="https://mineru.net",
+                                    cloud_api_key="token",
+                                )
+
+        assert exc_info.value.code == ErrorCode.E_CONFIG_INVALID
+        assert "disallowed network" in str(exc_info.value).lower()
+
+    def test_cloud_requires_markdown_content_or_url(self, tmp_path: Path) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        f = tmp_path / "zip-only.pdf"
+        f.write_bytes(b"fake")
+        data_id = "abcdef123456"
+        transport = MagicMock()
+        client = MagicMock()
+        transport.__enter__.return_value = client
+        transport.__exit__.return_value = None
+
+        with patch(
+            "ankismart.converter.ocr_converter.uuid.uuid4",
+            return_value=SimpleNamespace(hex=f"{data_id}7890"),
+        ):
+            with patch("ankismart.converter.ocr_converter.httpx.Client", return_value=transport):
+                with patch("ankismart.converter.ocr_converter._upload_cloud_file"):
+                    with patch(
+                        "ankismart.converter.ocr_converter._pdf.count_pdf_pages",
+                        return_value=1,
+                    ):
+                        with patch(
+                            "ankismart.converter.ocr_converter._request_cloud_json",
+                            side_effect=[
+                                (
+                                    {
+                                        "code": 0,
+                                        "data": {
+                                            "file_urls": [{"url": "https://upload.example.com/file"}],
+                                            "batch_id": "batch-001",
+                                        },
+                                    },
+                                    "https://mineru.net/api/v4/file-urls/batch",
+                                ),
+                                (
+                                    {
+                                        "code": 0,
+                                        "data": {
+                                            "extract_result": [
+                                                {
+                                                    "data_id": data_id,
+                                                    "state": "done",
+                                                    "zip_url": "https://files.example.com/result.zip",
+                                                }
+                                            ]
+                                        },
+                                    },
+                                    "https://mineru.net/api/v4/extract-results/batch/batch-001",
+                                ),
+                            ],
+                        ):
+                            with pytest.raises(ConvertError) as exc_info:
+                                mod._convert_via_cloud(
+                                    file_path=f,
+                                    source_format="pdf",
+                                    trace_id="trace-cloud-no-md",
+                                    cloud_provider="mineru",
+                                    cloud_endpoint="https://mineru.net",
+                                    cloud_api_key="token",
+                                )
+
+        assert exc_info.value.code == ErrorCode.E_OCR_FAILED
+        assert "markdown content or markdown url" in str(exc_info.value).lower()

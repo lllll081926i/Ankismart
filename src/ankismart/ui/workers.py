@@ -73,10 +73,7 @@ class ConvertWorker(QThread):
             def progress_callback(msg: str) -> None:
                 self.progress.emit(msg)
 
-            result = self._converter.convert(
-                self._file_path,
-                progress_callback=progress_callback
-            )
+            result = self._converter.convert(self._file_path, progress_callback=progress_callback)
             self.finished.emit(result)
         except Exception as e:
             self.error.emit(_format_error_for_ui(e))
@@ -280,6 +277,40 @@ class ProviderConnectionWorker(QThread):
             self.finished.emit(False, _format_error_for_ui(exc))
 
 
+class OCRCloudConnectionWorker(QThread):
+    """Worker thread for checking cloud OCR connectivity."""
+
+    finished = pyqtSignal(bool, str)
+
+    def __init__(
+        self,
+        *,
+        provider: str,
+        endpoint: str,
+        api_key: str,
+        proxy_url: str = "",
+    ) -> None:
+        super().__init__()
+        self._provider = provider
+        self._endpoint = endpoint
+        self._api_key = api_key
+        self._proxy_url = proxy_url
+
+    def run(self) -> None:
+        try:
+            from ankismart.converter.ocr_converter import test_cloud_connectivity
+
+            ok, detail = test_cloud_connectivity(
+                cloud_provider=self._provider,
+                cloud_endpoint=self._endpoint,
+                cloud_api_key=self._api_key,
+                proxy_url=self._proxy_url,
+            )
+            self.finished.emit(ok, detail)
+        except Exception as exc:
+            self.finished.emit(False, _format_error_for_ui(exc))
+
+
 class BatchConvertWorker(QThread):
     """Worker thread for batch conversion with progress and retry support."""
 
@@ -419,7 +450,9 @@ class BatchConvertWorker(QThread):
                     self._last_file_error_message = None
 
             # Process other files (convert to PDF then OCR)
-            for index, file_path in enumerate(other_files, len(text_files) + len(pdf_files) + (1 if image_files else 0) + 1):
+            for index, file_path in enumerate(
+                other_files, len(text_files) + len(pdf_files) + (1 if image_files else 0) + 1
+            ):
                 if self._is_cancelled():
                     self.cancelled.emit()
                     return
@@ -501,7 +534,9 @@ class BatchConvertWorker(QThread):
             raise ValueError(f"Provider '{provider.name}' requires an API key for OCR correction")
 
         proxy_mode = str(getattr(self._config, "proxy_mode", "system"))
-        proxy_url = str(getattr(self._config, "proxy_url", "")).strip() if proxy_mode == "manual" else ""
+        proxy_url = (
+            str(getattr(self._config, "proxy_url", "")).strip() if proxy_mode == "manual" else ""
+        )
 
         from ankismart.card_gen.generator import CardGenerator
         from ankismart.card_gen.llm_client import LLMClient
@@ -526,7 +561,19 @@ class BatchConvertWorker(QThread):
 
             converter_class = DocumentConverterClass
 
-        return converter_class(ocr_correction_fn=self._resolve_ocr_correction_fn())
+        proxy_mode = str(getattr(self._config, "proxy_mode", "system"))
+        proxy_url = (
+            str(getattr(self._config, "proxy_url", "")).strip() if proxy_mode == "manual" else ""
+        )
+
+        return converter_class(
+            ocr_correction_fn=self._resolve_ocr_correction_fn(),
+            ocr_mode=str(getattr(self._config, "ocr_mode", "local")),
+            ocr_cloud_provider=str(getattr(self._config, "ocr_cloud_provider", "")).strip(),
+            ocr_cloud_endpoint=str(getattr(self._config, "ocr_cloud_endpoint", "")).strip(),
+            ocr_cloud_api_key=str(getattr(self._config, "ocr_cloud_api_key", "")).strip(),
+            proxy_url=proxy_url,
+        )
 
     def _merge_and_convert_images(self, image_files: list[Path]) -> MarkdownResult | None:
         """Merge multiple images into one PDF and convert via OCR."""
@@ -571,7 +618,7 @@ class BatchConvertWorker(QThread):
                         "PDF",
                         resolution=100.0,
                         save_all=True,
-                        append_images=images[1:]
+                        append_images=images[1:],
                     )
 
                 self.ocr_progress.emit("图片合并完成，开始 OCR 识别...")
@@ -616,7 +663,10 @@ class BatchConvertWorker(QThread):
             self._last_file_error_message = message
             logger.warning(
                 "image merge conversion failed",
-                extra={"event": "worker.batch_convert.image_merge_failed", "error_detail": str(exc)},
+                extra={
+                    "event": "worker.batch_convert.image_merge_failed",
+                    "error_detail": str(exc),
+                },
             )
             self.file_error.emit(message)
             return None
@@ -660,7 +710,9 @@ class BatchConvertWorker(QThread):
                     },
                 )
 
-        message = f"{file_path.name}: {last_error}" if last_error else f"{file_path.name}: unknown error"
+        message = (
+            f"{file_path.name}: {last_error}" if last_error else f"{file_path.name}: unknown error"
+        )
         self._last_file_error_message = message
         self.file_error.emit(message)
         return None
@@ -852,7 +904,8 @@ class BatchGenerateWorker(QThread):
                             },
                         )
                         self.progress.emit(
-                            f"生成 {strategy} 卡片时出错 ({document.file_name}): {_format_error_for_ui(e)}"
+                            f"生成 {strategy} 卡片时出错 ({document.file_name}): "
+                            f"{_format_error_for_ui(e)}"
                         )
 
                 # Emit document completion signal
@@ -895,7 +948,9 @@ class BatchGenerateWorker(QThread):
                                 "error_detail": str(e),
                             },
                         )
-                        self.progress.emit(f"处理 {doc.file_name} 时出错: {_format_error_for_ui(e)}")
+                        self.progress.emit(
+                            f"处理 {doc.file_name} 时出错: {_format_error_for_ui(e)}"
+                        )
 
             if self._is_cancelled():
                 self.cancelled.emit()
@@ -931,7 +986,9 @@ class BatchGenerateWorker(QThread):
             self.error.emit(_format_error_for_ui(e))
 
     @staticmethod
-    def _allocate_mix_counts(target_total: int, ratio_items: list[dict[str, Any]]) -> dict[str, int]:
+    def _allocate_mix_counts(
+        target_total: int, ratio_items: list[dict[str, Any]]
+    ) -> dict[str, int]:
         """Allocate card counts to strategies based on ratios.
 
         Args:
@@ -967,7 +1024,9 @@ class BatchGenerateWorker(QThread):
         }
 
         # Floor all allocations
-        counts: dict[str, int] = {strategy: int(amount) for strategy, amount in raw_allocations.items()}
+        counts: dict[str, int] = {
+            strategy: int(amount) for strategy, amount in raw_allocations.items()
+        }
 
         # Distribute remainder to strategies with largest fractional parts
         remainder = target_total - sum(counts.values())

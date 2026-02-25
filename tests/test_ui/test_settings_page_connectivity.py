@@ -4,6 +4,7 @@ import pytest
 from PyQt6.QtWidgets import QMessageBox
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
+from ankismart.ui.error_handler import ErrorCategory, ErrorHandler
 from ankismart.ui.settings_page import SettingsPage, configure_ocr_runtime
 
 from .settings_page_test_utils import make_main
@@ -39,8 +40,10 @@ class _ThreadLikeWorker:
         self.deleted = True
 
 
-def test_ocr_connectivity_cloud_mode_shows_developing_message(_qapp, monkeypatch) -> None:
+def test_ocr_connectivity_cloud_mode_uses_worker(_qapp, monkeypatch) -> None:
     main, _ = make_main()
+    main.config.ocr_cloud_endpoint = "https://mineru.net"
+    main.config.ocr_cloud_api_key = "test-token"
     page = SettingsPage(main)
 
     for index in range(page._ocr_mode_combo.count()):
@@ -48,13 +51,26 @@ def test_ocr_connectivity_cloud_mode_shows_developing_message(_qapp, monkeypatch
             page._ocr_mode_combo.setCurrentIndex(index)
             break
 
+    class _WorkerStub:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.finished = _SignalStub()
+
+        def start(self):
+            self.finished.emit(True, "")
+
+    monkeypatch.setattr("ankismart.ui.workers.OCRCloudConnectionWorker", _WorkerStub)
+
     calls = []
-    monkeypatch.setattr(page, "_show_info_bar", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        page, "_show_info_bar", lambda *args, **kwargs: calls.append((args, kwargs))
+    )
 
     page._test_ocr_connectivity()
 
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert calls[0][0][0] == "info"
+    assert calls[1][0][0] == "success"
 
 
 def test_ocr_connectivity_local_reports_missing_models(_qapp, monkeypatch) -> None:
@@ -62,9 +78,14 @@ def test_ocr_connectivity_local_reports_missing_models(_qapp, monkeypatch) -> No
     page = SettingsPage(main)
 
     calls = []
-    monkeypatch.setattr(page, "_show_info_bar", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        page, "_show_info_bar", lambda *args, **kwargs: calls.append((args, kwargs))
+    )
     monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
-    monkeypatch.setattr("ankismart.ui.settings_page.get_missing_ocr_models", lambda **kwargs: ["PP-OCRv5_mobile_det"])
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.get_missing_ocr_models",
+        lambda **kwargs: ["PP-OCRv5_mobile_det"],
+    )
 
     page._test_ocr_connectivity()
 
@@ -77,12 +98,18 @@ def test_on_test_result_shows_infobar_and_dialog(_qapp, monkeypatch) -> None:
     page = SettingsPage(main)
 
     infobar_calls = []
-    monkeypatch.setattr(page, "_show_info_bar", lambda *args, **kwargs: infobar_calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        page, "_show_info_bar", lambda *args, **kwargs: infobar_calls.append((args, kwargs))
+    )
 
     info_calls = []
     warn_calls = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: info_calls.append((args, kwargs)))
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: warn_calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: info_calls.append((args, kwargs))
+    )
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *args, **kwargs: warn_calls.append((args, kwargs))
+    )
 
     page._on_test_result(True)
     page._on_test_result(False)
@@ -98,12 +125,18 @@ def test_on_provider_test_result_shows_expected_feedback(_qapp, monkeypatch) -> 
     page = SettingsPage(main)
 
     infobar_calls = []
-    monkeypatch.setattr(page, "_show_info_bar", lambda *args, **kwargs: infobar_calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        page, "_show_info_bar", lambda *args, **kwargs: infobar_calls.append((args, kwargs))
+    )
 
     info_calls = []
     warn_calls = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: info_calls.append((args, kwargs)))
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: warn_calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: info_calls.append((args, kwargs))
+    )
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *args, **kwargs: warn_calls.append((args, kwargs))
+    )
 
     page._on_provider_test_result("OpenAI", True, "")
     page._on_provider_test_result("OpenAI", False, "timeout")
@@ -130,8 +163,12 @@ def test_test_connection_uses_worker_and_triggers_success_flow(_qapp, monkeypatc
 
     monkeypatch.setattr("ankismart.ui.workers.ConnectionCheckWorker", _WorkerStub)
     monkeypatch.setattr(page, "_show_info_bar", lambda *args, **kwargs: None)
-    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
 
     page._test_connection()
 
@@ -156,8 +193,12 @@ def test_test_provider_connection_uses_worker_and_triggers_success_flow(_qapp, m
 
     monkeypatch.setattr("ankismart.ui.workers.ProviderConnectionWorker", _ProviderWorkerStub)
     monkeypatch.setattr(page, "_show_info_bar", lambda *args, **kwargs: None)
-    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
 
     provider = page._providers[0]
     page._test_provider_connection(provider)
@@ -185,8 +226,12 @@ def test_test_provider_connection_uses_effective_manual_proxy(_qapp, monkeypatch
 
     monkeypatch.setattr("ankismart.ui.workers.ProviderConnectionWorker", _ProviderWorkerStub)
     monkeypatch.setattr(page, "_show_info_bar", lambda *args, **kwargs: None)
-    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
 
     page._test_provider_connection(page._providers[0])
 
@@ -194,8 +239,12 @@ def test_test_provider_connection_uses_effective_manual_proxy(_qapp, monkeypatch
 
 
 def test_activate_provider_persists_to_main_config_immediately(_qapp) -> None:
-    p1 = LLMProviderConfig(id="p1", name="P1", api_key="k1", base_url="https://api.openai.com/v1", model="gpt-4o")
-    p2 = LLMProviderConfig(id="p2", name="P2", api_key="k2", base_url="https://api.openai.com/v1", model="gpt-4o")
+    p1 = LLMProviderConfig(
+        id="p1", name="P1", api_key="k1", base_url="https://api.openai.com/v1", model="gpt-4o"
+    )
+    p2 = LLMProviderConfig(
+        id="p2", name="P2", api_key="k2", base_url="https://api.openai.com/v1", model="gpt-4o"
+    )
     cfg = AppConfig(llm_providers=[p1, p2], active_provider_id="p1")
     main, _ = make_main(cfg)
 
@@ -269,7 +318,10 @@ def test_configure_ocr_runtime_falls_back_for_legacy_signature(monkeypatch) -> N
         def configure_ocr_runtime(self, **kwargs):
             self.calls.append(kwargs)
             if "reset_ocr_instance" in kwargs:
-                raise TypeError("configure_ocr_runtime() got an unexpected keyword argument 'reset_ocr_instance'")
+                raise TypeError(
+                    "configure_ocr_runtime() got an unexpected keyword argument "
+                    "'reset_ocr_instance'"
+                )
 
     module = _LegacyModule()
     monkeypatch.setattr("ankismart.ui.settings_page._get_ocr_converter_module", lambda: module)
@@ -285,7 +337,61 @@ def test_configure_ocr_runtime_reraises_unrelated_type_error(monkeypatch) -> Non
         def configure_ocr_runtime(self, **kwargs):
             raise TypeError("bad payload type")
 
-    monkeypatch.setattr("ankismart.ui.settings_page._get_ocr_converter_module", lambda: _BrokenModule())
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page._get_ocr_converter_module", lambda: _BrokenModule()
+    )
 
     with pytest.raises(TypeError, match="bad payload type"):
-        configure_ocr_runtime(model_tier="standard", model_source="official", reset_ocr_instance=True)
+        configure_ocr_runtime(
+            model_tier="standard", model_source="official", reset_ocr_instance=True
+        )
+
+
+def test_error_handler_maps_cloud_ocr_auth_code() -> None:
+    handler = ErrorHandler(language="zh")
+
+    info = handler.classify_error(
+        "[E_CONFIG_INVALID] Cloud OCR authentication failed. Please check API key."
+    )
+
+    assert info.category == ErrorCategory.API_KEY
+
+
+def test_error_handler_maps_cloud_ocr_rate_limit_code() -> None:
+    handler = ErrorHandler(language="zh")
+
+    info = handler.classify_error(
+        "[E_OCR_FAILED] Cloud OCR request rate limited. Please retry later."
+    )
+
+    assert info.title == "接口限频"
+
+
+def test_error_handler_maps_cloud_ocr_endpoint_error() -> None:
+    handler = ErrorHandler(language="zh")
+
+    info = handler.classify_error(
+        "[E_CONFIG_INVALID] Cloud OCR endpoint not found during create upload url."
+    )
+
+    assert info.category == ErrorCategory.NETWORK
+
+
+def test_error_handler_maps_cloud_ocr_file_size_limit_code() -> None:
+    handler = ErrorHandler(language="zh")
+
+    info = handler.classify_error("[E_CONFIG_INVALID] Cloud OCR file size exceeds 200MB limit")
+
+    assert info.category == ErrorCategory.FILE_FORMAT
+    assert "200MB" in info.message
+
+
+def test_error_handler_maps_cloud_ocr_page_limit_code() -> None:
+    handler = ErrorHandler(language="zh")
+
+    info = handler.classify_error(
+        "[E_CONFIG_INVALID] Cloud OCR PDF pages exceed 600-page limit"
+    )
+
+    assert info.category == ErrorCategory.FILE_FORMAT
+    assert "600" in info.message

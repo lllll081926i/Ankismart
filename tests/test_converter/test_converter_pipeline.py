@@ -10,7 +10,9 @@ from ankismart.core.models import MarkdownResult
 from ankismart.core.tracing import metrics
 
 
-def test_docx_parse_failure_raises_convert_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_docx_parse_failure_raises_convert_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     converter = DocumentConverter()
     file_path = tmp_path / "sample.docx"
     file_path.write_bytes(b"docx")
@@ -51,10 +53,17 @@ def test_convert_missing_file_raises_file_not_found(tmp_path: Path) -> None:
         DocumentConverter().convert(file_path)
 
     assert exc_info.value.code == ErrorCode.E_FILE_NOT_FOUND
-    assert metrics.get_counter("convert_failures_total", labels={"code": ErrorCode.E_FILE_NOT_FOUND.value}) == 1.0
+    assert (
+        metrics.get_counter(
+            "convert_failures_total", labels={"code": ErrorCode.E_FILE_NOT_FOUND.value}
+        )
+        == 1.0
+    )
 
 
-def test_convert_pdf_progress_callback_accepts_three_args(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_convert_pdf_progress_callback_accepts_three_args(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     file_path = tmp_path / "sample.pdf"
     file_path.write_bytes(b"%PDF")
 
@@ -68,11 +77,15 @@ def test_convert_pdf_progress_callback_accepts_three_args(monkeypatch: pytest.Mo
             progress_callback(1, 2, "正在识别第 1/2 页")
         return MarkdownResult(content="ok", source_path="sample.pdf", source_format="pdf")
 
-    monkeypatch.setattr(DocumentConverter, "_resolve_converter", staticmethod(lambda *_: fake_pdf_convert))
+    monkeypatch.setattr(
+        DocumentConverter, "_resolve_converter", staticmethod(lambda *_: fake_pdf_convert)
+    )
 
     progress_events: list[tuple[int, int, str]] = []
     converter = DocumentConverter()
-    result = converter.convert(file_path, progress_callback=lambda c, t, m: progress_events.append((c, t, m)))
+    result = converter.convert(
+        file_path, progress_callback=lambda c, t, m: progress_events.append((c, t, m))
+    )
 
     assert result.content == "ok"
     assert progress_events == [(1, 2, "正在识别第 1/2 页")]
@@ -95,11 +108,15 @@ def test_convert_pdf_progress_callback_falls_back_to_message_only(
             progress_callback(2, 3, "OCR 识别完成，共 3 页")
         return MarkdownResult(content="ok", source_path="sample.pdf", source_format="pdf")
 
-    monkeypatch.setattr(DocumentConverter, "_resolve_converter", staticmethod(lambda *_: fake_pdf_convert))
+    monkeypatch.setattr(
+        DocumentConverter, "_resolve_converter", staticmethod(lambda *_: fake_pdf_convert)
+    )
 
     progress_messages: list[str] = []
     converter = DocumentConverter()
-    result = converter.convert(file_path, progress_callback=lambda msg: progress_messages.append(msg))
+    result = converter.convert(
+        file_path, progress_callback=lambda msg: progress_messages.append(msg)
+    )
 
     assert result.content == "ok"
     assert progress_messages == ["OCR 识别完成，共 3 页"]

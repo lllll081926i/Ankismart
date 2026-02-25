@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import gc
+import ipaddress
+import json
 import os
 import re
+import socket
 import threading
+import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urljoin, urlparse
 
+import httpx
 import numpy as np
 from PIL import Image
 
@@ -53,6 +60,16 @@ _PAGE_MARKER_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^[\s\-—–_·.。]*\d{1,4}\s*/\s*\d{1,4}[\s\-—–_·.。]*$"),
 )
 
+_OCR_CLOUD_DEFAULT_PROVIDER = "mineru"
+_OCR_CLOUD_DEFAULT_ENDPOINT = "https://mineru.net"
+_OCR_CLOUD_DEFAULT_MODEL_VERSION = "vlm"
+_OCR_CLOUD_POLL_INTERVAL_SECONDS = 2.0
+_OCR_CLOUD_TIMEOUT_SECONDS = 600.0
+_OCR_CLOUD_MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024
+_OCR_CLOUD_MAX_PDF_PAGES = 600
+_OCR_CLOUD_MAX_MARKDOWN_BYTES = 20 * 1024 * 1024
+_OCR_CLOUD_MAX_REDIRECTS = 3
+
 
 def _normalize_marker_candidate(line: str) -> str:
     candidate = " ".join(line.strip().split())
@@ -86,6 +103,656 @@ def _remove_page_marker_lines(text: str) -> str:
     cleaned = "\n".join(lines)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
+
+
+def _normalize_cloud_provider(provider: str | None) -> str:
+    value = (provider or "").strip().lower()
+    return value or _OCR_CLOUD_DEFAULT_PROVIDER
+
+
+def _normalize_cloud_endpoint(endpoint: str | None) -> str:
+    value = (endpoint or "").strip()
+    if not value:
+        value = _OCR_CLOUD_DEFAULT_ENDPOINT
+    if "://" not in value:
+        value = f"https://{value}"
+    return value.rstrip("/")
+
+
+def _normalize_proxy_url(proxy_url: str | None) -> str:
+    value = (proxy_url or "").strip()
+    return value
+
+
+def _candidate_cloud_api_bases(endpoint: str) -> list[str]:
+    normalized = _normalize_cloud_endpoint(endpoint)
+    bases: list[str] = []
+    if normalized.endswith("/api/v4"):
+        bases.extend([normalized, normalized[: -len("/api/v4")]])
+    else:
+        bases.extend([f"{normalized}/api/v4", normalized])
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for base in bases:
+        clean = base.rstrip("/")
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        unique.append(clean)
+    return unique
+
+
+def _build_cloud_headers(api_key: str) -> dict[str, str]:
+    token = api_key.strip()
+    return {
+        "Authorization": f"Bearer {token}",
+        "X-MinerU-User-Token": token,
+    }
+
+
+def _raise_cloud_http_error(
+    *,
+    response: httpx.Response,
+    trace_id: str,
+    context: str,
+) -> None:
+    details = ""
+    try:
+        payload = response.json()
+        details = json.dumps(payload, ensure_ascii=False)[:240]
+    except Exception:
+        details = (response.text or "").strip()[:240]
+
+    status = response.status_code
+    if status in {401, 403}:
+        message = "Cloud OCR authentication failed. Please check API key."
+        code = ErrorCode.E_CONFIG_INVALID
+    elif status == 429:
+        message = "Cloud OCR request rate limited. Please retry later."
+        code = ErrorCode.E_OCR_FAILED
+    else:
+        message = f"Cloud OCR HTTP {status} during {context}"
+        code = ErrorCode.E_OCR_FAILED
+    if details:
+        message = f"{message}: {details}"
+
+    raise ConvertError(
+        message,
+        code=code,
+        trace_id=trace_id,
+    )
+
+
+def _request_cloud_json(
+    client: httpx.Client,
+    *,
+    method: str,
+    endpoint: str,
+    path: str,
+    api_key: str,
+    trace_id: str,
+    context: str,
+    payload: dict[str, object] | None = None,
+    timeout: float = 60.0,
+) -> tuple[dict[str, object], str]:
+    request_headers = _build_cloud_headers(api_key)
+    request_path = path.lstrip("/")
+    last_http_error: httpx.HTTPError | None = None
+
+    for base in _candidate_cloud_api_bases(endpoint):
+        url = f"{base}/{request_path}"
+        try:
+            response = client.request(
+                method=method.upper(),
+                url=url,
+                headers=request_headers,
+                json=payload,
+                timeout=timeout,
+            )
+        except httpx.HTTPError as exc:
+            last_http_error = exc
+            continue
+
+        if response.status_code in {404, 405}:
+            continue
+        if response.status_code >= 400:
+            _raise_cloud_http_error(response=response, trace_id=trace_id, context=context)
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise ConvertError(
+                f"Cloud OCR returned invalid JSON during {context}",
+                code=ErrorCode.E_OCR_FAILED,
+                trace_id=trace_id,
+            ) from exc
+
+        if not isinstance(data, dict):
+            raise ConvertError(
+                f"Cloud OCR returned invalid payload type during {context}: "
+                f"{type(data).__name__}",
+                code=ErrorCode.E_OCR_FAILED,
+                trace_id=trace_id,
+            )
+        return data, url
+
+    if last_http_error is not None:
+        raise ConvertError(
+            f"Cloud OCR request failed during {context}: {last_http_error}",
+            code=ErrorCode.E_OCR_FAILED,
+            trace_id=trace_id,
+        ) from last_http_error
+
+    raise ConvertError(
+        f"Cloud OCR endpoint not found during {context}. Please check endpoint configuration.",
+        code=ErrorCode.E_CONFIG_INVALID,
+        trace_id=trace_id,
+    )
+
+
+def _extract_response_data(
+    payload: dict[str, object],
+    trace_id: str,
+    *,
+    context: str,
+) -> dict[str, object]:
+    code = payload.get("code")
+    if code not in (None, 0, "0"):
+        message = str(payload.get("msg") or payload.get("message") or "unknown error")
+        raise ConvertError(
+            f"Cloud OCR API error during {context}: {message}",
+            code=ErrorCode.E_OCR_FAILED,
+            trace_id=trace_id,
+        )
+
+    data = payload.get("data")
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ConvertError(
+            f"Cloud OCR returned invalid data field during {context}",
+            code=ErrorCode.E_OCR_FAILED,
+            trace_id=trace_id,
+        )
+    return data
+
+
+def _extract_upload_url(data: dict[str, object]) -> str | None:
+    file_urls = data.get("file_urls")
+    if isinstance(file_urls, list) and file_urls:
+        first = file_urls[0]
+        if isinstance(first, str):
+            return first.strip() or None
+        if isinstance(first, dict):
+            for key in ("url", "file_url", "upload_url"):
+                value = first.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    return None
+
+
+def _upload_cloud_file(
+    client: httpx.Client,
+    *,
+    upload_url: str,
+    file_path: Path,
+    trace_id: str,
+) -> None:
+    try:
+        with file_path.open("rb") as fp:
+            response = client.put(upload_url, content=fp.read(), timeout=120)
+    except httpx.HTTPError as exc:
+        raise ConvertError(
+            f"Cloud OCR file upload failed: {exc}",
+            code=ErrorCode.E_OCR_FAILED,
+            trace_id=trace_id,
+        ) from exc
+
+    if response.status_code >= 400:
+        _raise_cloud_http_error(response=response, trace_id=trace_id, context="file upload")
+
+
+def _find_first_string_value(payload: object, keys: tuple[str, ...]) -> str | None:
+    if isinstance(payload, dict):
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        for value in payload.values():
+            found = _find_first_string_value(value, keys)
+            if found:
+                return found
+        return None
+
+    if isinstance(payload, list):
+        for item in payload:
+            found = _find_first_string_value(item, keys)
+            if found:
+                return found
+    return None
+
+
+def _is_disallowed_remote_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _validate_cloud_result_url(url: str, *, trace_id: str, context: str) -> str:
+    parsed = urlparse(str(url).strip())
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").strip().lower()
+
+    if scheme != "https":
+        raise ConvertError(
+            f"Cloud OCR returned non-HTTPS URL during {context}",
+            code=ErrorCode.E_CONFIG_INVALID,
+            trace_id=trace_id,
+        )
+    if not host:
+        raise ConvertError(
+            f"Cloud OCR returned invalid URL during {context}",
+            code=ErrorCode.E_CONFIG_INVALID,
+            trace_id=trace_id,
+        )
+    if parsed.username or parsed.password:
+        raise ConvertError(
+            f"Cloud OCR returned URL with credentials during {context}",
+            code=ErrorCode.E_CONFIG_INVALID,
+            trace_id=trace_id,
+        )
+
+    try:
+        ip_obj = ipaddress.ip_address(host)
+        ip_list = [ip_obj]
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+        except OSError as exc:
+            raise ConvertError(
+                f"Cloud OCR result host resolve failed during {context}: {exc}",
+                code=ErrorCode.E_CONFIG_INVALID,
+                trace_id=trace_id,
+            ) from exc
+
+        ip_list = []
+        for info in infos:
+            address = info[4][0]
+            try:
+                ip_list.append(ipaddress.ip_address(address))
+            except ValueError:
+                continue
+        if not ip_list:
+            raise ConvertError(
+                f"Cloud OCR result host resolve returned no IP during {context}",
+                code=ErrorCode.E_CONFIG_INVALID,
+                trace_id=trace_id,
+            )
+
+    for ip_obj in ip_list:
+        if _is_disallowed_remote_ip(ip_obj):
+            raise ConvertError(
+                f"Cloud OCR result URL points to disallowed network during {context}",
+                code=ErrorCode.E_CONFIG_INVALID,
+                trace_id=trace_id,
+            )
+
+    return parsed.geturl()
+
+
+def _download_cloud_text_with_limit(
+    client: httpx.Client,
+    *,
+    url: str,
+    trace_id: str,
+    context: str,
+    max_bytes: int = _OCR_CLOUD_MAX_MARKDOWN_BYTES,
+) -> str:
+    current_url = _validate_cloud_result_url(url, trace_id=trace_id, context=context)
+
+    for _ in range(_OCR_CLOUD_MAX_REDIRECTS + 1):
+        with client.stream("GET", current_url, timeout=120, follow_redirects=False) as response:
+            if 300 <= response.status_code < 400:
+                redirect_target = response.headers.get("location", "").strip()
+                if not redirect_target:
+                    raise ConvertError(
+                        f"Cloud OCR redirect missing location during {context}",
+                        code=ErrorCode.E_OCR_FAILED,
+                        trace_id=trace_id,
+                    )
+                current_url = _validate_cloud_result_url(
+                    urljoin(current_url, redirect_target),
+                    trace_id=trace_id,
+                    context=context,
+                )
+                continue
+
+            if response.status_code >= 400:
+                _raise_cloud_http_error(response=response, trace_id=trace_id, context=context)
+
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in response.iter_bytes():
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ConvertError(
+                        f"Cloud OCR markdown result exceeds {max_bytes} bytes during {context}",
+                        code=ErrorCode.E_OCR_FAILED,
+                        trace_id=trace_id,
+                    )
+                chunks.append(chunk)
+            return b"".join(chunks).decode("utf-8", errors="ignore").strip()
+
+    raise ConvertError(
+        f"Cloud OCR too many redirects during {context}",
+        code=ErrorCode.E_OCR_FAILED,
+        trace_id=trace_id,
+    )
+
+
+def _resolve_cloud_result_entry(data: dict[str, object], data_id: str) -> dict[str, object]:
+    result_items = data.get("extract_result")
+    if not isinstance(result_items, list):
+        result_items = data.get("results")
+    if isinstance(result_items, dict):
+        result_items = list(result_items.values())
+    if not isinstance(result_items, list):
+        return data
+
+    if not result_items:
+        return {}
+
+    for item in result_items:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("data_id", "")).strip() == data_id:
+            return item
+    for item in result_items:
+        if isinstance(item, dict):
+            return item
+    return {}
+
+
+def _normalize_state(state: str | None) -> str:
+    value = (state or "").strip().lower()
+    if value == "success":
+        return "done"
+    return value
+
+
+def _emit_cloud_progress(progress_callback, step: int, total: int, message: str) -> None:
+    if progress_callback is None:
+        return
+    progress_callback(step, total, message)
+
+
+def _validate_cloud_input_constraints(
+    *,
+    file_path: Path,
+    source_format: str,
+    trace_id: str,
+) -> None:
+    try:
+        file_size = file_path.stat().st_size
+    except OSError as exc:
+        raise ConvertError(
+            f"Cloud OCR cannot read file size: {exc}",
+            code=ErrorCode.E_OCR_FAILED,
+            trace_id=trace_id,
+        ) from exc
+
+    if file_size > _OCR_CLOUD_MAX_FILE_SIZE_BYTES:
+        raise ConvertError(
+            "Cloud OCR file size exceeds 200MB limit",
+            code=ErrorCode.E_CONFIG_INVALID,
+            trace_id=trace_id,
+        )
+
+    if source_format != "pdf":
+        return
+
+    try:
+        page_count = _pdf.count_pdf_pages(file_path, pdfium_module=pdfium)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ConvertError(
+            f"Cloud OCR cannot validate PDF page count: {exc}",
+            code=ErrorCode.E_CONFIG_INVALID,
+            trace_id=trace_id,
+        ) from exc
+
+    if page_count > _OCR_CLOUD_MAX_PDF_PAGES:
+        raise ConvertError(
+            "Cloud OCR PDF pages exceed 600-page limit",
+            code=ErrorCode.E_CONFIG_INVALID,
+            trace_id=trace_id,
+        )
+
+
+def _convert_via_cloud(
+    *,
+    file_path: Path,
+    source_format: str,
+    trace_id: str,
+    progress_callback=None,
+    cloud_provider: str = "",
+    cloud_endpoint: str = "",
+    cloud_api_key: str = "",
+    proxy_url: str = "",
+) -> MarkdownResult:
+    provider = _normalize_cloud_provider(cloud_provider)
+    if provider != "mineru":
+        raise ConvertError(
+            f"Unsupported cloud OCR provider: {provider}",
+            code=ErrorCode.E_CONFIG_INVALID,
+            trace_id=trace_id,
+        )
+
+    api_key = cloud_api_key.strip()
+    if not api_key:
+        raise ConvertError(
+            "Cloud OCR API key is required. Please set OCR cloud API key in Settings.",
+            code=ErrorCode.E_CONFIG_INVALID,
+            trace_id=trace_id,
+        )
+
+    endpoint = _normalize_cloud_endpoint(cloud_endpoint)
+    proxy = _normalize_proxy_url(proxy_url)
+    _validate_cloud_input_constraints(
+        file_path=file_path,
+        source_format=source_format,
+        trace_id=trace_id,
+    )
+    poll_interval = max(
+        0.5,
+        _get_env_int(
+            "ANKISMART_OCR_CLOUD_POLL_INTERVAL_SECONDS",
+            int(_OCR_CLOUD_POLL_INTERVAL_SECONDS),
+        ),
+    )
+    timeout_seconds = max(
+        30.0,
+        float(_get_env_int("ANKISMART_OCR_CLOUD_TIMEOUT_SECONDS", int(_OCR_CLOUD_TIMEOUT_SECONDS))),
+    )
+
+    _emit_cloud_progress(progress_callback, 0, 3, "云端 OCR: 创建上传任务...")
+    transport = httpx.Client(proxy=proxy) if proxy else httpx.Client()
+    data_id = uuid.uuid4().hex[:12]
+
+    try:
+        with transport as client:
+            create_payload = {
+                "files": [{"name": file_path.name, "data_id": data_id}],
+                "model_version": _OCR_CLOUD_DEFAULT_MODEL_VERSION,
+            }
+            create_response, _ = _request_cloud_json(
+                client,
+                method="POST",
+                endpoint=endpoint,
+                path="file-urls/batch",
+                api_key=api_key,
+                trace_id=trace_id,
+                context="create upload url",
+                payload=create_payload,
+            )
+            create_data = _extract_response_data(
+                create_response, trace_id, context="create upload url"
+            )
+            upload_url = _extract_upload_url(create_data)
+            if not upload_url:
+                raise ConvertError(
+                    "Cloud OCR did not return upload URL",
+                    code=ErrorCode.E_OCR_FAILED,
+                    trace_id=trace_id,
+                )
+
+            _emit_cloud_progress(progress_callback, 1, 3, "云端 OCR: 上传文件中...")
+            _upload_cloud_file(
+                client,
+                upload_url=upload_url,
+                file_path=file_path,
+                trace_id=trace_id,
+            )
+
+            batch_id = _find_first_string_value(create_data, ("batch_id", "batchId")) or ""
+            if not batch_id:
+                raise ConvertError(
+                    "Cloud OCR did not return batch_id after upload-url creation",
+                    code=ErrorCode.E_OCR_FAILED,
+                    trace_id=trace_id,
+                )
+
+            _emit_cloud_progress(progress_callback, 2, 3, "云端 OCR: 等待解析结果...")
+            start = time.monotonic()
+            result_entry: dict[str, object] = {}
+            while True:
+                if (time.monotonic() - start) >= timeout_seconds:
+                    raise ConvertError(
+                        "Cloud OCR result polling timeout",
+                        code=ErrorCode.E_OCR_FAILED,
+                        trace_id=trace_id,
+                    )
+
+                result_response, _ = _request_cloud_json(
+                    client,
+                    method="GET",
+                    endpoint=endpoint,
+                    path=f"extract-results/batch/{batch_id}",
+                    api_key=api_key,
+                    trace_id=trace_id,
+                    context="poll extract result",
+                    payload=None,
+                )
+                result_data = _extract_response_data(
+                    result_response, trace_id, context="poll extract result"
+                )
+                result_entry = _resolve_cloud_result_entry(result_data, data_id)
+                state = _normalize_state(str(result_entry.get("state", "")))
+                if state in {"done", "finished"}:
+                    break
+                if state in {"failed", "cancelled"}:
+                    reason = str(
+                        result_entry.get("error")
+                        or result_entry.get("err_msg")
+                        or result_entry.get("message")
+                        or "Cloud OCR task failed"
+                    )
+                    raise ConvertError(
+                        reason,
+                        code=ErrorCode.E_OCR_FAILED,
+                        trace_id=trace_id,
+                    )
+                time.sleep(poll_interval)
+
+            md_url = _find_first_string_value(
+                result_entry,
+                ("full_md_url", "md_url", "markdown_url"),
+            ) or _find_first_string_value(result_data, ("full_md_url", "md_url", "markdown_url"))
+            markdown_content = _find_first_string_value(
+                result_entry,
+                ("md_content", "markdown", "content"),
+            )
+
+            if not markdown_content and md_url:
+                markdown_content = _download_cloud_text_with_limit(
+                    client,
+                    url=md_url,
+                    trace_id=trace_id,
+                    context="download markdown result",
+                )
+
+            if not markdown_content:
+                raise ConvertError(
+                    "Cloud OCR returned no markdown content or markdown URL",
+                    code=ErrorCode.E_OCR_FAILED,
+                    trace_id=trace_id,
+                )
+    except ConvertError:
+        raise
+    except Exception as exc:
+        raise ConvertError(
+            f"Cloud OCR failed: {exc}",
+            code=ErrorCode.E_OCR_FAILED,
+            trace_id=trace_id,
+        ) from exc
+
+    _emit_cloud_progress(progress_callback, 3, 3, "云端 OCR: 解析完成")
+    return MarkdownResult(
+        content=_remove_page_marker_lines(markdown_content),
+        source_path=str(file_path),
+        source_format=source_format,
+        trace_id=trace_id,
+    )
+
+
+def test_cloud_connectivity(
+    *,
+    cloud_provider: str = "",
+    cloud_endpoint: str = "",
+    cloud_api_key: str = "",
+    proxy_url: str = "",
+) -> tuple[bool, str]:
+    provider = _normalize_cloud_provider(cloud_provider)
+    if provider != "mineru":
+        return False, f"Unsupported cloud OCR provider: {provider}"
+
+    api_key = cloud_api_key.strip()
+    if not api_key:
+        return False, "Cloud OCR API key is required"
+
+    endpoint = _normalize_cloud_endpoint(cloud_endpoint)
+    proxy = _normalize_proxy_url(proxy_url)
+    data_id = "connectivity-check"
+    payload = {
+        "files": [{"name": "connectivity-check.pdf", "data_id": data_id}],
+        "model_version": _OCR_CLOUD_DEFAULT_MODEL_VERSION,
+    }
+
+    client = httpx.Client(proxy=proxy) if proxy else httpx.Client()
+    try:
+        with client:
+            response, _ = _request_cloud_json(
+                client,
+                method="POST",
+                endpoint=endpoint,
+                path="file-urls/batch",
+                api_key=api_key,
+                trace_id="",
+                context="cloud connectivity check",
+                payload=payload,
+                timeout=20.0,
+            )
+            _extract_response_data(response, "", context="cloud connectivity check")
+            return True, ""
+    except ConvertError as exc:
+        return False, str(exc)
 
 
 def _reset_ocr_runtime_state() -> None:
@@ -622,6 +1289,11 @@ def convert(
     *,
     ocr_correction_fn=None,
     progress_callback=None,
+    ocr_mode: str = "local",
+    cloud_provider: str = "",
+    cloud_endpoint: str = "",
+    cloud_api_key: str = "",
+    proxy_url: str = "",
 ) -> MarkdownResult:
     trace_id = trace_id or get_trace_id()
 
@@ -630,6 +1302,18 @@ def convert(
             f"File not found: {file_path}",
             code=ErrorCode.E_FILE_NOT_FOUND,
             trace_id=trace_id,
+        )
+
+    if str(ocr_mode).strip().lower() == "cloud":
+        return _convert_via_cloud(
+            file_path=file_path,
+            source_format="pdf",
+            trace_id=trace_id,
+            progress_callback=progress_callback,
+            cloud_provider=cloud_provider,
+            cloud_endpoint=cloud_endpoint,
+            cloud_api_key=cloud_api_key,
+            proxy_url=proxy_url,
         )
 
     if progress_callback is not None:
@@ -730,6 +1414,11 @@ def convert_image(
     *,
     ocr_correction_fn=None,
     progress_callback=None,
+    ocr_mode: str = "local",
+    cloud_provider: str = "",
+    cloud_endpoint: str = "",
+    cloud_api_key: str = "",
+    proxy_url: str = "",
 ) -> MarkdownResult:
     trace_id = trace_id or get_trace_id()
 
@@ -738,6 +1427,18 @@ def convert_image(
             f"File not found: {file_path}",
             code=ErrorCode.E_FILE_NOT_FOUND,
             trace_id=trace_id,
+        )
+
+    if str(ocr_mode).strip().lower() == "cloud":
+        return _convert_via_cloud(
+            file_path=file_path,
+            source_format="image",
+            trace_id=trace_id,
+            progress_callback=progress_callback,
+            cloud_provider=cloud_provider,
+            cloud_endpoint=cloud_endpoint,
+            cloud_api_key=cloud_api_key,
+            proxy_url=proxy_url,
         )
 
     with timed("ocr_image_convert"):

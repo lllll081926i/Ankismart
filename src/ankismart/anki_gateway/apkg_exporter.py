@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import random
+import socket
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from urllib.parse import urljoin, urlparse
 
 import genanki
 import httpx
@@ -48,7 +51,12 @@ _CHOICE_FORMATTER_SCRIPT = """
       return "";
     }
 
-    var mathRe = /(\\$\\$[\\s\\S]*?\\$\\$|\\\\\\[[\\s\\S]*?\\\\\\]|\\\\\\([\\s\\S]*?\\\\\\)|\\\\begin\\{[a-zA-Z*]+\\}[\\s\\S]*?\\\\end\\{[a-zA-Z*]+\\}|\\$[^$\\n]+\\$)/g;
+    var mathRe = new RegExp(
+      "(\\\\$\\\\$[\\\\s\\\\S]*?\\\\$\\\\$|\\\\\\\\\\\\[[\\\\s\\\\S]*?\\\\\\\\\\\\]|" +
+      "\\\\\\\\\\([\\\\s\\\\S]*?\\\\\\\\\\\\)|\\\\\\\\begin\\\\{[a-zA-Z*]+\\\\}[\\\\s\\\\S]*?" +
+      "\\\\\\\\end\\\\{[a-zA-Z*]+\\\\}|\\\\$[^$\\\\n]+\\\\$)",
+      "g"
+    );
     var output = "";
     var lastIndex = 0;
     var match;
@@ -62,7 +70,12 @@ _CHOICE_FORMATTER_SCRIPT = """
   }
 
   function containsLatex(text) {
-    return /(\\$\\$[\\s\\S]*?\\$\\$|\\\\\\[[\\s\\S]*?\\\\\\]|\\\\\\([\\s\\S]*?\\\\\\)|\\\\begin\\{[a-zA-Z*]+\\}|\\\\[a-zA-Z]{2,})/.test(String(text || ""));
+    var latexRe = new RegExp(
+      "(\\\\$\\\\$[\\\\s\\\\S]*?\\\\$\\\\$|\\\\\\\\\\\\[[\\\\s\\\\S]*?\\\\\\\\\\\\]|" +
+      "\\\\\\\\\\([\\\\s\\\\S]*?\\\\\\\\\\\\)|\\\\\\\\begin\\\\{[a-zA-Z*]+\\\\}|" +
+      "\\\\\\\\[a-zA-Z]{2,})"
+    );
+    return latexRe.test(String(text || ""));
   }
 
   function parseFront(raw) {
@@ -114,7 +127,9 @@ _CHOICE_FORMATTER_SCRIPT = """
       return { answer: "（未标注）", explanation: "" };
     }
 
-    var labeled = text.match(/^(?:答案|正确答案|answer)\\s*[:：]\\s*([\\s\\S]+?)\\n(?:解析|explanation)\\s*[:：]\\s*([\\s\\S]+)$/i);
+    var labeled = text.match(
+      /^(?:答案|正确答案|answer)\\s*[:：]\\s*([\\s\\S]+?)\\n(?:解析|explanation)\\s*[:：]\\s*([\\s\\S]+)$/i
+    );
     if (labeled) {
       return {
         answer: labeled[1].trim() || "（未标注）",
@@ -146,14 +161,19 @@ _CHOICE_FORMATTER_SCRIPT = """
       if (markerWithText) {
         explanationLines[0] = markerWithText[1].trim();
       }
-      while (explanationLines.length && /^(?:解析|explanation)\\s*[:：]?\\s*$/i.test(explanationLines[0])) {
+      while (
+        explanationLines.length &&
+        /^(?:解析|explanation)\\s*[:：]?\\s*$/i.test(explanationLines[0])
+      ) {
         explanationLines.shift();
       }
       return explanationLines.join("\\n").trim();
     }
 
     var first = normalizedLines[0] || "";
-    var match = first.match(/^(?:答案|正确答案|answer)?\\s*[:：]?\\s*([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)$/i);
+    var match = first.match(
+      /^(?:答案|正确答案|answer)?\\s*[:：]?\\s*([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)$/i
+    );
     if (match) {
       return {
         answer: normalizeAnswerKeys(match[1]) || "（未标注）",
@@ -169,15 +189,21 @@ _CHOICE_FORMATTER_SCRIPT = """
       };
     }
 
-    var prefixed = first.match(/^([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)(?:[\\.、\\):：\\-]\\s*|\\s+)(.+)$/);
+    var prefixed = first.match(
+      /^([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)(?:[\\.、\\):：\\-]\\s*|\\s+)(.+)$/
+    );
     if (prefixed) {
       return {
         answer: normalizeAnswerKeys(prefixed[1]) || "（未标注）",
-        explanation: normalizeExplanation([prefixed[2]].concat(normalizedLines.slice(1)).join("\\n"))
+        explanation: normalizeExplanation(
+          [prefixed[2]].concat(normalizedLines.slice(1)).join("\\n")
+        )
       };
     }
 
-    var inline = text.match(/(?:答案|正确答案|answer)\\s*[:：]?\\s*([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)/i);
+    var inline = text.match(
+      /(?:答案|正确答案|answer)\\s*[:：]?\\s*([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)/i
+    );
     if (inline) {
       return {
         answer: normalizeAnswerKeys(inline[1]) || "（未标注）",
@@ -294,8 +320,7 @@ _BASIC_MODEL = genanki.Model(
                 '<div class="as-block-title">问题</div>'
                 '<div id="as-front-content" class="as-block-content">{{Front}}</div>'
                 "</section>"
-                "</div>"
-                + _CHOICE_FORMATTER_SCRIPT
+                "</div>" + _CHOICE_FORMATTER_SCRIPT
             ),
             "afmt": (
                 '<div class="as-card as-card-back">'
@@ -311,8 +336,7 @@ _BASIC_MODEL = genanki.Model(
                 '<div class="as-block-title">解析</div>'
                 '<div id="as-back-explain" class="as-block-content as-extra">（无解析）</div>'
                 "</section>"
-                "</div>"
-                + _CHOICE_FORMATTER_SCRIPT
+                "</div>" + _CHOICE_FORMATTER_SCRIPT
             ),
         },
     ],
@@ -367,6 +391,9 @@ _MODEL_MAP: dict[str, genanki.Model] = {
     "Cloze": _CLOZE_MODEL,
 }
 
+_MEDIA_MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
+_MEDIA_MAX_REDIRECTS = 3
+
 
 def _get_model(note_type: str) -> genanki.Model:
     model = _MODEL_MAP.get(note_type)
@@ -392,6 +419,86 @@ def _next_available_path(path: Path) -> Path:
         if not candidate.exists():
             return candidate
         index += 1
+
+
+def _is_disallowed_remote_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _validate_media_url(url: str) -> str:
+    parsed = urlparse(str(url).strip())
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").strip().lower()
+    if scheme not in {"http", "https"}:
+        raise ValueError("unsupported media URL scheme")
+    if not host:
+        raise ValueError("invalid media URL host")
+    if parsed.username or parsed.password:
+        raise ValueError("media URL credentials are not allowed")
+
+    try:
+        ip_obj = ipaddress.ip_address(host)
+        ip_list = [ip_obj]
+    except ValueError:
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+        ip_list = []
+        for info in infos:
+            address = info[4][0]
+            try:
+                ip_list.append(ipaddress.ip_address(address))
+            except ValueError:
+                continue
+        if not ip_list:
+            raise ValueError("media URL host resolve returned no IP")
+
+    for ip_obj in ip_list:
+        if _is_disallowed_remote_ip(ip_obj):
+            raise ValueError("media URL points to disallowed network")
+    return parsed.geturl()
+
+
+def _download_media_to_path(url: str, out_path: Path) -> Path:
+    current_url = _validate_media_url(url)
+    with httpx.Client(timeout=10, follow_redirects=False) as client:
+        for _ in range(_MEDIA_MAX_REDIRECTS + 1):
+            with client.stream("GET", current_url, follow_redirects=False) as response:
+                if 300 <= response.status_code < 400:
+                    redirect_target = response.headers.get("location", "").strip()
+                    if not redirect_target:
+                        raise ValueError("redirect response without location")
+                    current_url = _validate_media_url(urljoin(current_url, redirect_target))
+                    continue
+
+                response.raise_for_status()
+
+                content_length = response.headers.get("content-length")
+                if content_length:
+                    try:
+                        if int(content_length) > _MEDIA_MAX_DOWNLOAD_BYTES:
+                            raise ValueError("media file exceeds maximum allowed size")
+                    except ValueError as exc:
+                        if "maximum allowed size" in str(exc):
+                            raise
+
+                total = 0
+                with out_path.open("wb") as fp:
+                    for chunk in response.iter_bytes():
+                        if not chunk:
+                            continue
+                        total += len(chunk)
+                        if total > _MEDIA_MAX_DOWNLOAD_BYTES:
+                            raise ValueError("media file exceeds maximum allowed size")
+                        fp.write(chunk)
+                return out_path
+
+    raise ValueError("too many redirects for media URL")
 
 
 def _materialize_media_file(media: MediaItem, temp_dir: Path) -> Path | None:
@@ -427,11 +534,8 @@ def _materialize_media_file(media: MediaItem, temp_dir: Path) -> Path | None:
 
     if media_url:
         try:
-            response = httpx.get(media_url, timeout=10, follow_redirects=True)
-            response.raise_for_status()
-            out_path.write_bytes(response.content)
-            return out_path
-        except (httpx.HTTPError, OSError) as e:
+            return _download_media_to_path(media_url, out_path)
+        except (ValueError, httpx.HTTPError, OSError) as e:
             logger.warning(
                 f"Failed to download media url, skipping: {e}",
                 extra={"media_url": media_url, "media_filename": media_filename},

@@ -125,7 +125,9 @@ def is_ocr_runtime_available() -> bool:
         return False
 
 
-def configure_ocr_runtime(*, model_tier: str, model_source: str, reset_ocr_instance: bool = False) -> None:
+def configure_ocr_runtime(
+    *, model_tier: str, model_source: str, reset_ocr_instance: bool = False
+) -> None:
     module = _get_ocr_converter_module()
     try:
         module.configure_ocr_runtime(
@@ -207,7 +209,9 @@ class OCRDownloadConfigDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setSpacing(SPACING_MEDIUM)
-        layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
+        layout.setContentsMargins(
+            MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD
+        )
 
         self._model_title = SubtitleLabel("选择 OCR 模型" if self._is_zh else "Select OCR Model")
         layout.addWidget(self._model_title)
@@ -222,7 +226,9 @@ class OCRDownloadConfigDialog(QDialog):
         self._recommend_label.setWordWrap(True)
         layout.addWidget(self._recommend_label)
 
-        self._source_title = SubtitleLabel("选择下载源" if self._is_zh else "Select Download Source")
+        self._source_title = SubtitleLabel(
+            "选择下载源" if self._is_zh else "Select Download Source"
+        )
         layout.addWidget(self._source_title)
 
         self._source_combo = ComboBox(self)
@@ -325,7 +331,11 @@ class _LegacyBatchConvertWorker(QThread):
                 try:
                     # Create converter with OCR correction if enabled
                     ocr_correction_fn = None
-                    if self._config and hasattr(self._config, "ocr_correction") and self._config.ocr_correction:
+                    if (
+                        self._config
+                        and hasattr(self._config, "ocr_correction")
+                        and self._config.ocr_correction
+                    ):
                         # Get LLM client from active provider
                         provider = self._config.active_provider
                         if provider:
@@ -334,11 +344,20 @@ class _LegacyBatchConvertWorker(QThread):
 
                             # Validate provider configuration before creating LLMClient
                             if not provider.api_key and "Ollama" not in provider.name:
-                                raise ValueError(f"Provider '{provider.name}' requires an API key but none is configured")
+                                raise ValueError(
+                                    f"Provider '{provider.name}' requires an API key "
+                                    "but none is configured"
+                                )
                             if not provider.base_url:
-                                raise ValueError(f"Provider '{provider.name}' requires a base URL but none is configured")
+                                raise ValueError(
+                                    f"Provider '{provider.name}' requires a base URL "
+                                    "but none is configured"
+                                )
                             if not provider.model:
-                                raise ValueError(f"Provider '{provider.name}' requires a model but none is configured")
+                                raise ValueError(
+                                    f"Provider '{provider.name}' requires a model "
+                                    "but none is configured"
+                                )
 
                             llm_client = LLMClient(
                                 api_key=provider.api_key,
@@ -352,9 +371,7 @@ class _LegacyBatchConvertWorker(QThread):
 
                     converter = DocumentConverter(ocr_correction_fn=ocr_correction_fn)
                     result = converter.convert(file_path)
-                    documents.append(
-                        ConvertedDocument(result=result, file_name=file_path.name)
-                    )
+                    documents.append(ConvertedDocument(result=result, file_name=file_path.name))
                 except Exception as e:
                     errors.append(f"{file_path.name}: {str(e)}")
 
@@ -413,7 +430,9 @@ class OCRModelDownloadWorker(QThread):
     def run(self) -> None:
         try:
             downloaded = download_missing_ocr_models(
-                progress_callback=lambda current, total, msg: self.progress.emit(current, total, msg),
+                progress_callback=lambda current, total, msg: self.progress.emit(
+                    current, total, msg
+                ),
                 model_tier=self._model_tier,
                 model_source=self._model_source,
             )
@@ -506,7 +525,9 @@ class ImportPage(ProgressMixin, QWidget):
         """Initialize the user interface."""
         # Main horizontal layout
         main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
+        main_layout.setContentsMargins(
+            MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD
+        )
         main_layout.setSpacing(SPACING_LARGE)
 
         # Left side (50% width) - File selection area
@@ -533,7 +554,9 @@ class ImportPage(ProgressMixin, QWidget):
         self._drop_area.clicked.connect(self._select_files)
 
         drop_layout = QVBoxLayout(self._drop_area)
-        drop_layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
+        drop_layout.setContentsMargins(
+            MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD
+        )
         drop_layout.setSpacing(SPACING_MEDIUM)
 
         # Top row: Title and file count
@@ -671,9 +694,7 @@ class ImportPage(ProgressMixin, QWidget):
         title_bar_layout.addWidget(title_label)
         title_bar_layout.addStretch()
 
-        self._btn_generate_cards = PrimaryPushButton(
-            "开始生成卡片" if is_zh else "Generate Cards"
-        )
+        self._btn_generate_cards = PrimaryPushButton("开始生成卡片" if is_zh else "Generate Cards")
         self._btn_generate_cards.setIcon(FluentIcon.SEND)
         self._btn_generate_cards.setFixedHeight(32)
         self._btn_generate_cards.setMinimumWidth(140)
@@ -698,7 +719,7 @@ class ImportPage(ProgressMixin, QWidget):
             FluentIcon.LABEL,
             "目标卡片数量" if is_zh else "Target Card Count",
             "设置要生成的卡片总数" if is_zh else "Set total number of cards to generate",
-            group
+            group,
         )
         self._total_count_input = LineEdit()
         self._total_count_input.setText("20")
@@ -726,7 +747,7 @@ class ImportPage(ProgressMixin, QWidget):
             FluentIcon.FOLDER,
             "卡片组名称" if is_zh else "Deck Name",
             "选择或输入 Anki 卡片组名称" if is_zh else "Select or enter Anki deck name",
-            group
+            group,
         )
         self._deck_combo = EditableComboBox()
         initial_deck = self._resolve_initial_deck_name()
@@ -749,15 +770,13 @@ class ImportPage(ProgressMixin, QWidget):
             FluentIcon.TAG,
             "标签" if is_zh else "Tags",
             "添加标签，用逗号分隔" if is_zh else "Add tags, separated by commas",
-            group
+            group,
         )
         self._tags_input = LineEdit()
         self._tags_input.setPlaceholderText(
             get_text("import.tags_placeholder", self._main.config.language)
         )
-        self._tags_input.setToolTip(
-            get_text("import.tags_tooltip", self._main.config.language)
-        )
+        self._tags_input.setToolTip(get_text("import.tags_tooltip", self._main.config.language))
         self._tags_input.setMinimumWidth(320)
         self._tags_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         if self._main.config.last_tags:
@@ -787,20 +806,43 @@ class ImportPage(ProgressMixin, QWidget):
         is_zh = self._main.config.language == "zh"
 
         group = SettingCardGroup(
-            "生成策略" if is_zh else "Generation Strategy",
-            self._scroll_widget
+            "生成策略" if is_zh else "Generation Strategy", self._scroll_widget
         )
         group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         group.setMaximumHeight(_RIGHT_STRATEGY_GROUP_MAX_HEIGHT)
 
         # Strategy options with RangeSettingCards
         strategies = [
-            ("basic", "基础问答" if is_zh else "Basic Q&A", "生成基础问答卡片" if is_zh else "Generate basic Q&A cards"),
-            ("cloze", "填空题" if is_zh else "Cloze", "生成填空题卡片" if is_zh else "Generate cloze cards"),
-            ("concept", "概念解释" if is_zh else "Concept", "生成概念解释卡片" if is_zh else "Generate concept cards"),
-            ("key_terms", "关键术语" if is_zh else "Key Terms", "生成关键术语卡片" if is_zh else "Generate key term cards"),
-            ("single_choice", "单选题" if is_zh else "Single Choice", "生成单选题卡片" if is_zh else "Generate single choice cards"),
-            ("multiple_choice", "多选题" if is_zh else "Multiple Choice", "生成多选题卡片" if is_zh else "Generate multiple choice cards"),
+            (
+                "basic",
+                "基础问答" if is_zh else "Basic Q&A",
+                "生成基础问答卡片" if is_zh else "Generate basic Q&A cards",
+            ),
+            (
+                "cloze",
+                "填空题" if is_zh else "Cloze",
+                "生成填空题卡片" if is_zh else "Generate cloze cards",
+            ),
+            (
+                "concept",
+                "概念解释" if is_zh else "Concept",
+                "生成概念解释卡片" if is_zh else "Generate concept cards",
+            ),
+            (
+                "key_terms",
+                "关键术语" if is_zh else "Key Terms",
+                "生成关键术语卡片" if is_zh else "Generate key term cards",
+            ),
+            (
+                "single_choice",
+                "单选题" if is_zh else "Single Choice",
+                "生成单选题卡片" if is_zh else "Generate single choice cards",
+            ),
+            (
+                "multiple_choice",
+                "多选题" if is_zh else "Multiple Choice",
+                "生成多选题卡片" if is_zh else "Generate multiple choice cards",
+            ),
         ]
 
         self._strategy_sliders: list[tuple[str, Slider, BodyLabel]] = []
@@ -808,12 +850,8 @@ class ImportPage(ProgressMixin, QWidget):
         for i, (strategy_id, strategy_name, strategy_desc) in enumerate(strategies):
             # Create a simple SettingCard with slider
             from qfluentwidgets import SettingCard
-            card = SettingCard(
-                FluentIcon.LABEL,
-                strategy_name,
-                strategy_desc,
-                group
-            )
+
+            card = SettingCard(FluentIcon.LABEL, strategy_name, strategy_desc, group)
 
             # Create slider
             slider = Slider(Qt.Orientation.Horizontal, card)
@@ -827,9 +865,7 @@ class ImportPage(ProgressMixin, QWidget):
             value_label.setFixedWidth(50)
 
             # Connect slider to update label
-            slider.valueChanged.connect(
-                lambda v, lbl=value_label: lbl.setText(f"{v}%")
-            )
+            slider.valueChanged.connect(lambda v, lbl=value_label: lbl.setText(f"{v}%"))
 
             # Add slider and label to card layout
             card.hBoxLayout.addWidget(slider)
@@ -850,11 +886,8 @@ class ImportPage(ProgressMixin, QWidget):
         """获取或创建文档转换器（懒加载）"""
         if self._converter is None:
             from ankismart.converter.converter import DocumentConverter
-            self._converter = DocumentConverter(
-                ocr_correction_enabled=self._main.config.ocr_correction_enabled,
-                ocr_correction_provider=self._main.config.ocr_correction_provider,
-                llm_providers=self._main.config.llm_providers,
-            )
+
+            self._converter = DocumentConverter()
         return self._converter
 
     def _get_gateway(self):
@@ -862,6 +895,7 @@ class ImportPage(ProgressMixin, QWidget):
         if self._gateway is None:
             from ankismart.anki_gateway.client import AnkiConnectClient
             from ankismart.anki_gateway.gateway import AnkiGateway
+
             client = AnkiConnectClient(
                 url=self._main.config.anki_connect_url,
                 key=self._main.config.anki_connect_key,
@@ -874,6 +908,7 @@ class ImportPage(ProgressMixin, QWidget):
         if self._card_generator is None:
             from ankismart.card_gen.generator import CardGenerator
             from ankismart.card_gen.llm_client import LLMClient
+
             llm_client = LLMClient(
                 provider=self._main.config.card_gen_provider,
                 llm_providers=self._main.config.llm_providers,
@@ -900,15 +935,11 @@ class ImportPage(ProgressMixin, QWidget):
 
         layout.addStretch()  # Push buttons to right
 
-        self._btn_load_example = PushButton(
-            "加载示例" if is_zh else "Load Example"
-        )
+        self._btn_load_example = PushButton("加载示例" if is_zh else "Load Example")
         self._btn_load_example.setIcon(FluentIcon.DOCUMENT)
         self._btn_load_example.clicked.connect(self._load_example)
 
-        self._btn_recommend = PushButton(
-            "推荐策略" if is_zh else "Recommend Strategy"
-        )
+        self._btn_recommend = PushButton("推荐策略" if is_zh else "Recommend Strategy")
         self._btn_recommend.setIcon(FluentIcon.ROBOT)
         self._btn_recommend.clicked.connect(self._recommend_strategy)
 
@@ -928,15 +959,15 @@ class ImportPage(ProgressMixin, QWidget):
 
         # Add shortcut hints to button tooltips
         start_text = "开始生成" if is_zh else "Start Generation"
-        start_shortcut = get_shortcut_text(ShortcutKeys.START_GENERATION, self._main.config.language)
+        start_shortcut = get_shortcut_text(
+            ShortcutKeys.START_GENERATION, self._main.config.language
+        )
 
         self._btn_convert = PrimaryPushButton(start_text)
         self._btn_convert.setToolTip(f"{start_text} ({start_shortcut})")
         self._btn_convert.clicked.connect(self._start_convert)
 
-        self._btn_clear = PushButton(
-            "清除" if is_zh else "Clear"
-        )
+        self._btn_clear = PushButton("清除" if is_zh else "Clear")
         self._btn_clear.clicked.connect(self._clear_all)
 
         layout.addWidget(self._btn_convert)
@@ -951,7 +982,6 @@ class ImportPage(ProgressMixin, QWidget):
         btn_generate_cards = self.__dict__.get("_btn_generate_cards")
         if btn_generate_cards is not None:
             btn_generate_cards.setEnabled(enabled)
-
 
     def _create_progress_display(self) -> QWidget:
         """Create progress display area."""
@@ -987,9 +1017,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._status_label.setText("")
         self._status_label.setWordWrap(True)
 
-        self._btn_cancel = PushButton(
-            "取消" if self._main.config.language == "zh" else "Cancel"
-        )
+        self._btn_cancel = PushButton("取消" if self._main.config.language == "zh" else "Cancel")
         self._btn_cancel.setIcon(FluentIcon.CLOSE)
         self._btn_cancel.clicked.connect(self._cancel_operation)
         self._btn_cancel.hide()
@@ -1025,7 +1053,9 @@ class ImportPage(ProgressMixin, QWidget):
         """Update file count label and toggle visibility of elements."""
         count = len(self._file_paths)
         self._file_count_label.setText(
-            f"已选择 {count} 个文件" if self._main.config.language == "zh" else f"{count} files selected"
+            f"已选择 {count} 个文件"
+            if self._main.config.language == "zh"
+            else f"{count} files selected"
         )
 
         # Show/hide elements based on file presence
@@ -1039,8 +1069,11 @@ class ImportPage(ProgressMixin, QWidget):
         item = self._file_list.itemAt(pos)
         if item:
             from qfluentwidgets import Action, RoundMenu
+
             menu = RoundMenu(parent=self)
-            delete_action = Action(FluentIcon.DELETE, "删除" if self._main.config.language == "zh" else "Delete")
+            delete_action = Action(
+                FluentIcon.DELETE, "删除" if self._main.config.language == "zh" else "Delete"
+            )
             delete_action.triggered.connect(lambda: self._remove_file_item(item))
             menu.addAction(delete_action)
             menu.exec(self._file_list.mapToGlobal(pos))
@@ -1126,8 +1159,7 @@ class ImportPage(ProgressMixin, QWidget):
 
         self._cleanup_deck_loader_worker()
         self._deck_loader = DeckLoaderWorker(
-            self._main.config.anki_connect_url,
-            self._main.config.anki_connect_key
+            self._main.config.anki_connect_url, self._main.config.anki_connect_key
         )
         self._deck_loader.finished.connect(self._on_decks_loaded)
         self._deck_loader.error.connect(self._on_decks_load_error)
@@ -1153,7 +1185,9 @@ class ImportPage(ProgressMixin, QWidget):
         is_zh = self._main.config.language == "zh"
         InfoBar.warning(
             title="牌组加载失败" if is_zh else "Failed to Load Decks",
-            content=f"无法从 Anki 读取牌组：{error}" if is_zh else f"Unable to load decks from Anki: {error}",
+            content=f"无法从 Anki 读取牌组：{error}"
+            if is_zh
+            else f"Unable to load decks from Anki: {error}",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -1212,7 +1246,7 @@ class ImportPage(ProgressMixin, QWidget):
             self,
             "选择文件" if self._main.config.language == "zh" else "Select Files",
             "",
-            "All Supported (*.md *.txt *.docx *.pptx *.pdf *.png *.jpg *.jpeg);;All Files (*.*)"
+            "All Supported (*.md *.txt *.docx *.pptx *.pdf *.png *.jpg *.jpeg);;All Files (*.*)",
         )
 
         if file_paths:
@@ -1230,19 +1264,11 @@ class ImportPage(ProgressMixin, QWidget):
         try:
             count = int(count_str)
         except ValueError:
-            return (
-                False,
-                None,
-                get_text("import.card_count_must_be_number", is_zh)
-            )
+            return (False, None, get_text("import.card_count_must_be_number", is_zh))
 
         # Check range (1-1000)
         if count < 1 or count > 1000:
-            return (
-                False,
-                None,
-                get_text("import.card_count_out_of_range", is_zh)
-            )
+            return (False, None, get_text("import.card_count_out_of_range", is_zh))
 
         return (True, count, None)
 
@@ -1261,14 +1287,11 @@ class ImportPage(ProgressMixin, QWidget):
         tags = split_tags_text(tags_str)
 
         # Pattern: letters, numbers, Chinese characters, underscores, hyphens
-        tag_pattern = re.compile(r'^[\w\u4e00-\u9fff-]+$')
+        tag_pattern = re.compile(r"^[\w\u4e00-\u9fff-]+$")
 
         for tag in tags:
             if tag and not tag_pattern.match(tag):
-                return (
-                    False,
-                    get_text("import.tags_contain_invalid_chars", is_zh)
-                )
+                return (False, get_text("import.tags_contain_invalid_chars", is_zh))
 
         return (True, None)
 
@@ -1282,18 +1305,12 @@ class ImportPage(ProgressMixin, QWidget):
 
         # Check if empty
         if not deck_name.strip():
-            return (
-                False,
-                get_text("import.deck_name_empty", is_zh)
-            )
+            return (False, get_text("import.deck_name_empty", is_zh))
 
         # Check for invalid characters: < > : " / \ | ? *
         invalid_chars = r'[<>:"/\\|?*]'
         if re.search(invalid_chars, deck_name):
-            return (
-                False,
-                get_text("import.deck_name_invalid_chars", is_zh)
-            )
+            return (False, get_text("import.deck_name_invalid_chars", is_zh))
 
         return (True, None)
 
@@ -1341,7 +1358,7 @@ class ImportPage(ProgressMixin, QWidget):
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=3000,
-                parent=self
+                parent=self,
             )
             return
 
@@ -1350,20 +1367,58 @@ class ImportPage(ProgressMixin, QWidget):
     def _prepare_local_ocr_runtime(self) -> bool:
         is_zh = self._main.config.language == "zh"
         if getattr(self._main.config, "ocr_mode", "local") == "cloud":
-            InfoBar.info(
-                title="云端 OCR 开发中" if is_zh else "Cloud OCR In Development",
-                content=(
-                    "云端 OCR 仍在开发中，请切换到本地 OCR 后再处理图片/PDF。"
-                    if is_zh
-                    else "Cloud OCR is still in development. Please switch to local OCR for image/PDF files."
-                ),
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=3000,
-                parent=self
-            )
-            return False
+            provider = str(getattr(self._main.config, "ocr_cloud_provider", "")).strip().lower()
+            endpoint = str(getattr(self._main.config, "ocr_cloud_endpoint", "")).strip()
+            api_key = str(getattr(self._main.config, "ocr_cloud_api_key", "")).strip()
+
+            if provider and provider != "mineru":
+                InfoBar.warning(
+                    title="OCR 配置错误" if is_zh else "OCR Configuration Error",
+                    content=(
+                        "仅支持 MinerU 云 OCR 提供商。"
+                        if is_zh
+                        else "Only MinerU cloud OCR provider is supported."
+                    ),
+                    orient=Qt.Orientation.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3500,
+                    parent=self,
+                )
+                return False
+
+            if not endpoint:
+                InfoBar.warning(
+                    title="OCR 配置错误" if is_zh else "OCR Configuration Error",
+                    content=(
+                        "请先在设置页填写云 OCR Endpoint。"
+                        if is_zh
+                        else "Please configure cloud OCR endpoint in Settings first."
+                    ),
+                    orient=Qt.Orientation.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3500,
+                    parent=self,
+                )
+                return False
+
+            if not api_key:
+                InfoBar.warning(
+                    title="OCR 配置错误" if is_zh else "OCR Configuration Error",
+                    content=(
+                        "请先在设置页填写云 OCR API Key。"
+                        if is_zh
+                        else "Please configure cloud OCR API key in Settings first."
+                    ),
+                    orient=Qt.Orientation.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3500,
+                    parent=self,
+                )
+                return False
+            return True
 
         if not is_ocr_runtime_available():
             InfoBar.warning(
@@ -1377,7 +1432,7 @@ class ImportPage(ProgressMixin, QWidget):
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=3000,
-                parent=self
+                parent=self,
             )
             return False
 
@@ -1394,12 +1449,14 @@ class ImportPage(ProgressMixin, QWidget):
         if not self._file_paths:
             InfoBar.warning(
                 title="警告" if self._main.config.language == "zh" else "Warning",
-                content="请先选择要转换的文件" if self._main.config.language == "zh" else "Please select files to convert first",
+                content="请先选择要转换的文件"
+                if self._main.config.language == "zh"
+                else "Please select files to convert first",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=3000,
-                parent=self
+                parent=self,
             )
             return
 
@@ -1422,7 +1479,7 @@ class ImportPage(ProgressMixin, QWidget):
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=3000,
-                parent=self
+                parent=self,
             )
             return
 
@@ -1436,7 +1493,7 @@ class ImportPage(ProgressMixin, QWidget):
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=3000,
-                parent=self
+                parent=self,
             )
             if hasattr(self._total_count_input, "setFocus"):
                 self._total_count_input.setFocus()
@@ -1452,7 +1509,7 @@ class ImportPage(ProgressMixin, QWidget):
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=3000,
-                parent=self
+                parent=self,
             )
             if hasattr(self._tags_input, "setFocus"):
                 self._tags_input.setFocus()
@@ -1469,7 +1526,7 @@ class ImportPage(ProgressMixin, QWidget):
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=3000,
-                parent=self
+                parent=self,
             )
             if hasattr(self._deck_combo, "setFocus"):
                 self._deck_combo.setFocus()
@@ -1480,8 +1537,9 @@ class ImportPage(ProgressMixin, QWidget):
             if not self._prepare_local_ocr_runtime():
                 return
 
-            if not self._ensure_ocr_models_ready():
-                return
+            if getattr(self._main.config, "ocr_mode", "local") != "cloud":
+                if not self._ensure_ocr_models_ready():
+                    return
 
         # Validate provider
         provider = self._main.config.active_provider
@@ -1493,7 +1551,7 @@ class ImportPage(ProgressMixin, QWidget):
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=3000,
-                parent=self
+                parent=self,
             )
             return
 
@@ -1506,7 +1564,7 @@ class ImportPage(ProgressMixin, QWidget):
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=3000,
-                parent=self
+                parent=self,
             )
             return
 
@@ -1520,7 +1578,7 @@ class ImportPage(ProgressMixin, QWidget):
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=3000,
-                parent=self
+                parent=self,
             )
             return
 
@@ -1612,11 +1670,7 @@ class ImportPage(ProgressMixin, QWidget):
         # For question dialogs, we'll use MessageBox from qfluentwidgets instead
         from qfluentwidgets import MessageBox
 
-        w = MessageBox(
-            "下载 OCR 模型" if is_zh else "Download OCR Models",
-            confirm_message,
-            self
-        )
+        w = MessageBox("下载 OCR 模型" if is_zh else "Download OCR Models", confirm_message, self)
         if w.exec():
             # User clicked Yes/OK
             pass
@@ -1632,7 +1686,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._state_tooltip = StateToolTip(
             "正在下载 OCR 模型" if is_zh else "Downloading OCR Models",
             "请稍候..." if is_zh else "Please wait...",
-            self.window()
+            self.window(),
         )
         self._state_tooltip.move(self._state_tooltip.getSuitablePos())
         self._state_tooltip.show()
@@ -1668,9 +1722,7 @@ class ImportPage(ProgressMixin, QWidget):
             self._state_tooltip.setContent(message)
 
         is_zh = self._main.config.language == "zh"
-        progress_text = (
-            f"[{current}/{total}] {message}" if total > 0 else message
-        )
+        progress_text = f"[{current}/{total}] {message}" if total > 0 else message
         if progress_text == self._last_ocr_progress_message:
             return
 
@@ -1714,7 +1766,7 @@ class ImportPage(ProgressMixin, QWidget):
             isClosable=True,
             position=InfoBarPosition.TOP,
             duration=3000,
-            parent=self
+            parent=self,
         )
 
     def _on_ocr_download_error(self, error_message: str):
@@ -1726,20 +1778,18 @@ class ImportPage(ProgressMixin, QWidget):
 
         if self._state_tooltip:
             is_zh = self._main.config.language == "zh"
-            self._state_tooltip.setContent(
-                "下载失败" if is_zh else "Download failed"
-            )
+            self._state_tooltip.setContent("下载失败" if is_zh else "Download failed")
             self._state_tooltip.setState(True)
             self._dispose_state_tooltip()
 
         # Show error message
         is_zh = self._main.config.language == "zh"
         error_detail = (
-            f"OCR 模型下载失败：\n\n{error_message}\n\n"
-            "请检查网络连接后重试，或手动下载模型文件。"
+            f"OCR 模型下载失败：\n\n{error_message}\n\n请检查网络连接后重试，或手动下载模型文件。"
             if is_zh
             else f"OCR model download failed:\n\n{error_message}\n\n"
-            "Please check your network connection and try again, or manually download the model files."
+            "Please check your network connection and try again, "
+            "or manually download the model files."
         )
 
         InfoBar.error(
@@ -1749,7 +1799,7 @@ class ImportPage(ProgressMixin, QWidget):
             isClosable=True,
             position=InfoBarPosition.TOP,
             duration=5000,
-            parent=self
+            parent=self,
         )
 
     def build_generation_config(self) -> dict:
@@ -1794,7 +1844,7 @@ class ImportPage(ProgressMixin, QWidget):
             self._main.config.language,
             percentage=percentage,
             current=current,
-            total=total
+            total=total,
         )
 
         file_text = get_text(
@@ -1802,7 +1852,7 @@ class ImportPage(ProgressMixin, QWidget):
             self._main.config.language,
             filename=filename,
             current=current,
-            total=total
+            total=total,
         )
 
         self._status_label.setText(f"{file_text}\n{overall_text}")
@@ -1821,26 +1871,31 @@ class ImportPage(ProgressMixin, QWidget):
         self._refresh_file_item_colors()
 
         # Update preview page if it's already showing
-        if hasattr(self._main, 'batch_result') and self._main.batch_result:
+        if hasattr(self._main, "batch_result") and self._main.batch_result:
             # Update preview page if visible
-            preview_page = getattr(self._main, 'preview_page', None)
+            preview_page = getattr(self._main, "preview_page", None)
             if preview_page and preview_page.isVisible():
                 preview_page.add_converted_document(document)
 
                 # Count remaining pending files
-                pending_count = sum(1 for status in self._file_status.values() if status != "completed")
+                pending_count = sum(
+                    1 for status in self._file_status.values() if status != "completed"
+                )
                 preview_page.update_converting_status(pending_count)
             else:
                 self._main.batch_result.documents.append(document)
         else:
             # Create initial batch result with first document
             from ankismart.core.models import BatchConvertResult
+
             self._main.batch_result = BatchConvertResult(documents=[document], errors=[])
 
             # Switch to preview page with pending files indicator
             pending_count = sum(1 for status in self._file_status.values() if status != "completed")
             total_files = len(self._file_status)
-            self._main.switch_to_preview(pending_files_count=pending_count, total_expected=total_files)
+            self._main.switch_to_preview(
+                pending_files_count=pending_count, total_expected=total_files
+            )
 
     def _on_page_progress(self, filename: str, current_page: int, total_pages: int):
         """Handle OCR page-by-page progress."""
@@ -1853,7 +1908,7 @@ class ImportPage(ProgressMixin, QWidget):
                 self._main.config.language,
                 filename=filename,
                 page=current_page,
-                total_pages=total_pages
+                total_pages=total_pages,
             )
 
             # Calculate overall progress
@@ -1866,7 +1921,7 @@ class ImportPage(ProgressMixin, QWidget):
                     self._main.config.language,
                     percentage=percentage,
                     current=current_file_index,
-                    total=total_files
+                    total=total_files,
                 )
                 self._status_label.setText(f"{file_text}\n{overall_text}")
             else:
@@ -1905,13 +1960,15 @@ class ImportPage(ProgressMixin, QWidget):
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=5000,
-                parent=self
+                parent=self,
             )
 
         # Check if we have any successful conversions
         if not result.documents:
             self._status_label.setText(
-                "没有成功转换的文件" if self._main.config.language == "zh" else "No files converted successfully"
+                "没有成功转换的文件"
+                if self._main.config.language == "zh"
+                else "No files converted successfully"
             )
             self._auto_generate_after_convert = False
             return
@@ -1934,7 +1991,9 @@ class ImportPage(ProgressMixin, QWidget):
         self._set_generate_actions_enabled(True)
         self._last_ocr_page_status_message = ""
         self._status_label.setText(
-            f"转换失败: {error}" if self._main.config.language == "zh" else f"Conversion failed: {error}"
+            f"转换失败: {error}"
+            if self._main.config.language == "zh"
+            else f"Conversion failed: {error}"
         )
         InfoBar.error(
             title="错误" if self._main.config.language == "zh" else "Error",
@@ -1943,7 +2002,7 @@ class ImportPage(ProgressMixin, QWidget):
             isClosable=True,
             position=InfoBarPosition.TOP,
             duration=5000,
-            parent=self
+            parent=self,
         )
 
     def _cancel_operation(self):
@@ -1953,8 +2012,10 @@ class ImportPage(ProgressMixin, QWidget):
 
             w = MessageBox(
                 "确认取消" if self._main.config.language == "zh" else "Confirm Cancel",
-                "确定要取消当前操作吗？" if self._main.config.language == "zh" else "Are you sure you want to cancel?",
-                self
+                "确定要取消当前操作吗？"
+                if self._main.config.language == "zh"
+                else "Are you sure you want to cancel?",
+                self,
             )
 
             if w.exec():
@@ -1979,7 +2040,9 @@ class ImportPage(ProgressMixin, QWidget):
 
         InfoBar.warning(
             title="已取消" if self._main.config.language == "zh" else "Cancelled",
-            content="操作已被用户取消" if self._main.config.language == "zh" else "Operation cancelled by user",
+            content="操作已被用户取消"
+            if self._main.config.language == "zh"
+            else "Operation cancelled by user",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -1988,26 +2051,25 @@ class ImportPage(ProgressMixin, QWidget):
         )
 
     def closeEvent(self, event):  # noqa: N802
-        """Stop background workers quickly for fast application shutdown."""
+        """Stop background workers gracefully during application shutdown."""
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
-            self._worker.terminate()
-            self._worker.wait(100)
+            self._worker.requestInterruption()
+            self._worker.wait(300)
 
         if self._ocr_download_worker and self._ocr_download_worker.isRunning():
-            self._ocr_download_worker.terminate()
-            self._ocr_download_worker.wait(100)
+            self._ocr_download_worker.requestInterruption()
+            self._ocr_download_worker.wait(300)
 
         if self._deck_loader and self._deck_loader.isRunning():
-            self._deck_loader.terminate()
-            self._deck_loader.wait(100)
+            self._deck_loader.requestInterruption()
+            self._deck_loader.wait(300)
 
         self._cleanup_batch_worker()
         self._cleanup_ocr_download_worker()
         self._cleanup_deck_loader_worker()
         self._dispose_state_tooltip()
         super().closeEvent(event)
-
 
     def _clear_all(self):
         """Clear all selections and inputs."""
@@ -2028,15 +2090,12 @@ class ImportPage(ProgressMixin, QWidget):
         is_zh = self._main.config.language == "zh"
 
         # Create custom dialog
-        dialog = MessageBox(
-            "选择示例文档" if is_zh else "Select Example Document",
-            "",
-            self
-        )
+        dialog = MessageBox("选择示例文档" if is_zh else "Select Example Document", "", self)
 
         # Get examples directory
         import sys
-        if getattr(sys, 'frozen', False):
+
+        if getattr(sys, "frozen", False):
             # Running as compiled executable
             base_path = Path(sys._MEIPASS)
         else:
@@ -2050,21 +2109,27 @@ class ImportPage(ProgressMixin, QWidget):
             {
                 "file": "sample.md",
                 "name": "综合知识示例" if is_zh else "Comprehensive Knowledge",
-                "desc": "包含数学公式、代码块、列表等多种内容" if is_zh else "Contains math formulas, code blocks, lists, etc.",
-                "strategy": {"basic": 40, "cloze": 30, "concept": 30}
+                "desc": "包含数学公式、代码块、列表等多种内容"
+                if is_zh
+                else "Contains math formulas, code blocks, lists, etc.",
+                "strategy": {"basic": 40, "cloze": 30, "concept": 30},
             },
             {
                 "file": "sample-math.md",
                 "name": "数学公式专题" if is_zh else "Mathematics Formulas",
-                "desc": "微积分、线性代数、概率论等数学内容" if is_zh else "Calculus, linear algebra, probability, etc.",
-                "strategy": {"cloze": 50, "concept": 30, "basic": 20}
+                "desc": "微积分、线性代数、概率论等数学内容"
+                if is_zh
+                else "Calculus, linear algebra, probability, etc.",
+                "strategy": {"cloze": 50, "concept": 30, "basic": 20},
             },
             {
                 "file": "sample-biology.md",
                 "name": "生物学知识" if is_zh else "Biology Knowledge",
-                "desc": "细胞、遗传、生态、进化等生物学内容" if is_zh else "Cell biology, genetics, ecology, evolution, etc.",
-                "strategy": {"basic": 40, "key_terms": 30, "concept": 30}
-            }
+                "desc": "细胞、遗传、生态、进化等生物学内容"
+                if is_zh
+                else "Cell biology, genetics, ecology, evolution, etc.",
+                "strategy": {"basic": 40, "key_terms": 30, "concept": 30},
+            },
         ]
 
         # Build dialog content
@@ -2084,7 +2149,9 @@ class ImportPage(ProgressMixin, QWidget):
             card.setBorderRadius(8)
             card_layout = QVBoxLayout(card)
             card_layout.setSpacing(SPACING_SMALL)
-            card_layout.setContentsMargins(SPACING_MEDIUM, SPACING_MEDIUM, SPACING_MEDIUM, SPACING_MEDIUM)
+            card_layout.setContentsMargins(
+                SPACING_MEDIUM, SPACING_MEDIUM, SPACING_MEDIUM, SPACING_MEDIUM
+            )
 
             # Title
             title_label = SubtitleLabel(example["name"])
@@ -2103,6 +2170,7 @@ class ImportPage(ProgressMixin, QWidget):
                 def handler():
                     selected_example[0] = ex
                     dialog.accept()
+
                 return handler
 
             select_btn.clicked.connect(make_handler(example))
@@ -2131,7 +2199,9 @@ class ImportPage(ProgressMixin, QWidget):
                 # Show success message
                 InfoBar.success(
                     title="示例已加载" if is_zh else "Example Loaded",
-                    content=f"已加载示例文档：{example['name']}" if is_zh else f"Example document loaded: {example['name']}",
+                    content=f"已加载示例文档：{example['name']}"
+                    if is_zh
+                    else f"Example document loaded: {example['name']}",
                     orient=Qt.Orientation.Horizontal,
                     isClosable=True,
                     position=InfoBarPosition.TOP,
@@ -2151,7 +2221,7 @@ class ImportPage(ProgressMixin, QWidget):
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=3000,
-                parent=self
+                parent=self,
             )
             return
 
@@ -2162,25 +2232,33 @@ class ImportPage(ProgressMixin, QWidget):
         strategy_mix = self._get_recommended_strategy(content_type)
 
         # Show recommendation dialog
-        dialog = MessageBox(
-            "策略推荐" if is_zh else "Strategy Recommendation",
-            "",
-            self
-        )
+        dialog = MessageBox("策略推荐" if is_zh else "Strategy Recommendation", "", self)
 
         # Build recommendation content
         type_names = {
             "math_science": ("数学/理科内容", "Math/Science Content"),
             "liberal_arts": ("文科/历史内容", "Liberal Arts/History Content"),
             "programming": ("编程/技术内容", "Programming/Technical Content"),
-            "general": ("通用内容", "General Content")
+            "general": ("通用内容", "General Content"),
         }
 
         type_descs = {
-            "math_science": ("检测到数学公式、科学概念等内容", "Detected math formulas, scientific concepts, etc."),
-            "liberal_arts": ("检测到历史事件、人文知识等内容", "Detected historical events, humanities knowledge, etc."),
-            "programming": ("检测到代码块、技术文档等内容", "Detected code blocks, technical documentation, etc."),
-            "general": ("混合类型内容，使用平衡策略", "Mixed content type, using balanced strategy")
+            "math_science": (
+                "检测到数学公式、科学概念等内容",
+                "Detected math formulas, scientific concepts, etc.",
+            ),
+            "liberal_arts": (
+                "检测到历史事件、人文知识等内容",
+                "Detected historical events, humanities knowledge, etc.",
+            ),
+            "programming": (
+                "检测到代码块、技术文档等内容",
+                "Detected code blocks, technical documentation, etc.",
+            ),
+            "general": (
+                "混合类型内容，使用平衡策略",
+                "Mixed content type, using balanced strategy",
+            ),
         }
 
         type_name = type_names.get(content_type, type_names["general"])
@@ -2200,7 +2278,7 @@ class ImportPage(ProgressMixin, QWidget):
             "concept": ("概念解释", "Concept"),
             "key_terms": ("关键术语", "Key Terms"),
             "single_choice": ("单选题", "Single Choice"),
-            "multiple_choice": ("多选题", "Multiple Choice")
+            "multiple_choice": ("多选题", "Multiple Choice"),
         }
 
         for strategy_id, ratio in strategy_mix.items():
@@ -2220,7 +2298,9 @@ class ImportPage(ProgressMixin, QWidget):
 
             InfoBar.success(
                 title="已应用推荐策略" if is_zh else "Recommendation Applied",
-                content="已根据文档类型应用推荐的生成策略" if is_zh else "Applied recommended strategy based on document type",
+                content="已根据文档类型应用推荐的生成策略"
+                if is_zh
+                else "Applied recommended strategy based on document type",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -2241,7 +2321,9 @@ class ImportPage(ProgressMixin, QWidget):
 
         for file_path in self._file_paths[:3]:  # Check first 3 files
             try:
-                content = file_path.read_text(encoding="utf-8", errors="ignore")[:5000]  # First 5000 chars
+                content = file_path.read_text(encoding="utf-8", errors="ignore")[
+                    :5000
+                ]  # First 5000 chars
 
                 for keyword in math_keywords:
                     math_score += content.count(keyword)
@@ -2258,7 +2340,11 @@ class ImportPage(ProgressMixin, QWidget):
         # Determine content type based on scores
         if math_score > programming_score and math_score > history_score and math_score > 3:
             return "math_science"
-        elif programming_score > math_score and programming_score > history_score and programming_score > 2:
+        elif (
+            programming_score > math_score
+            and programming_score > history_score
+            and programming_score > 2
+        ):
             return "programming"
         elif history_score > math_score and history_score > programming_score and history_score > 5:
             return "liberal_arts"
@@ -2271,7 +2357,7 @@ class ImportPage(ProgressMixin, QWidget):
             "math_science": {"cloze": 50, "concept": 30, "basic": 20},
             "liberal_arts": {"basic": 40, "key_terms": 30, "concept": 30},
             "programming": {"basic": 40, "cloze": 30, "concept": 30},
-            "general": {"basic": 35, "cloze": 25, "concept": 25, "key_terms": 15}
+            "general": {"basic": 35, "cloze": 25, "concept": 25, "key_terms": 15},
         }
         return strategies.get(content_type, strategies["general"])
 
@@ -2295,7 +2381,9 @@ class ImportPage(ProgressMixin, QWidget):
 
         # Update button text and tooltips
         start_text = "开始生成" if is_zh else "Start Generation"
-        start_shortcut = get_shortcut_text(ShortcutKeys.START_GENERATION, self._main.config.language)
+        start_shortcut = get_shortcut_text(
+            ShortcutKeys.START_GENERATION, self._main.config.language
+        )
         self._btn_convert.setText(start_text)
         self._btn_convert.setToolTip(f"{start_text} ({start_shortcut})")
 
@@ -2318,4 +2406,3 @@ class ImportPage(ProgressMixin, QWidget):
         if isDarkTheme():
             return QColor(255, 255, 255)
         return QColor(0, 0, 0)
-

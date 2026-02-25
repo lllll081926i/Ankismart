@@ -29,9 +29,15 @@ def test_temperature_load_and_save_uses_slider(_qapp, monkeypatch) -> None:
     assert page._temperature_slider.value() == 12
 
     captured: dict[str, AppConfig] = {}
-    monkeypatch.setattr("ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c))
-    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
-    monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c)
+    )
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
 
     page._temperature_slider.setValue(15)
     page._save_config()
@@ -63,6 +69,24 @@ def test_load_config_populates_ocr_controls(_qapp) -> None:
     assert page._ocr_model_tier_combo.currentData() == "accuracy"
     assert page._ocr_source_combo.currentData() == "cn_mirror"
     assert page._ocr_cuda_auto_card.isChecked() is False
+    assert page._ocr_cloud_limit_card.isHidden() is False
+
+
+def test_ocr_cloud_limit_card_visibility_follows_mode(_qapp) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    for index in range(page._ocr_mode_combo.count()):
+        if page._ocr_mode_combo.itemData(index) == "local":
+            page._ocr_mode_combo.setCurrentIndex(index)
+            break
+    assert page._ocr_cloud_limit_card.isHidden() is True
+
+    for index in range(page._ocr_mode_combo.count()):
+        if page._ocr_mode_combo.itemData(index) == "cloud":
+            page._ocr_mode_combo.setCurrentIndex(index)
+            break
+    assert page._ocr_cloud_limit_card.isHidden() is False
 
 
 def test_save_config_persists_ocr_settings(_qapp, monkeypatch) -> None:
@@ -70,10 +94,16 @@ def test_save_config_persists_ocr_settings(_qapp, monkeypatch) -> None:
     page = SettingsPage(main)
 
     captured: dict[str, AppConfig] = {}
-    monkeypatch.setattr("ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c))
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c)
+    )
     monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
-    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
-    monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
 
     for index in range(page._ocr_mode_combo.count()):
         if page._ocr_mode_combo.itemData(index) == "local":
@@ -106,10 +136,16 @@ def test_save_config_does_not_override_theme(_qapp, monkeypatch) -> None:
     page = SettingsPage(main)
 
     captured: dict[str, AppConfig] = {}
-    monkeypatch.setattr("ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c))
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c)
+    )
     monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
-    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
-    monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
 
     page._save_config()
 
@@ -133,12 +169,18 @@ def test_save_config_prefers_runtime_apply_when_available(_qapp, monkeypatch) ->
     page = SettingsPage(main)
 
     def _unexpected_save(_):
-        raise AssertionError("save_config should not be called directly when runtime apply is available")
+        raise AssertionError(
+            "save_config should not be called directly when runtime apply is available"
+        )
 
     monkeypatch.setattr("ankismart.ui.settings_page.save_config", _unexpected_save)
     monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
-    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
-    monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
 
     page._language_combo.setCurrentIndex(1)  # English
     page._save_config()

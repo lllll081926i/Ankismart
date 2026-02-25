@@ -88,6 +88,7 @@ class LLMClient:
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._close_lock = threading.Lock()
+        self._call_lock = threading.Lock()
         self._closed = False
 
     def close(self) -> None:
@@ -130,21 +131,27 @@ class LLMClient:
         """Test if the configured model endpoint is reachable via chat completion."""
         metrics.increment("llm_validate_requests_total")
         try:
-            self._client.chat.completions.create(
-                model=self._model,
-                messages=[
-                    {"role": "system", "content": "You are a connectivity probe. Reply with OK."},
-                    {"role": "user", "content": "ping"},
-                ],
-                temperature=0,
-                max_tokens=1,
-                timeout=30,
-            )
+            with self._call_lock:
+                self._client.chat.completions.create(
+                    model=self._model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are a connectivity probe. Reply with OK.",
+                        },
+                        {"role": "user", "content": "ping"},
+                    ],
+                    temperature=0,
+                    max_tokens=1,
+                    timeout=30,
+                )
             metrics.increment("llm_validate_success_total")
             return True
         except Exception as exc:
             trace_id = get_trace_id()
-            converted = self._convert_to_card_error(exc, trace_id=trace_id, context="validate connection")
+            converted = self._convert_to_card_error(
+                exc, trace_id=trace_id, context="validate connection"
+            )
             metrics.increment("llm_validate_failed_total", labels={"code": converted.code.value})
             raise converted from exc
 
@@ -162,9 +169,9 @@ class LLMClient:
             model=provider.model,
             base_url=provider.base_url or None,
             rpm_limit=provider.rpm_limit,
-            temperature=getattr(config, 'llm_temperature', 0.3),
-            max_tokens=getattr(config, 'llm_max_tokens', 0),
-            proxy_url=getattr(config, 'proxy_url', ''),
+            temperature=getattr(config, "llm_temperature", 0.3),
+            max_tokens=getattr(config, "llm_max_tokens", 0),
+            proxy_url=getattr(config, "proxy_url", ""),
         )
 
     def chat(self, system_prompt: str, user_prompt: str) -> str:
@@ -195,7 +202,8 @@ class LLMClient:
                     }
                     if self._max_tokens > 0:
                         kwargs["max_tokens"] = self._max_tokens
-                    response = self._client.chat.completions.create(**kwargs)
+                    with self._call_lock:
+                        response = self._client.chat.completions.create(**kwargs)
 
                 usage = response.usage
                 if usage:
@@ -232,7 +240,7 @@ class LLMClient:
 
             except _RETRYABLE_ERRORS as exc:
                 if attempt < _MAX_RETRIES - 1:
-                    delay = _BASE_DELAY * (2 ** attempt)
+                    delay = _BASE_DELAY * (2**attempt)
                     converted = self._convert_to_card_error(
                         exc,
                         trace_id=trace_id,
@@ -267,7 +275,9 @@ class LLMClient:
                     ) from exc
 
             except Exception as exc:
-                converted = self._convert_to_card_error(exc, trace_id=trace_id, context="chat completion")
+                converted = self._convert_to_card_error(
+                    exc, trace_id=trace_id, context="chat completion"
+                )
                 metrics.increment(
                     "llm_requests_failed_total",
                     labels={"code": converted.code.value},

@@ -41,8 +41,22 @@ def _update_cache_hit_ratio_metric() -> None:
 class DocumentConverter:
     """Main converter that dispatches to format-specific converters."""
 
-    def __init__(self, *, ocr_correction_fn: Callable[[str], str] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        ocr_correction_fn: Callable[[str], str] | None = None,
+        ocr_mode: str = "local",
+        ocr_cloud_provider: str = "",
+        ocr_cloud_endpoint: str = "",
+        ocr_cloud_api_key: str = "",
+        proxy_url: str = "",
+    ) -> None:
         self._ocr_correction_fn = ocr_correction_fn
+        self._ocr_mode = ocr_mode
+        self._ocr_cloud_provider = ocr_cloud_provider
+        self._ocr_cloud_endpoint = ocr_cloud_endpoint
+        self._ocr_cloud_api_key = ocr_cloud_api_key
+        self._proxy_url = proxy_url
 
     @staticmethod
     def _resolve_converter(file_type: str, trace_id: str) -> Callable:
@@ -72,7 +86,9 @@ class DocumentConverter:
             trace_id=trace_id,
         )
 
-    def convert(self, file_path: Path, *, progress_callback: Callable[..., None] | None = None) -> MarkdownResult:
+    def convert(
+        self, file_path: Path, *, progress_callback: Callable[..., None] | None = None
+    ) -> MarkdownResult:
         with trace_context() as trace_id:
             with timed("convert_total"):
                 metrics.increment("convert_requests_total")
@@ -119,7 +135,8 @@ class DocumentConverter:
                                 try:
                                     progress_callback(*args)
                                 except TypeError:
-                                    # Backward compatibility for callbacks that only accept message text.
+                                    # Backward compatibility for callbacks that only
+                                    # accept message text.
                                     if len(args) == 3:
                                         try:
                                             progress_callback(str(args[2]))
@@ -149,12 +166,22 @@ class DocumentConverter:
                                 trace_id,
                                 ocr_correction_fn=self._ocr_correction_fn,
                                 progress_callback=safe_progress_callback,
+                                ocr_mode=self._ocr_mode,
+                                cloud_provider=self._ocr_cloud_provider,
+                                cloud_endpoint=self._ocr_cloud_endpoint,
+                                cloud_api_key=self._ocr_cloud_api_key,
+                                proxy_url=self._proxy_url,
                             )
                         else:
                             result = converter_fn(
                                 file_path,
                                 trace_id,
                                 progress_callback=safe_progress_callback,
+                                ocr_mode=self._ocr_mode,
+                                cloud_provider=self._ocr_cloud_provider,
+                                cloud_endpoint=self._ocr_cloud_endpoint,
+                                cloud_api_key=self._ocr_cloud_api_key,
+                                proxy_url=self._proxy_url,
                             )
                     else:
                         result = converter_fn(file_path, trace_id)

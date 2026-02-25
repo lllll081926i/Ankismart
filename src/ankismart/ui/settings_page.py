@@ -57,7 +57,7 @@ if TYPE_CHECKING:
 
 _OCR_MODE_CHOICES = (
     ("local", "本地模型", "Local Model"),
-    ("cloud", "云端模型（开发中）", "Cloud Model (In Development)"),
+    ("cloud", "云端模型", "Cloud Model"),
 )
 
 _OCR_MODEL_TIER_CHOICES = (
@@ -69,6 +69,10 @@ _OCR_MODEL_TIER_CHOICES = (
 _OCR_SOURCE_CHOICES = (
     ("official", "官方地址（HuggingFace）", "Official (HuggingFace)"),
     ("cn_mirror", "国内镜像（ModelScope）", "China Mirror (ModelScope)"),
+)
+
+_OCR_CLOUD_PROVIDER_CHOICES = (
+    ("mineru", "MinerU 云 OCR", "MinerU Cloud OCR"),
 )
 
 
@@ -151,7 +155,9 @@ class LLMProviderDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setSpacing(SPACING_MEDIUM)
-        layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
+        layout.setContentsMargins(
+            MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD
+        )
 
         # Name
         self._name_edit = LineEdit()
@@ -226,6 +232,7 @@ class SettingsPage(ScrollArea):
         self._provider_list_widget: QWidget | None = None
         self._provider_test_worker = None
         self._anki_test_worker = None
+        self._ocr_cloud_test_worker = None
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setSingleShot(True)
         self._autosave_timer.setInterval(400)
@@ -312,6 +319,9 @@ class SettingsPage(ScrollArea):
         self._ocr_model_tier_combo.currentIndexChanged.connect(self._schedule_auto_save)
         self._ocr_source_combo.currentIndexChanged.connect(self._schedule_auto_save)
         self._ocr_cuda_auto_card.checkedChanged.connect(self._schedule_auto_save)
+        self._ocr_cloud_provider_combo.currentIndexChanged.connect(self._schedule_auto_save)
+        self._ocr_cloud_endpoint_edit.textChanged.connect(self._schedule_auto_save)
+        self._ocr_cloud_api_key_edit.textChanged.connect(self._schedule_auto_save)
 
         # Experimental features
         self._auto_split_switch.checkedChanged.connect(self._schedule_auto_save)
@@ -344,7 +354,9 @@ class SettingsPage(ScrollArea):
         """Apply theme-aware background color to settings page."""
         bg_color = get_page_background_color(dark=isDarkTheme())
 
-        self.setStyleSheet(f"QScrollArea#settingsPage {{ background-color: {bg_color}; border: none; }}")
+        self.setStyleSheet(
+            f"QScrollArea#settingsPage {{ background-color: {bg_color}; border: none; }}"
+        )
         self.scrollWidget.setStyleSheet(f"QWidget#scrollWidget {{ background-color: {bg_color}; }}")
 
     def _apply_theme_styles(self) -> None:
@@ -444,7 +456,7 @@ class SettingsPage(ScrollArea):
         self._temperature_label.setFixedWidth(50)
 
         self._temperature_slider.valueChanged.connect(
-            lambda v: self._temperature_label.setText(f"{v/10:.1f}")
+            lambda v: self._temperature_label.setText(f"{v / 10:.1f}")
         )
 
         self._temperature_card.hBoxLayout.addWidget(self._temperature_slider)
@@ -634,6 +646,7 @@ class SettingsPage(ScrollArea):
 
         # Log Level - Create custom setting card with ComboBox
         from ankismart.ui.i18n import t
+
         is_zh = self._main.config.language == "zh"
 
         log_level_texts = [
@@ -660,7 +673,9 @@ class SettingsPage(ScrollArea):
         self._log_level_combobox.currentIndexChanged.connect(self._on_log_level_changed)
 
         # Add ComboBox to card layout
-        self._log_level_card.hBoxLayout.addWidget(self._log_level_combobox, 0, Qt.AlignmentFlag.AlignRight)
+        self._log_level_card.hBoxLayout.addWidget(
+            self._log_level_combobox, 0, Qt.AlignmentFlag.AlignRight
+        )
         self._log_level_card.hBoxLayout.addSpacing(16)
 
         self._other_group.addSettingCard(self._log_level_card)
@@ -681,15 +696,72 @@ class SettingsPage(ScrollArea):
         self._ocr_mode_card = SettingCard(
             FluentIcon.ROBOT,
             "OCR 模式",
-            "切换使用本地模型或云端模型（云端功能开发中）",
+            "切换使用本地模型或云端模型（MinerU）",
             self.scrollWidget,
         )
         self._ocr_mode_combo = ComboBox(self._ocr_mode_card)
         for key, zh_text, en_text in _OCR_MODE_CHOICES:
             self._ocr_mode_combo.addItem(zh_text if is_zh else en_text, userData=key)
+        self._ocr_mode_combo.currentIndexChanged.connect(self._on_ocr_mode_changed)
         self._ocr_mode_card.hBoxLayout.addWidget(self._ocr_mode_combo)
         self._ocr_mode_card.hBoxLayout.addSpacing(16)
         self._ocr_group.addSettingCard(self._ocr_mode_card)
+
+        self._ocr_cloud_provider_card = SettingCard(
+            FluentIcon.CLOUD,
+            "云 OCR 提供商",
+            "当前支持 MinerU 云 OCR",
+            self.scrollWidget,
+        )
+        self._ocr_cloud_provider_combo = ComboBox(self._ocr_cloud_provider_card)
+        for key, zh_text, en_text in _OCR_CLOUD_PROVIDER_CHOICES:
+            self._ocr_cloud_provider_combo.addItem(zh_text if is_zh else en_text, userData=key)
+        self._ocr_cloud_provider_card.hBoxLayout.addWidget(self._ocr_cloud_provider_combo)
+        self._ocr_cloud_provider_card.hBoxLayout.addSpacing(16)
+        self._ocr_group.addSettingCard(self._ocr_cloud_provider_card)
+
+        self._ocr_cloud_endpoint_card = SettingCard(
+            FluentIcon.GLOBE,
+            "云 OCR Endpoint",
+            "MinerU API 地址（示例：https://mineru.net）",
+            self.scrollWidget,
+        )
+        self._ocr_cloud_endpoint_edit = LineEdit(self._ocr_cloud_endpoint_card)
+        self._ocr_cloud_endpoint_edit.setPlaceholderText("https://mineru.net")
+        self._ocr_cloud_endpoint_edit.setMinimumWidth(300)
+        self._ocr_cloud_endpoint_card.hBoxLayout.addWidget(self._ocr_cloud_endpoint_edit)
+        self._ocr_cloud_endpoint_card.hBoxLayout.addSpacing(16)
+        self._ocr_group.addSettingCard(self._ocr_cloud_endpoint_card)
+
+        self._ocr_cloud_api_key_card = SettingCard(
+            FluentIcon.FINGERPRINT,
+            "云 OCR API Key",
+            "MinerU 用户令牌（将加密保存）",
+            self.scrollWidget,
+        )
+        self._ocr_cloud_api_key_edit = PasswordLineEdit(self._ocr_cloud_api_key_card)
+        self._ocr_cloud_api_key_edit.setPlaceholderText("sk-...")
+        self._ocr_cloud_api_key_edit.setMinimumWidth(260)
+        self._ocr_cloud_api_key_card.hBoxLayout.addWidget(self._ocr_cloud_api_key_edit)
+        self._ocr_cloud_api_key_card.hBoxLayout.addSpacing(16)
+        self._ocr_group.addSettingCard(self._ocr_cloud_api_key_card)
+
+        self._ocr_cloud_limit_card = SettingCard(
+            FluentIcon.INFO,
+            "云 OCR 官方限制" if is_zh else "Cloud OCR Official Limits",
+            (
+                "单文件<=200MB，PDF<=600页；每天2000页为最高优先级，超出后优先级降低；"
+                "需 Authorization: Bearer <Token>，且先申请上传地址再上传文件。"
+            )
+            if is_zh
+            else (
+                "Single file <=200MB and PDF <=600 pages; first 2000 pages/day are "
+                "high-priority, then lower priority; requires Authorization: Bearer <Token>, "
+                "and file must be uploaded via pre-signed URL."
+            ),
+            self.scrollWidget,
+        )
+        self._ocr_group.addSettingCard(self._ocr_cloud_limit_card)
 
         self._ocr_cuda_auto_card = SwitchSettingCard(
             FluentIcon.POWER_BUTTON,
@@ -703,7 +775,7 @@ class SettingsPage(ScrollArea):
             "测试",
             FluentIcon.HELP,
             "OCR 模型连通性测试",
-            "本地模式检查模型完整性，云端模式显示开发中状态",
+            "本地模式检查模型完整性，云端模式检查 API 与鉴权",
         )
         self._ocr_connectivity_card.clicked.connect(self._test_ocr_connectivity)
         self._ocr_group.addSettingCard(self._ocr_connectivity_card)
@@ -717,7 +789,9 @@ class SettingsPage(ScrollArea):
         self._ocr_model_tier_combo = ComboBox(self._ocr_model_tier_card)
         for key, zh_text, en_text in _OCR_MODEL_TIER_CHOICES:
             self._ocr_model_tier_combo.addItem(zh_text if is_zh else en_text, userData=key)
-        self._ocr_model_tier_combo.currentIndexChanged.connect(lambda _: self._refresh_ocr_recommendation())
+        self._ocr_model_tier_combo.currentIndexChanged.connect(
+            lambda _: self._refresh_ocr_recommendation()
+        )
 
         self._ocr_model_recommend_label = BodyLabel(self._ocr_model_tier_card)
         self._ocr_model_recommend_label.setWordWrap(False)
@@ -789,7 +863,9 @@ class SettingsPage(ScrollArea):
         )
         self._auto_split_switch = SwitchButton(self._auto_split_card)
         self._auto_split_switch.setChecked(self._main.config.enable_auto_split)
-        self._auto_split_card.hBoxLayout.addWidget(self._auto_split_switch, 0, Qt.AlignmentFlag.AlignRight)
+        self._auto_split_card.hBoxLayout.addWidget(
+            self._auto_split_switch, 0, Qt.AlignmentFlag.AlignRight
+        )
         self._auto_split_card.hBoxLayout.addSpacing(16)
         self._experimental_group.addSettingCard(self._auto_split_card)
 
@@ -804,7 +880,9 @@ class SettingsPage(ScrollArea):
         self._split_threshold_spinbox.setRange(10000, 200000)
         self._split_threshold_spinbox.setSingleStep(10000)
         self._split_threshold_spinbox.setValue(self._main.config.split_threshold)
-        self._split_threshold_card.hBoxLayout.addWidget(self._split_threshold_spinbox, 0, Qt.AlignmentFlag.AlignRight)
+        self._split_threshold_card.hBoxLayout.addWidget(
+            self._split_threshold_spinbox, 0, Qt.AlignmentFlag.AlignRight
+        )
         self._split_threshold_card.hBoxLayout.addSpacing(16)
         self._experimental_group.addSettingCard(self._split_threshold_card)
 
@@ -825,7 +903,9 @@ class SettingsPage(ScrollArea):
             "导出日志" if is_zh else "Export Logs",
             FluentIcon.DOCUMENT,
             "导出日志" if is_zh else "Export Logs",
-            "导出应用日志文件用于问题排查" if is_zh else "Export application logs for troubleshooting",
+            "导出应用日志文件用于问题排查"
+            if is_zh
+            else "Export application logs for troubleshooting",
         )
         self._export_logs_card.clicked.connect(self._export_logs)
         self._other_group.addSettingCard(self._export_logs_card)
@@ -883,10 +963,22 @@ class SettingsPage(ScrollArea):
         self._ocr_correction_switch.setChecked(config.ocr_correction)
 
         self._set_combo_current_data(self._ocr_mode_combo, getattr(config, "ocr_mode", "local"))
-        self._set_combo_current_data(self._ocr_model_tier_combo, getattr(config, "ocr_model_tier", "lite"))
-        self._set_combo_current_data(self._ocr_source_combo, getattr(config, "ocr_model_source", "official"))
+        self._set_combo_current_data(
+            self._ocr_model_tier_combo, getattr(config, "ocr_model_tier", "lite")
+        )
+        self._set_combo_current_data(
+            self._ocr_source_combo, getattr(config, "ocr_model_source", "official")
+        )
+        self._set_combo_current_data(
+            self._ocr_cloud_provider_combo, getattr(config, "ocr_cloud_provider", "mineru")
+        )
+        self._ocr_cloud_endpoint_edit.setText(
+            getattr(config, "ocr_cloud_endpoint", "https://mineru.net")
+        )
+        self._ocr_cloud_api_key_edit.setText(getattr(config, "ocr_cloud_api_key", ""))
         self._ocr_cuda_auto_card.setChecked(getattr(config, "ocr_auto_cuda_upgrade", True))
         self._refresh_ocr_recommendation()
+        self._update_ocr_mode_ui()
 
         # Experimental features
         self._auto_split_switch.setChecked(config.enable_auto_split)
@@ -1011,17 +1103,108 @@ class SettingsPage(ScrollArea):
         text = zh_text if is_zh else en_text
         self._ocr_model_recommend_label.setText(text)
 
+    def _on_ocr_mode_changed(self, *_args) -> None:
+        self._update_ocr_mode_ui()
+
+    def _update_ocr_mode_ui(self) -> None:
+        mode = self._get_combo_current_data(self._ocr_mode_combo, "local")
+        is_cloud = mode == "cloud"
+
+        local_cards = (
+            self._ocr_cuda_auto_card,
+            self._ocr_model_tier_card,
+            self._ocr_source_card,
+            self._ocr_cuda_detect_card,
+        )
+        cloud_cards = (
+            self._ocr_cloud_provider_card,
+            self._ocr_cloud_endpoint_card,
+            self._ocr_cloud_api_key_card,
+            self._ocr_cloud_limit_card,
+        )
+
+        for card in local_cards:
+            card.setVisible(not is_cloud)
+        for card in cloud_cards:
+            card.setVisible(is_cloud)
+
     def _test_ocr_connectivity(self) -> None:
         is_zh = self._main.config.language == "zh"
         mode = self._get_combo_current_data(self._ocr_mode_combo, "local")
 
         if mode == "cloud":
+            provider = self._get_combo_current_data(self._ocr_cloud_provider_combo, "mineru")
+            endpoint = self._ocr_cloud_endpoint_edit.text().strip()
+            api_key = self._ocr_cloud_api_key_edit.text().strip()
+            if not endpoint:
+                self._show_info_bar(
+                    "warning",
+                    "配置不完整" if is_zh else "Incomplete Config",
+                    "请先填写云 OCR Endpoint。"
+                    if is_zh
+                    else "Please fill cloud OCR endpoint first.",
+                    duration=3500,
+                )
+                return
+            if not api_key:
+                self._show_info_bar(
+                    "warning",
+                    "配置不完整" if is_zh else "Incomplete Config",
+                    "请先填写云 OCR API Key。"
+                    if is_zh
+                    else "Please fill cloud OCR API key first.",
+                    duration=3500,
+                )
+                return
+
+            from ankismart.ui.workers import OCRCloudConnectionWorker
+
+            self._cleanup_ocr_cloud_test_worker()
+            worker = OCRCloudConnectionWorker(
+                provider=provider,
+                endpoint=endpoint,
+                api_key=api_key,
+                proxy_url=self._current_proxy_url(),
+            )
+            self._ocr_cloud_test_worker = worker
+
             self._show_info_bar(
                 "info",
-                "云端 OCR 开发中" if is_zh else "Cloud OCR In Development",
-                "云端 OCR 连通性测试暂未开放。" if is_zh else "Cloud OCR connectivity test is not available yet.",
-                duration=3500,
+                "测试中" if is_zh else "Testing",
+                "正在测试云 OCR 连通性..."
+                if is_zh
+                else "Testing cloud OCR connectivity...",
+                duration=1800,
             )
+
+            def _on_finished(ok: bool, detail: str) -> None:
+                try:
+                    if ok:
+                        self._show_info_bar(
+                            "success",
+                            "连接成功" if is_zh else "Connected",
+                            "云 OCR 连通正常。"
+                            if is_zh
+                            else "Cloud OCR connectivity is OK.",
+                            duration=3000,
+                        )
+                    else:
+                        self._show_info_bar(
+                            "error",
+                            "连接失败" if is_zh else "Connection Failed",
+                            detail
+                            or (
+                                "云 OCR 连通性测试失败"
+                                if is_zh
+                                else "Cloud OCR test failed"
+                            ),
+                            duration=5000,
+                        )
+                finally:
+                    self._cleanup_ocr_cloud_test_worker()
+
+            worker.finished.connect(_on_finished)
+            worker.start()
             return
 
         tier = self._get_combo_current_data(self._ocr_model_tier_combo, "lite")
@@ -1087,7 +1270,9 @@ class SettingsPage(ScrollArea):
         self._show_info_bar(
             "info",
             "CUDA 不可用" if is_zh else "CUDA Unavailable",
-            "未检测到可用 CUDA，建议使用轻量模型档位。" if is_zh else "No CUDA detected, Lite model tier is recommended.",
+            "未检测到可用 CUDA，建议使用轻量模型档位。"
+            if is_zh
+            else "No CUDA detected, Lite model tier is recommended.",
             duration=4000,
         )
 
@@ -1123,9 +1308,7 @@ class SettingsPage(ScrollArea):
     def _delete_provider(self, provider: LLMProviderConfig) -> None:
         """Delete a provider."""
         if len(self._providers) <= 1:
-            QMessageBox.warning(
-                self, "无法删除", "至少需要保留一个提供商配置"
-            )
+            QMessageBox.warning(self, "无法删除", "至少需要保留一个提供商配置")
             return
 
         reply = QMessageBox.question(
@@ -1180,7 +1363,9 @@ class SettingsPage(ScrollArea):
     def _on_provider_test_result(self, provider_name: str, connected: bool, error: str) -> None:
         """Handle provider connection test result."""
         if connected:
-            self._show_info_bar("success", "连接成功", f"提供商「{provider_name}」连通正常", duration=3500)
+            self._show_info_bar(
+                "success", "连接成功", f"提供商「{provider_name}」连通正常", duration=3500
+            )
             return
 
         if error:
@@ -1199,7 +1384,9 @@ class SettingsPage(ScrollArea):
             )
             return
 
-        self._show_info_bar("warning", "连接失败", f"提供商「{provider_name}」未通过连通性测试", duration=4000)
+        self._show_info_bar(
+            "warning", "连接失败", f"提供商「{provider_name}」未通过连通性测试", duration=4000
+        )
 
     @staticmethod
     def _parse_error_payload(error: str) -> tuple[ErrorCode | None, str]:
@@ -1245,7 +1432,12 @@ class SettingsPage(ScrollArea):
             self._show_info_bar("success", "连接成功", "AnkiConnect 连通正常", duration=3500)
         else:
             self._test_connection_card.setContent("连接失败")
-            self._show_info_bar("error", "连接失败", "无法连接到 AnkiConnect，请检查 URL/密钥与代理设置", duration=5000)
+            self._show_info_bar(
+                "error",
+                "连接失败",
+                "无法连接到 AnkiConnect，请检查 URL/密钥与代理设置",
+                duration=5000,
+            )
         self._main.set_connection_status(connected)
 
     def _refresh_cache_stats(self) -> None:
@@ -1294,7 +1486,12 @@ class SettingsPage(ScrollArea):
         reply = QMessageBox.question(
             self,
             t("settings.confirm_clear_cache", self._main.config.language),
-            t("settings.confirm_clear_cache_msg", self._main.config.language, count=count, size=size_mb),
+            t(
+                "settings.confirm_clear_cache_msg",
+                self._main.config.language,
+                count=count,
+                size=size_mb,
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 
@@ -1341,7 +1538,7 @@ class SettingsPage(ScrollArea):
         from ankismart.ui.i18n import t
 
         # 0: System, 1: Manual, 2: None
-        is_manual = (index == 1)
+        is_manual = index == 1
         self._proxy_edit.setVisible(is_manual)
         if not self.isVisible():
             return
@@ -1369,6 +1566,7 @@ class SettingsPage(ScrollArea):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_dir)))
         else:
             from ankismart.ui.i18n import t
+
             self._show_info_bar(
                 "warning",
                 t("log.no_logs_found", self._main.config.language),
@@ -1400,7 +1598,10 @@ class SettingsPage(ScrollArea):
             "ocr_model_tier",
             "ocr_model_source",
         )
-        return any(getattr(old_config, name, None) != getattr(new_config, name, None) for name in tracked_fields)
+        return any(
+            getattr(old_config, name, None) != getattr(new_config, name, None)
+            for name in tracked_fields
+        )
 
     def _save_config_silent(self, *, show_feedback: bool = False) -> None:
         """Save configuration without showing success message (for auto-save)."""
@@ -1432,10 +1633,12 @@ class SettingsPage(ScrollArea):
         ocr_mode = self._get_combo_current_data(self._ocr_mode_combo, "local")
         ocr_model_tier = self._get_combo_current_data(self._ocr_model_tier_combo, "lite")
         ocr_model_source = self._get_combo_current_data(self._ocr_source_combo, "official")
-        ocr_model_locked_by_user = (
-            getattr(self._main.config, "ocr_model_locked_by_user", False)
-            or ocr_model_tier != getattr(self._main.config, "ocr_model_tier", "lite")
-        )
+        ocr_cloud_provider = self._get_combo_current_data(self._ocr_cloud_provider_combo, "mineru")
+        ocr_cloud_endpoint = self._ocr_cloud_endpoint_edit.text().strip() or "https://mineru.net"
+        ocr_cloud_api_key = self._ocr_cloud_api_key_edit.text().strip()
+        ocr_model_locked_by_user = getattr(
+            self._main.config, "ocr_model_locked_by_user", False
+        ) or ocr_model_tier != getattr(self._main.config, "ocr_model_tier", "lite")
 
         # Update config
         config = self._main.config.model_copy(
@@ -1450,6 +1653,9 @@ class SettingsPage(ScrollArea):
                 "ocr_mode": ocr_mode,
                 "ocr_model_tier": ocr_model_tier,
                 "ocr_model_source": ocr_model_source,
+                "ocr_cloud_provider": ocr_cloud_provider,
+                "ocr_cloud_endpoint": ocr_cloud_endpoint,
+                "ocr_cloud_api_key": ocr_cloud_api_key,
                 "ocr_auto_cuda_upgrade": self._ocr_cuda_auto_card.isChecked(),
                 "ocr_model_locked_by_user": ocr_model_locked_by_user,
                 "llm_temperature": temperature,
@@ -1621,18 +1827,34 @@ class SettingsPage(ScrollArea):
         if hasattr(worker, "deleteLater"):
             worker.deleteLater()
 
+    def _cleanup_ocr_cloud_test_worker(self, *_args) -> None:
+        worker = self.__dict__.get("_ocr_cloud_test_worker")
+        if worker is None:
+            return
+        if hasattr(worker, "isRunning") and worker.isRunning():
+            worker.wait(200)
+            if worker.isRunning():
+                return
+        self.__dict__["_ocr_cloud_test_worker"] = None
+        if hasattr(worker, "deleteLater"):
+            worker.deleteLater()
+
     def closeEvent(self, event):  # noqa: N802
-        """Force-stop test workers quickly during application shutdown."""
+        """Stop test workers gracefully during application shutdown."""
         if self._autosave_timer.isActive():
             self._autosave_timer.stop()
         if self._provider_test_worker and self._provider_test_worker.isRunning():
-            self._provider_test_worker.terminate()
-            self._provider_test_worker.wait(100)
+            self._provider_test_worker.requestInterruption()
+            self._provider_test_worker.wait(300)
         if self._anki_test_worker and self._anki_test_worker.isRunning():
-            self._anki_test_worker.terminate()
-            self._anki_test_worker.wait(100)
+            self._anki_test_worker.requestInterruption()
+            self._anki_test_worker.wait(300)
+        if self._ocr_cloud_test_worker and self._ocr_cloud_test_worker.isRunning():
+            self._ocr_cloud_test_worker.requestInterruption()
+            self._ocr_cloud_test_worker.wait(300)
         self._cleanup_provider_test_worker()
         self._cleanup_anki_test_worker()
+        self._cleanup_ocr_cloud_test_worker()
         super().closeEvent(event)
 
     def retranslate_ui(self):
@@ -1643,7 +1865,9 @@ class SettingsPage(ScrollArea):
         save_shortcut = get_shortcut_text(ShortcutKeys.SAVE_EDIT, self._main.config.language)
         if hasattr(self, "_save_card"):
             self._save_card.setContent(
-                f"保存所有配置更改 ({save_shortcut})" if is_zh else f"Save all configuration changes ({save_shortcut})"
+                f"保存所有配置更改 ({save_shortcut})"
+                if is_zh
+                else f"Save all configuration changes ({save_shortcut})"
             )
 
     def update_theme(self):
@@ -1651,4 +1875,3 @@ class SettingsPage(ScrollArea):
         self._apply_theme_styles()
         if self._provider_list_widget:
             self._provider_list_widget.update_theme()
-

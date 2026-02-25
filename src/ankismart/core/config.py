@@ -107,14 +107,14 @@ class AppConfig(BaseModel):
     default_deck: str = "Default"
     default_tags: list[str] = ["ankismart"]
     ocr_correction: bool = False
-    ocr_mode: str = "local"  # "local" or "cloud" (cloud mode is frontend-only for now)
+    ocr_mode: str = "local"  # "local" or "cloud"
     ocr_model_tier: str = "lite"  # "lite" | "standard" | "accuracy"
     ocr_model_source: str = "official"  # "official" | "cn_mirror"
     ocr_auto_cuda_upgrade: bool = True
     ocr_model_locked_by_user: bool = False
     ocr_cuda_checked_once: bool = False
-    ocr_cloud_provider: str = ""
-    ocr_cloud_endpoint: str = ""
+    ocr_cloud_provider: str = "mineru"
+    ocr_cloud_endpoint: str = "https://mineru.net"
     ocr_cloud_api_key: str = ""
     log_level: str = "INFO"
     llm_temperature: float = 0.3

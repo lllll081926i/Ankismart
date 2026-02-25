@@ -13,6 +13,8 @@ from ankismart.anki_gateway.apkg_exporter import (
     ANKISMART_CLOZE_MODEL,
     ApkgExporter,
     _get_model,
+    _materialize_media_file,
+    _validate_media_url,
 )
 from ankismart.core.errors import AnkiGatewayError, ErrorCode
 from ankismart.core.models import CardDraft
@@ -20,6 +22,7 @@ from ankismart.core.models import CardDraft
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _card(deck: str = "Default", note_type: str = "Basic", **field_overrides) -> CardDraft:
     fields = {"Front": "Q", "Back": "A"}
@@ -33,6 +36,7 @@ def _card(deck: str = "Default", note_type: str = "Basic", **field_overrides) ->
 # _get_model
 # ---------------------------------------------------------------------------
 
+
 class TestGetModel:
     def test_basic_model(self) -> None:
         model = _get_model("Basic")
@@ -40,8 +44,8 @@ class TestGetModel:
         assert model.name == ANKISMART_BASIC_MODEL
         template = model.templates[0]
         assert "Review" not in template["afmt"]
-        assert "as-block-title\">问题" in template["qfmt"]
-        assert "as-block-title\">答案" in template["afmt"]
+        assert 'as-block-title">问题' in template["qfmt"]
+        assert 'as-block-title">答案' in template["afmt"]
 
     def test_cloze_model(self) -> None:
         model = _get_model("Cloze")
@@ -71,6 +75,7 @@ class TestGetModel:
 # ---------------------------------------------------------------------------
 # ApkgExporter.export
 # ---------------------------------------------------------------------------
+
 
 class TestExport:
     @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
@@ -121,7 +126,9 @@ class TestExport:
         assert nested.parent.exists()
 
     @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
-    def test_export_missing_field_defaults_empty(self, mock_pkg_cls: MagicMock, tmp_path: Path) -> None:
+    def test_export_missing_field_defaults_empty(
+        self, mock_pkg_cls: MagicMock, tmp_path: Path
+    ) -> None:
         """If a card is missing a field defined in the model, it defaults to empty string."""
         mock_pkg_cls.return_value = MagicMock()
         card = CardDraft(fields={"Front": "Q"}, note_type="Basic", deck_name="Default")
@@ -171,10 +178,10 @@ class TestExport:
         assert sorted(mock_pkg.media_files) == sorted([str(image), str(audio)])
 
     @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
-    @patch("ankismart.anki_gateway.apkg_exporter.httpx.get")
+    @patch("ankismart.anki_gateway.apkg_exporter._download_media_to_path")
     def test_export_materializes_data_and_url_media(
         self,
-        mock_http_get: MagicMock,
+        mock_download_media: MagicMock,
         mock_pkg_cls: MagicMock,
         tmp_path: Path,
     ) -> None:
@@ -189,10 +196,12 @@ class TestExport:
 
         mock_pkg.write_to_file.side_effect = _capture_media_payloads
 
-        response = MagicMock()
-        response.content = b"from-url"
-        response.raise_for_status.return_value = None
-        mock_http_get.return_value = response
+        def _fake_download(url: str, out_path: Path) -> Path:
+            assert url == "https://example.com/audio.mp3"
+            out_path.write_bytes(b"from-url")
+            return out_path
+
+        mock_download_media.side_effect = _fake_download
 
         card = _card()
         card.media.picture.append(
@@ -245,3 +254,20 @@ class TestExport:
         ApkgExporter().export([card], tmp_path / "out.apkg")
 
         assert mock_pkg.media_files == []
+
+
+def test_validate_media_url_rejects_loopback() -> None:
+    with pytest.raises(ValueError, match="disallowed network"):
+        _validate_media_url("https://127.0.0.1/media.mp3")
+
+
+def test_materialize_media_file_skips_disallowed_url(tmp_path: Path) -> None:
+    media = SimpleNamespace(
+        filename="bad.mp3",
+        path=None,
+        data=None,
+        url="https://127.0.0.1/bad.mp3",
+    )
+
+    result = _materialize_media_file(media, tmp_path)
+    assert result is None

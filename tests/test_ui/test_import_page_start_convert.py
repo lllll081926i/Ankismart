@@ -51,8 +51,16 @@ def test_start_convert_skips_ocr_checks_for_non_ocr_files(monkeypatch):
     ensure_called = {"value": False}
     started = {"value": False}
 
-    monkeypatch.setattr(ImportPage, "_prepare_local_ocr_runtime", lambda self: prepare_called.update(value=True) or True)
-    monkeypatch.setattr(ImportPage, "_ensure_ocr_models_ready", lambda self: ensure_called.update(value=True) or True)
+    monkeypatch.setattr(
+        ImportPage,
+        "_prepare_local_ocr_runtime",
+        lambda self: prepare_called.update(value=True) or True,
+    )
+    monkeypatch.setattr(
+        ImportPage,
+        "_ensure_ocr_models_ready",
+        lambda self: ensure_called.update(value=True) or True,
+    )
     monkeypatch.setattr("ankismart.ui.import_page.save_config", lambda cfg: None)
 
     class _FakeBatchWorker:
@@ -98,6 +106,57 @@ def test_start_convert_checks_ocr_for_pdf(monkeypatch):
     assert calls["ensure"] == 1
 
 
+def test_start_convert_cloud_mode_skips_local_model_check(monkeypatch):
+    page = make_page()
+    page._file_paths = [Path("a.pdf")]
+    page._main.config.ocr_mode = "cloud"
+    page._main.config.ocr_cloud_provider = "mineru"
+    page._main.config.ocr_cloud_endpoint = "https://mineru.net"
+    page._main.config.ocr_cloud_api_key = "token"
+
+    ensure_called = {"value": False}
+    started = {"value": False}
+
+    monkeypatch.setattr(
+        ImportPage,
+        "_ensure_ocr_models_ready",
+        lambda self: ensure_called.update(value=True) or True,
+    )
+    monkeypatch.setattr("ankismart.ui.import_page.save_config", lambda cfg: None)
+
+    class _FakeBatchWorker:
+        def __init__(self, file_paths, config=None):
+            self.file_progress = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.file_completed = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.page_progress = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.finished = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.error = type("_Sig", (), {"connect": lambda self, fn: None})()
+            self.cancelled = type("_Sig", (), {"connect": lambda self, fn: None})()
+
+        def start(self):
+            started["value"] = True
+
+    monkeypatch.setattr("ankismart.ui.import_page.BatchConvertWorker", _FakeBatchWorker)
+
+    ImportPage._start_convert(page)
+
+    assert started["value"] is True
+    assert ensure_called["value"] is False
+
+
+def test_prepare_local_ocr_runtime_cloud_requires_api_key(monkeypatch):
+    page = make_page()
+    page._main.config.ocr_mode = "cloud"
+    page._main.config.ocr_cloud_provider = "mineru"
+    page._main.config.ocr_cloud_endpoint = "https://mineru.net"
+    page._main.config.ocr_cloud_api_key = ""
+
+    infobar_calls = patch_infobar(monkeypatch)
+
+    assert ImportPage._prepare_local_ocr_runtime(page) is False
+    assert len(infobar_calls["warning"]) == 1
+
+
 def test_apply_cuda_strategy_upgrades_lite_once(monkeypatch):
     page = make_page()
     infobar_calls = patch_infobar(monkeypatch)
@@ -125,14 +184,14 @@ def test_start_convert_rejects_empty_api_key_for_non_ollama(monkeypatch):
     infobar_calls = patch_infobar(monkeypatch)
     page._file_paths = [Path("a.md")]
     page._main.config = AppConfig(
-        llm_providers=[
-            LLMProviderConfig(id="p1", name="OpenAI", api_key="", model="gpt-4o")
-        ],
+        llm_providers=[LLMProviderConfig(id="p1", name="OpenAI", api_key="", model="gpt-4o")],
         active_provider_id="p1",
     )
 
     warnings: list[tuple[str, str]] = []
-    monkeypatch.setattr("ankismart.ui.import_page.QMessageBox", make_warning_box_collector(warnings))
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.QMessageBox", make_warning_box_collector(warnings)
+    )
     monkeypatch.setattr(ImportPage, "_ensure_ocr_models_ready", lambda self: True)
 
     ImportPage._start_convert(page)
@@ -182,7 +241,9 @@ def test_start_convert_rejects_empty_deck(monkeypatch):
     page._deck_combo = DummyCombo("   ")
 
     warnings: list[tuple[str, str]] = []
-    monkeypatch.setattr("ankismart.ui.import_page.QMessageBox", make_warning_box_collector(warnings))
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.QMessageBox", make_warning_box_collector(warnings)
+    )
     monkeypatch.setattr(ImportPage, "_ensure_ocr_models_ready", lambda self: True)
 
     ImportPage._start_convert(page)
@@ -202,7 +263,9 @@ def test_start_convert_rejects_mixed_mode_without_positive_ratio(monkeypatch):
     ]
 
     warnings: list[tuple[str, str]] = []
-    monkeypatch.setattr("ankismart.ui.import_page.QMessageBox", make_warning_box_collector(warnings))
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.QMessageBox", make_warning_box_collector(warnings)
+    )
     monkeypatch.setattr(ImportPage, "_ensure_ocr_models_ready", lambda self: True)
 
     ImportPage._start_convert(page)
@@ -222,6 +285,7 @@ def test_download_missing_ocr_models_forwards_progress_callback(monkeypatch):
             return ["model-a"]
 
     monkeypatch.setattr(import_page, "_get_ocr_converter_module", lambda: _StubModule())
+
     def callback(current, total, msg):  # noqa: ANN001, ANN201
         return None
 
