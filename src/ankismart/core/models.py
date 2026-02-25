@@ -123,3 +123,4 @@ class ConvertedDocument(BaseModel):
 class BatchConvertResult(BaseModel):
     documents: list[ConvertedDocument] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

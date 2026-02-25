@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 import threading
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -146,6 +148,24 @@ class AppConfig(BaseModel):
     duplicate_scope: str = "deck"  # "deck" or "collection"
     duplicate_check_model: bool = True
     allow_duplicate: bool = False
+
+    # Quality & duplicate enhancement
+    semantic_duplicate_threshold: float = 0.9
+    ocr_quality_min_chars: int = 80
+    card_quality_min_chars: int = 2
+    card_quality_retry_rounds: int = 2
+
+    # Cloud OCR usage & cost estimation
+    ocr_cloud_priority_daily_quota: int = 2000
+    ocr_cloud_priority_pages_used_today: int = 0
+    ocr_cloud_usage_date: str = ""
+    ocr_cloud_total_pages: int = 0
+    ocr_cloud_cost_per_1k_pages: float = 0.0
+
+    # OCR resume & batch history
+    ocr_resume_file_paths: list[str] = Field(default_factory=list)
+    ocr_resume_updated_at: str = ""
+    task_history: list[dict[str, object]] = Field(default_factory=list)
 
     @property
     def active_provider(self) -> LLMProviderConfig | None:
@@ -343,3 +363,54 @@ def save_config(config: AppConfig) -> None:
             f"Failed to save config file: {exc}",
             code=ErrorCode.E_CONFIG_INVALID,
         ) from exc
+
+
+def register_cloud_ocr_usage(config: AppConfig, pages: int) -> None:
+    """Update daily and total cloud OCR page usage."""
+    if pages <= 0:
+        return
+
+    today = datetime.now().date().isoformat()
+    if config.ocr_cloud_usage_date != today:
+        config.ocr_cloud_usage_date = today
+        config.ocr_cloud_priority_pages_used_today = 0
+
+    config.ocr_cloud_priority_pages_used_today = max(
+        0, int(config.ocr_cloud_priority_pages_used_today)
+    ) + int(pages)
+    config.ocr_cloud_total_pages = max(0, int(config.ocr_cloud_total_pages)) + int(pages)
+
+
+def append_task_history(
+    config: AppConfig,
+    *,
+    event: str,
+    status: str,
+    summary: str,
+    payload: dict[str, object] | None = None,
+    limit: int = 120,
+) -> None:
+    """Append a lightweight task history record and keep bounded length."""
+    record: dict[str, object] = {
+        "id": uuid.uuid4().hex[:12],
+        "time": datetime.now().isoformat(timespec="seconds"),
+        "event": event,
+        "status": status,
+        "summary": summary,
+    }
+    if payload:
+        for key, value in payload.items():
+            if value is None:
+                continue
+            if isinstance(value, (str, int, float, bool)):
+                record[key] = value
+                continue
+            try:
+                json.dumps(value, ensure_ascii=False)
+                record[key] = value
+            except TypeError:
+                record[key] = str(value)
+
+    history = list(config.task_history or [])
+    history.insert(0, record)
+    config.task_history = history[: max(1, limit)]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
@@ -43,7 +44,7 @@ from qfluentwidgets import (
     isDarkTheme,
 )
 
-from ankismart.core.config import save_config
+from ankismart.core.config import append_task_history, register_cloud_ocr_usage, save_config
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
 from ankismart.ui.i18n import get_text
@@ -79,6 +80,39 @@ _RIGHT_STRATEGY_GROUP_MAX_HEIGHT = 640
 
 _OCR_CONVERTER_MODULE = None
 _DECK_LOADING_ENABLED = False
+
+_STRATEGY_TEMPLATE_LIBRARY: dict[str, dict[str, object]] = {
+    "balanced": {
+        "zh": "均衡模板",
+        "en": "Balanced",
+        "mix": {"basic": 35, "cloze": 20, "concept": 20, "key_terms": 15, "single_choice": 10},
+    },
+    "textbook": {
+        "zh": "教材讲义",
+        "en": "Textbook",
+        "mix": {"basic": 35, "concept": 25, "key_terms": 20, "cloze": 20},
+    },
+    "paper": {
+        "zh": "论文阅读",
+        "en": "Paper Reading",
+        "mix": {"concept": 30, "key_terms": 25, "cloze": 25, "basic": 20},
+    },
+    "wrongbook": {
+        "zh": "错题复盘",
+        "en": "Error Review",
+        "mix": {"single_choice": 40, "multiple_choice": 30, "basic": 20, "concept": 10},
+    },
+    "language": {
+        "zh": "语言记忆",
+        "en": "Language",
+        "mix": {"cloze": 40, "key_terms": 30, "basic": 20, "concept": 10},
+    },
+    "programming": {
+        "zh": "编程技术",
+        "en": "Programming",
+        "mix": {"basic": 35, "cloze": 30, "concept": 20, "key_terms": 15},
+    },
+}
 
 
 class OCRRuntimeUnavailableError(RuntimeError):
@@ -510,6 +544,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._auto_generate_after_convert = False  # Flag for auto card generation
         self._last_ocr_progress_message: str = ""
         self._last_ocr_page_status_message: str = ""
+        self._convert_start_ts: float = 0.0
 
         # Lazy-loaded heavy dependencies
         self._converter = None
@@ -606,6 +641,16 @@ class ImportPage(ProgressMixin, QWidget):
         self._clear_files_btn.clicked.connect(self._clear_files)
         self._clear_files_btn.setVisible(False)  # Hidden initially
         drop_layout.addWidget(self._clear_files_btn)
+
+        self._resume_failed_btn = PushButton(
+            "继续失败任务" if self._main.config.language == "zh" else "Resume Failed OCR Tasks"
+        )
+        self._resume_failed_btn.setIcon(FluentIcon.SYNC)
+        self._resume_failed_btn.clicked.connect(self._resume_failed_tasks)
+        self._resume_failed_btn.setVisible(
+            bool(getattr(self._main.config, "ocr_resume_file_paths", []))
+        )
+        drop_layout.addWidget(self._resume_failed_btn)
 
         # Add drop area with stretch factor to fill panel
         layout.addWidget(self._drop_area, 1)
@@ -811,6 +856,27 @@ class ImportPage(ProgressMixin, QWidget):
         group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         group.setMaximumHeight(_RIGHT_STRATEGY_GROUP_MAX_HEIGHT)
 
+        template_card = SettingCard(
+            FluentIcon.BOOK_SHELF,
+            "策略模板库" if is_zh else "Strategy Templates",
+            "一键套用常见场景配比" if is_zh else "Apply preset strategy ratio in one click",
+            group,
+        )
+        self._strategy_template_combo = ComboBox(template_card)
+        for key, meta in _STRATEGY_TEMPLATE_LIBRARY.items():
+            self._strategy_template_combo.addItem(
+                str(meta["zh"] if is_zh else meta["en"]),
+                userData=key,
+            )
+        self._btn_apply_strategy_template = PushButton("应用" if is_zh else "Apply")
+        self._btn_apply_strategy_template.clicked.connect(self._apply_selected_strategy_template)
+        template_card.hBoxLayout.addWidget(self._strategy_template_combo)
+        template_card.hBoxLayout.addWidget(self._btn_apply_strategy_template)
+        template_card.hBoxLayout.addSpacing(16)
+        template_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        template_card.setMaximumHeight(_RIGHT_OPTION_CARD_MAX_HEIGHT)
+        group.addSettingCard(template_card)
+
         # Strategy options with RangeSettingCards
         strategies = [
             (
@@ -848,9 +914,6 @@ class ImportPage(ProgressMixin, QWidget):
         self._strategy_sliders: list[tuple[str, Slider, BodyLabel]] = []
 
         for i, (strategy_id, strategy_name, strategy_desc) in enumerate(strategies):
-            # Create a simple SettingCard with slider
-            from qfluentwidgets import SettingCard
-
             card = SettingCard(FluentIcon.LABEL, strategy_name, strategy_desc, group)
 
             # Create slider
@@ -881,6 +944,24 @@ class ImportPage(ProgressMixin, QWidget):
             group.addSettingCard(card)
 
         return group
+
+    def _apply_selected_strategy_template(self) -> None:
+        template_id = str(self._strategy_template_combo.currentData() or "")
+        template = _STRATEGY_TEMPLATE_LIBRARY.get(template_id)
+        is_zh = self._main.config.language == "zh"
+        if not template:
+            return
+        strategy_mix = dict(template.get("mix", {}))
+        self._apply_strategy_mix(strategy_mix)
+        InfoBar.success(
+            title="已应用模板" if is_zh else "Template Applied",
+            content=f"策略模板：{template['zh'] if is_zh else template['en']}",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2200,
+            parent=self,
+        )
 
     def _get_converter(self):
         """获取或创建文档转换器（懒加载）"""
@@ -1063,6 +1144,69 @@ class ImportPage(ProgressMixin, QWidget):
         self._drop_label.setVisible(not has_files)  # Hide hint when files present
         self._file_list.setVisible(has_files)  # Show list when files present
         self._clear_files_btn.setVisible(has_files)  # Show clear button when files present
+        self._refresh_resume_failed_button()
+
+    def _refresh_resume_failed_button(self) -> None:
+        button = self.__dict__.get("_resume_failed_btn")
+        if button is None:
+            return
+        queue = list(getattr(self._main.config, "ocr_resume_file_paths", []) or [])
+        count = len(queue)
+        is_zh = self._main.config.language == "zh"
+        button.setVisible(count > 0)
+        button.setText(
+            f"继续失败任务 ({count})" if is_zh else f"Resume Failed OCR Tasks ({count})"
+        )
+
+    def _resume_failed_tasks(self) -> None:
+        queue = list(getattr(self._main.config, "ocr_resume_file_paths", []) or [])
+        is_zh = self._main.config.language == "zh"
+        if not queue:
+            InfoBar.info(
+                title="提示" if is_zh else "Info",
+                content="没有可恢复的失败任务" if is_zh else "No failed OCR tasks to resume",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2600,
+                parent=self,
+            )
+            self._refresh_resume_failed_button()
+            return
+
+        paths = [Path(p) for p in queue if Path(p).exists()]
+        if not paths:
+            self._main.config.ocr_resume_file_paths = []
+            self._main.config.ocr_resume_updated_at = ""
+            save_config(self._main.config)
+            self._refresh_resume_failed_button()
+            InfoBar.warning(
+                title="恢复失败" if is_zh else "Resume Failed",
+                content="失败任务文件不存在，已清空恢复队列"
+                if is_zh
+                else "Failed files do not exist. Resume queue cleared.",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3200,
+                parent=self,
+            )
+            return
+
+        self._clear_files()
+        self._add_files(paths)
+        InfoBar.info(
+            title="已加载失败任务" if is_zh else "Failed Tasks Loaded",
+            content=f"已恢复 {len(paths)} 个文件并开始重试转换"
+            if is_zh
+            else f"Loaded {len(paths)} files and retrying conversion.",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2800,
+            parent=self,
+        )
+        self._start_convert()
 
     def _show_file_context_menu(self, pos):
         """Show context menu for file list."""
@@ -1594,6 +1738,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._progress_bar.setValue(0)
         self._btn_cancel.show()
         self._last_ocr_page_status_message = ""
+        self._convert_start_ts = time.monotonic()
         self._status_label.setText(
             "正在转换文件..." if self._main.config.language == "zh" else "Converting files..."
         )
@@ -1602,6 +1747,9 @@ class ImportPage(ProgressMixin, QWidget):
         self._worker = BatchConvertWorker(self._file_paths, self._main.config)
         self._worker.file_progress.connect(self._on_file_progress)
         self._worker.file_completed.connect(self._on_file_completed)
+        worker_warning = getattr(self._worker, "file_warning", None)
+        if worker_warning is not None and hasattr(worker_warning, "connect"):
+            worker_warning.connect(self._on_file_warning)
         self._worker.page_progress.connect(self._on_page_progress)
         self._worker.finished.connect(self._on_batch_convert_done)
         self._worker.error.connect(self._on_convert_error)
@@ -1897,6 +2045,18 @@ class ImportPage(ProgressMixin, QWidget):
                 pending_files_count=pending_count, total_expected=total_files
             )
 
+    def _on_file_warning(self, message: str) -> None:
+        is_zh = self._main.config.language == "zh"
+        InfoBar.warning(
+            title="OCR 质量预警" if is_zh else "OCR Quality Warning",
+            content=message,
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2200,
+            parent=self,
+        )
+
     def _on_page_progress(self, filename: str, current_page: int, total_pages: int):
         """Handle OCR page-by-page progress."""
         from ankismart.ui.i18n import get_text
@@ -1941,12 +2101,86 @@ class ImportPage(ProgressMixin, QWidget):
                     parent=self,
                 )
 
+    def _collect_failed_file_paths_from_status(self) -> list[str]:
+        failed_paths: list[str] = []
+        file_status = self.__dict__.get("_file_status", {})
+        for file_key, status in file_status.items():
+            if status == "completed":
+                continue
+            path = Path(file_key)
+            if path.exists():
+                failed_paths.append(str(path))
+        return failed_paths
+
+    def _update_resume_queue_from_status(self) -> None:
+        failed_paths = self._collect_failed_file_paths_from_status()
+        self._main.config.ocr_resume_file_paths = failed_paths
+        self._main.config.ocr_resume_updated_at = (
+            time.strftime("%Y-%m-%dT%H:%M:%S") if failed_paths else ""
+        )
+        self._refresh_resume_failed_button()
+
+    def _estimate_cloud_pages_for_completed_files(self) -> int:
+        file_status = self.__dict__.get("_file_status", {})
+        completed_keys = [k for k, v in file_status.items() if v == "completed"]
+        if not completed_keys:
+            return 0
+
+        pages = 0
+        try:
+            from ankismart.converter import ocr_pdf
+        except Exception:
+            ocr_pdf = None  # type: ignore[assignment]
+
+        for key in completed_keys:
+            path = Path(key)
+            if not self._is_ocr_file(path):
+                continue
+            suffix = path.suffix.lower()
+            if suffix == ".pdf" and ocr_pdf is not None:
+                try:
+                    count = int(ocr_pdf.count_pdf_pages(path))
+                    pages += max(1, count)
+                except Exception:
+                    pages += 1
+            else:
+                pages += 1
+        return pages
+
     def _on_batch_convert_done(self, result: BatchConvertResult):
         """Handle batch conversion completion."""
         self._cleanup_batch_worker()
         self._hide_progress()
         self._set_generate_actions_enabled(True)
         self._last_ocr_page_status_message = ""
+        self._update_resume_queue_from_status()
+
+        convert_start_ts = float(self.__dict__.get("_convert_start_ts", 0.0) or 0.0)
+        elapsed = max(0.0, time.monotonic() - convert_start_ts) if convert_start_ts else 0.0
+        total_files = len(self._file_paths)
+        succeeded = len(result.documents)
+        failed = len(result.errors)
+        status = "success" if failed == 0 else ("failed" if succeeded == 0 else "partial")
+
+        cloud_pages = 0
+        if getattr(self._main.config, "ocr_mode", "local") == "cloud":
+            cloud_pages = self._estimate_cloud_pages_for_completed_files()
+            register_cloud_ocr_usage(self._main.config, cloud_pages)
+
+        append_task_history(
+            self._main.config,
+            event="batch_convert",
+            status=status,
+            summary=f"转换 {succeeded}/{total_files}，失败 {failed}",
+            payload={
+                "files_total": total_files,
+                "files_succeeded": succeeded,
+                "files_failed": failed,
+                "duration_seconds": round(elapsed, 2),
+                "cloud_pages": cloud_pages,
+            },
+        )
+        save_config(self._main.config)
 
         # Show errors if any
         if result.errors:
@@ -1956,6 +2190,24 @@ class ImportPage(ProgressMixin, QWidget):
                 content=f"部分文件转换失败:\n{error_msg}"
                 if self._main.config.language == "zh"
                 else f"Some files failed to convert:\n{error_msg}",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=5000,
+                parent=self,
+            )
+
+        quality_warnings = list(getattr(result, "warnings", []) or [])
+        if quality_warnings:
+            preview_msg = "\n".join(quality_warnings[:3])
+            tail = "" if len(quality_warnings) <= 3 else f"\n... +{len(quality_warnings) - 3}"
+            InfoBar.warning(
+                title=(
+                    "OCR 质量预警"
+                    if self._main.config.language == "zh"
+                    else "OCR Quality Warning"
+                ),
+                content=preview_msg + tail,
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -1990,6 +2242,17 @@ class ImportPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._set_generate_actions_enabled(True)
         self._last_ocr_page_status_message = ""
+        self._update_resume_queue_from_status()
+        convert_start_ts = float(self.__dict__.get("_convert_start_ts", 0.0) or 0.0)
+        elapsed = max(0.0, time.monotonic() - convert_start_ts) if convert_start_ts else 0.0
+        append_task_history(
+            self._main.config,
+            event="batch_convert",
+            status="failed",
+            summary=f"转换失败: {error}",
+            payload={"duration_seconds": round(elapsed, 2)},
+        )
+        save_config(self._main.config)
         self._status_label.setText(
             f"转换失败: {error}"
             if self._main.config.language == "zh"
@@ -2031,6 +2294,15 @@ class ImportPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._set_generate_actions_enabled(True)
         self._last_ocr_page_status_message = ""
+        self._update_resume_queue_from_status()
+        append_task_history(
+            self._main.config,
+            event="batch_convert",
+            status="cancelled",
+            summary="用户取消转换任务",
+            payload={"remaining_files": len(self._collect_failed_file_paths_from_status())},
+        )
+        save_config(self._main.config)
         self._status_label.setText(
             "操作已取消" if self._main.config.language == "zh" else "Operation cancelled"
         )
@@ -2388,6 +2660,24 @@ class ImportPage(ProgressMixin, QWidget):
         self._btn_convert.setToolTip(f"{start_text} ({start_shortcut})")
 
         self._btn_clear.setText("清除" if is_zh else "Clear")
+        if hasattr(self, "_resume_failed_btn"):
+            self._refresh_resume_failed_button()
+
+        if hasattr(self, "_btn_apply_strategy_template"):
+            self._btn_apply_strategy_template.setText("应用" if is_zh else "Apply")
+
+        if hasattr(self, "_strategy_template_combo"):
+            current = self._strategy_template_combo.currentData()
+            self._strategy_template_combo.clear()
+            for key, meta in _STRATEGY_TEMPLATE_LIBRARY.items():
+                self._strategy_template_combo.addItem(
+                    str(meta["zh"] if is_zh else meta["en"]),
+                    userData=key,
+                )
+            for idx in range(self._strategy_template_combo.count()):
+                if self._strategy_template_combo.itemData(idx) == current:
+                    self._strategy_template_combo.setCurrentIndex(idx)
+                    break
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""

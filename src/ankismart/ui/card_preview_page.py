@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import csv
+import json
 import re
+import time
+from collections import Counter
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,6 +30,7 @@ from qfluentwidgets import (
     InfoBar,
     InfoBarPosition,
     LineEdit,
+    MessageBox,
     PrimaryPushButton,
     ProgressBar,
     PushButton,
@@ -32,6 +38,7 @@ from qfluentwidgets import (
     isDarkTheme,
 )
 
+from ankismart.core.config import append_task_history, save_config
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft
 from ankismart.ui.styles import (
@@ -278,9 +285,7 @@ class CardRenderer:
 
         if not options:
             compact = re.sub(r"\s+", " ", plain).strip()
-            inline_matches = list(
-                re.finditer(r"(^|\s)([A-Ea-e])[\.、\):：\-]\s*", compact)
-            )
+            inline_matches = list(re.finditer(r"(^|\s)([A-Ea-e])[\.、\):：\-]\s*", compact))
             if len(inline_matches) >= 2:
                 question = compact[: inline_matches[0].start(2)].strip()
                 for i, match in enumerate(inline_matches):
@@ -352,18 +357,20 @@ class CardRenderer:
         ]
         lines = [line for line in lines if line]
         if lines:
-            marker_with_text = re.match(r"^(?:解析|explanation)\s*[:：]\s*(.+)$", lines[0], re.IGNORECASE)
+            marker_with_text = re.match(
+                r"^(?:解析|explanation)\s*[:：]\s*(.+)$", lines[0], re.IGNORECASE
+            )
             if marker_with_text:
                 lines[0] = marker_with_text.group(1).strip()
-            while lines and re.match(r"^(?:解析|explanation)\s*[:：]?\s*$", lines[0], re.IGNORECASE):
+            while lines and re.match(
+                r"^(?:解析|explanation)\s*[:：]?\s*$", lines[0], re.IGNORECASE
+            ):
                 lines = lines[1:]
         if len(lines) >= 2:
             return lines
 
         sentences = [
-            part.strip()
-            for part in re.split(r"(?<=[。！？!?；;])\s*", lines[0])
-            if part.strip()
+            part.strip() for part in re.split(r"(?<=[。！？!?；;])\s*", lines[0]) if part.strip()
         ]
         if len(sentences) <= 1:
             return lines
@@ -408,7 +415,9 @@ class CardRenderer:
                 remaining[0],
                 re.IGNORECASE,
             )
-            marker_only = re.match(r"^(?:解析|explanation)\s*[:：]?\s*$", remaining[0], re.IGNORECASE)
+            marker_only = re.match(
+                r"^(?:解析|explanation)\s*[:：]?\s*$", remaining[0], re.IGNORECASE
+            )
             if marker_with_text:
                 remaining = [marker_with_text.group(1).strip(), *remaining[1:]]
             elif marker_only:
@@ -417,9 +426,7 @@ class CardRenderer:
         explanation = "\n".join(line for line in remaining if line).strip()
         if not explanation:
             sentences = [
-                part.strip()
-                for part in re.split(r"(?<=[。！？!?；;])\s*", answer)
-                if part.strip()
+                part.strip() for part in re.split(r"(?<=[。！？!?；;])\s*", answer) if part.strip()
             ]
             if len(sentences) >= 2:
                 answer = sentences[0]
@@ -431,7 +438,11 @@ class CardRenderer:
     def _render_explanation_html(explanation: str) -> str:
         sections = CardRenderer._split_explanation_sections(explanation)
         if not sections:
-            return '<div class="flat-explain-item"><span class="empty-placeholder">（无解析）</span></div>'
+            return (
+                '<div class="flat-explain-item">'
+                '<span class="empty-placeholder">（无解析）</span>'
+                "</div>"
+            )
         if len(sections) == 1:
             return (
                 '<div class="flat-explain-item">'
@@ -439,11 +450,7 @@ class CardRenderer:
                 "</div>"
             )
         items = "".join(
-            (
-                '<div class="flat-explain-item">'
-                f"{CardRenderer._format_text_block(section)}"
-                "</div>"
-            )
+            (f'<div class="flat-explain-item">{CardRenderer._format_text_block(section)}</div>')
             for section in sections
         )
         return f'<div class="flat-explain-stack">{items}</div>'
@@ -486,11 +493,7 @@ class CardRenderer:
             )
             for key, text in options
         )
-        options_html = (
-            f'<div class="flat-option-list">{option_rows}</div>'
-            if option_rows
-            else ""
-        )
+        options_html = f'<div class="flat-option-list">{option_rows}</div>' if option_rows else ""
         question_block_html = f"{question_html}{options_html}"
 
         answer_html = CardRenderer._format_text_block(answer_text, empty_text="（未标注）")
@@ -725,6 +728,8 @@ class CardPreviewPage(QWidget):
         self._current_index = -1
         self._push_worker = None
         self._export_worker = None
+        self._push_start_ts = 0.0
+        self._export_start_ts = 0.0
 
         self._init_ui()
 
@@ -775,7 +780,9 @@ class CardPreviewPage(QWidget):
         layout.setSpacing(SPACING_SMALL)
 
         # Title
-        self._title_label = TitleLabel("卡片预览" if self._main.config.language == "zh" else "Card Preview")
+        self._title_label = TitleLabel(
+            "卡片预览" if self._main.config.language == "zh" else "Card Preview"
+        )
         apply_page_title_style(self._title_label)
         layout.addWidget(self._title_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
@@ -787,14 +794,18 @@ class CardPreviewPage(QWidget):
 
         self._note_type_combo = ComboBox()
         for key, zh_text, en_text in self._NOTE_TYPE_FILTERS:
-            self._note_type_combo.addItem(zh_text if self._main.config.language == "zh" else en_text, userData=key)
+            self._note_type_combo.addItem(
+                zh_text if self._main.config.language == "zh" else en_text, userData=key
+            )
         apply_compact_combo_metrics(self._note_type_combo)
         self._note_type_combo.currentIndexChanged.connect(self._apply_filters)
         layout.addWidget(self._note_type_combo, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # Search box
         self._search_input = LineEdit()
-        self._search_input.setPlaceholderText("搜索卡片内容..." if self._main.config.language == "zh" else "Search card content...")
+        self._search_input.setPlaceholderText(
+            "搜索卡片内容..." if self._main.config.language == "zh" else "Search card content..."
+        )
         self._search_input.setFixedHeight(self._note_type_combo.height())
         self._search_input.setMinimumWidth(200)
         self._search_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -814,7 +825,9 @@ class CardPreviewPage(QWidget):
         layout.setSpacing(MARGIN_SMALL)
 
         # List title
-        self._list_title_label = BodyLabel("问题列表" if self._main.config.language == "zh" else "Questions")
+        self._list_title_label = BodyLabel(
+            "问题列表" if self._main.config.language == "zh" else "Questions"
+        )
         layout.addWidget(self._list_title_label)
 
         # Card list
@@ -885,13 +898,38 @@ class CardPreviewPage(QWidget):
         self._btn_next.setEnabled(False)
         layout.addWidget(self._btn_next)
 
-        self._btn_export_apkg = PushButton("导出为 APKG" if self._main.config.language == "zh" else "Export as APKG")
+        self._btn_export_apkg = PushButton(
+            "导出为 APKG" if self._main.config.language == "zh" else "Export as APKG"
+        )
         self._btn_export_apkg.setIcon(FluentIcon.DOWNLOAD)
         self._btn_export_apkg.clicked.connect(self._export_apkg)
         layout.addWidget(self._btn_export_apkg)
 
+        self._btn_export_csv = PushButton(
+            "导出为 CSV" if self._main.config.language == "zh" else "Export CSV"
+        )
+        self._btn_export_csv.setIcon(FluentIcon.DOCUMENT)
+        self._btn_export_csv.clicked.connect(self._export_csv)
+        layout.addWidget(self._btn_export_csv)
+
+        self._btn_export_json = PushButton(
+            "导出为 JSON" if self._main.config.language == "zh" else "Export JSON"
+        )
+        self._btn_export_json.setIcon(FluentIcon.DICTIONARY)
+        self._btn_export_json.clicked.connect(self._export_json)
+        layout.addWidget(self._btn_export_json)
+
+        self._btn_push_preview = PushButton(
+            "推送预演" if self._main.config.language == "zh" else "Push Preview"
+        )
+        self._btn_push_preview.setIcon(FluentIcon.VIEW)
+        self._btn_push_preview.clicked.connect(self._show_push_preview)
+        layout.addWidget(self._btn_push_preview)
+
         # Push to Anki button
-        self._btn_push = PrimaryPushButton("推送到 Anki" if self._main.config.language == "zh" else "Push to Anki")
+        self._btn_push = PrimaryPushButton(
+            "推送到 Anki" if self._main.config.language == "zh" else "Push to Anki"
+        )
         self._btn_push.setIcon(FluentIcon.SEND)
         self._btn_push.clicked.connect(self._push_to_anki)
         layout.addWidget(self._btn_push)
@@ -923,12 +961,8 @@ class CardPreviewPage(QWidget):
         self._note_type_label.setText(
             f"类型: {card.note_type}" if is_zh else f"Type: {card.note_type}"
         )
-        self._deck_label.setText(
-            f"牌组: {card.deck_name}" if is_zh else f"Deck: {card.deck_name}"
-        )
-        self._tags_label.setText(
-            f"标签: {tags_text}" if is_zh else f"Tags: {tags_text}"
-        )
+        self._deck_label.setText(f"牌组: {card.deck_name}" if is_zh else f"Deck: {card.deck_name}")
+        self._tags_label.setText(f"标签: {tags_text}" if is_zh else f"Tags: {tags_text}")
 
     def _apply_filters(self):
         """Apply current filter settings to card list."""
@@ -943,8 +977,7 @@ class CardPreviewPage(QWidget):
         search_text = self._search_input.text().strip().lower()
         if search_text:
             filtered = [
-                c for c in filtered
-                if any(search_text in v.lower() for v in c.fields.values())
+                c for c in filtered if any(search_text in v.lower() for v in c.fields.values())
             ]
 
         self._filtered_cards = filtered
@@ -1115,6 +1148,9 @@ class CardPreviewPage(QWidget):
         self._btn_prev.setText("上一张" if is_zh else "Previous")
         self._btn_next.setText("下一张" if is_zh else "Next")
         self._btn_export_apkg.setText("导出为 APKG" if is_zh else "Export as APKG")
+        self._btn_export_csv.setText("导出为 CSV" if is_zh else "Export CSV")
+        self._btn_export_json.setText("导出为 JSON" if is_zh else "Export JSON")
+        self._btn_push_preview.setText("推送预演" if is_zh else "Push Preview")
         self._btn_push.setText("推送到 Anki" if is_zh else "Push to Anki")
 
         if 0 <= self._current_index < len(self._filtered_cards):
@@ -1128,7 +1164,9 @@ class CardPreviewPage(QWidget):
         if not self._all_cards:
             InfoBar.warning(
                 title="警告" if self._main.config.language == "zh" else "Warning",
-                content="没有卡片需要推送" if self._main.config.language == "zh" else "No cards to push",
+                content="没有卡片需要推送"
+                if self._main.config.language == "zh"
+                else "No cards to push",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -1155,6 +1193,7 @@ class CardPreviewPage(QWidget):
         is_zh = self._main.config.language == "zh"
         self._set_action_buttons_enabled(False)
         self._progress_bar.show()
+        self._push_start_ts = time.monotonic()
         self._count_label.setText("正在推送到 Anki..." if is_zh else "Pushing to Anki...")
         logger.info(
             "push started",
@@ -1166,6 +1205,7 @@ class CardPreviewPage(QWidget):
         for card in self._all_cards:
             if card.options is None:
                 from ankismart.core.models import CardOptions
+
                 card.options = CardOptions()
             card.options.allow_duplicate = config.allow_duplicate
             card.options.duplicate_scope = config.duplicate_scope
@@ -1200,15 +1240,16 @@ class CardPreviewPage(QWidget):
     def _on_push_progress(self, message: str):
         """Handle push progress message."""
         is_zh = self._main.config.language == "zh"
-        self._count_label.setText(
-            f"推送中：{message}" if is_zh else f"Pushing: {message}"
-        )
+        self._count_label.setText(f"推送中：{message}" if is_zh else f"Pushing: {message}")
 
     def _on_push_finished(self, result):
         """Handle push completion."""
         self._cleanup_push_worker()
         self._progress_bar.hide()
         self._set_action_buttons_enabled(True)
+        elapsed = max(0.0, time.monotonic() - self._push_start_ts) if self._push_start_ts else 0.0
+        succeeded = self._safe_int(getattr(result, "succeeded", 0))
+        failed = self._safe_int(getattr(result, "failed", 0))
 
         self._main.result_page.load_result(result, self._all_cards)
         self._main.switchTo(self._main.result_page)
@@ -1216,11 +1257,29 @@ class CardPreviewPage(QWidget):
             "push finished",
             extra={"event": "ui.push.finished", "cards_count": len(self._all_cards)},
         )
+        append_task_history(
+            self._main.config,
+            event="batch_push",
+            status="success" if failed == 0 else "partial",
+            summary=(
+                "推送成功 "
+                f"{succeeded} 张，"
+                f"失败 {failed} 张"
+            ),
+            payload={
+                "cards_total": len(self._all_cards),
+                "cards_succeeded": succeeded,
+                "cards_failed": failed,
+                "duration_seconds": round(elapsed, 2),
+            },
+        )
+        save_config(self._main.config)
 
     def _on_push_error(self, error: str):
         """Handle push error."""
         self._cleanup_push_worker()
         is_zh = self._main.config.language == "zh"
+        elapsed = max(0.0, time.monotonic() - self._push_start_ts) if self._push_start_ts else 0.0
         self._progress_bar.hide()
         self._set_action_buttons_enabled(True)
         self._count_label.setText("推送失败" if is_zh else "Push failed")
@@ -1237,11 +1296,23 @@ class CardPreviewPage(QWidget):
             "push failed",
             extra={"event": "ui.push.failed", "error_detail": error},
         )
+        append_task_history(
+            self._main.config,
+            event="batch_push",
+            status="failed",
+            summary=f"推送失败: {error}",
+            payload={
+                "cards_total": len(self._all_cards),
+                "duration_seconds": round(elapsed, 2),
+            },
+        )
+        save_config(self._main.config)
 
     def _on_push_cancelled(self):
         """Handle push cancellation."""
         self._cleanup_push_worker()
         is_zh = self._main.config.language == "zh"
+        elapsed = max(0.0, time.monotonic() - self._push_start_ts) if self._push_start_ts else 0.0
         self._progress_bar.hide()
         self._set_action_buttons_enabled(True)
         self._count_label.setText("推送已取消" if is_zh else "Push cancelled")
@@ -1254,6 +1325,17 @@ class CardPreviewPage(QWidget):
             duration=3000,
             parent=self,
         )
+        append_task_history(
+            self._main.config,
+            event="batch_push",
+            status="cancelled",
+            summary="用户取消推送",
+            payload={
+                "cards_total": len(self._all_cards),
+                "duration_seconds": round(elapsed, 2),
+            },
+        )
+        save_config(self._main.config)
 
     def _export_apkg(self) -> None:
         """Export cards to APKG from card preview page."""
@@ -1310,6 +1392,7 @@ class CardPreviewPage(QWidget):
 
         self._set_action_buttons_enabled(False)
         self._progress_bar.show()
+        self._export_start_ts = time.monotonic()
         self._count_label.setText(
             f"正在导出 {len(self._all_cards)} 张卡片..."
             if is_zh
@@ -1334,6 +1417,9 @@ class CardPreviewPage(QWidget):
 
     def _on_export_finished(self, output_path: str) -> None:
         is_zh = self._main.config.language == "zh"
+        elapsed = (
+            max(0.0, time.monotonic() - self._export_start_ts) if self._export_start_ts else 0.0
+        )
         self._cleanup_export_worker()
         self._progress_bar.hide()
         self._set_action_buttons_enabled(True)
@@ -1348,9 +1434,24 @@ class CardPreviewPage(QWidget):
             duration=3200,
             parent=self,
         )
+        append_task_history(
+            self._main.config,
+            event="export_apkg",
+            status="success",
+            summary=f"导出 APKG: {Path(output_path).name}",
+            payload={
+                "cards_total": len(self._all_cards),
+                "duration_seconds": round(elapsed, 2),
+                "output_path": output_path,
+            },
+        )
+        save_config(self._main.config)
 
     def _on_export_error(self, error: str) -> None:
         is_zh = self._main.config.language == "zh"
+        elapsed = (
+            max(0.0, time.monotonic() - self._export_start_ts) if self._export_start_ts else 0.0
+        )
         self._cleanup_export_worker()
         self._progress_bar.hide()
         self._set_action_buttons_enabled(True)
@@ -1365,6 +1466,17 @@ class CardPreviewPage(QWidget):
             duration=5000,
             parent=self,
         )
+        append_task_history(
+            self._main.config,
+            event="export_apkg",
+            status="failed",
+            summary=f"导出 APKG 失败: {error}",
+            payload={
+                "cards_total": len(self._all_cards),
+                "duration_seconds": round(elapsed, 2),
+            },
+        )
+        save_config(self._main.config)
 
     def _set_count_label_for_current_state(self) -> None:
         if 0 <= self._current_index < len(self._filtered_cards):
@@ -1372,9 +1484,308 @@ class CardPreviewPage(QWidget):
             return
         self._set_total_count_text(len(self._filtered_cards))
 
+    @staticmethod
+    def _safe_int(value: object, default: int = 0) -> int:
+        try:
+            return int(value)  # type: ignore[arg-type]
+        except Exception:
+            return default
+
     def _set_action_buttons_enabled(self, enabled: bool) -> None:
         self._btn_push.setEnabled(enabled)
         self._btn_export_apkg.setEnabled(enabled)
+        self._btn_export_csv.setEnabled(enabled)
+        self._btn_export_json.setEnabled(enabled)
+        self._btn_push_preview.setEnabled(enabled)
+
+    def _build_export_rows(self) -> tuple[list[str], list[dict[str, str]]]:
+        rows: list[dict[str, str]] = []
+        field_keys: set[str] = set()
+        for card in self._all_cards:
+            field_keys.update(card.fields.keys())
+
+        ordered_field_keys = sorted(field_keys)
+        headers = [
+            "index",
+            "deck_name",
+            "note_type",
+            "tags",
+            "trace_id",
+            "source_format",
+            "source_path",
+            *[f"field_{name}" for name in ordered_field_keys],
+        ]
+
+        for idx, card in enumerate(self._all_cards, 1):
+            row: dict[str, str] = {
+                "index": str(idx),
+                "deck_name": card.deck_name or "",
+                "note_type": card.note_type or "",
+                "tags": ",".join(card.tags or []),
+                "trace_id": card.trace_id or "",
+                "source_format": card.metadata.source_format or "",
+                "source_path": card.metadata.source_path or "",
+            }
+            for key in ordered_field_keys:
+                row[f"field_{key}"] = str(card.fields.get(key, "") or "")
+            rows.append(row)
+
+        return headers, rows
+
+    def _export_csv(self) -> None:
+        is_zh = self._main.config.language == "zh"
+        if not self._all_cards:
+            InfoBar.warning(
+                title="警告" if is_zh else "Warning",
+                content="没有卡片需要导出" if is_zh else "No cards to export",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
+            )
+            return
+
+        output_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出为 CSV" if is_zh else "Export CSV",
+            "ankismart_cards.csv",
+            "CSV Files (*.csv)",
+        )
+        if not output_path:
+            return
+
+        headers, rows = self._build_export_rows()
+        try:
+            with Path(output_path).open("w", encoding="utf-8-sig", newline="") as fp:
+                writer = csv.DictWriter(fp, fieldnames=headers)
+                writer.writeheader()
+                writer.writerows(rows)
+        except Exception as exc:
+            InfoBar.error(
+                title="导出失败" if is_zh else "Export Failed",
+                content=str(exc),
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=4000,
+                parent=self,
+            )
+            append_task_history(
+                self._main.config,
+                event="export_csv",
+                status="failed",
+                summary=f"导出 CSV 失败: {exc}",
+                payload={"cards_total": len(self._all_cards)},
+            )
+            save_config(self._main.config)
+            return
+
+        InfoBar.success(
+            title="导出成功" if is_zh else "Export Succeeded",
+            content=f"已导出到 {output_path}" if is_zh else f"Exported to {output_path}",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2800,
+            parent=self,
+        )
+        append_task_history(
+            self._main.config,
+            event="export_csv",
+            status="success",
+            summary=f"导出 CSV: {Path(output_path).name}",
+            payload={"cards_total": len(self._all_cards), "output_path": output_path},
+        )
+        save_config(self._main.config)
+
+    def _export_json(self) -> None:
+        is_zh = self._main.config.language == "zh"
+        if not self._all_cards:
+            InfoBar.warning(
+                title="警告" if is_zh else "Warning",
+                content="没有卡片需要导出" if is_zh else "No cards to export",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
+            )
+            return
+
+        output_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出为 JSON" if is_zh else "Export JSON",
+            "ankismart_cards.json",
+            "JSON Files (*.json)",
+        )
+        if not output_path:
+            return
+
+        headers, rows = self._build_export_rows()
+        payload = {
+            "count": len(rows),
+            "columns": headers,
+            "cards": rows,
+        }
+        try:
+            Path(output_path).write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            InfoBar.error(
+                title="导出失败" if is_zh else "Export Failed",
+                content=str(exc),
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=4000,
+                parent=self,
+            )
+            append_task_history(
+                self._main.config,
+                event="export_json",
+                status="failed",
+                summary=f"导出 JSON 失败: {exc}",
+                payload={"cards_total": len(self._all_cards)},
+            )
+            save_config(self._main.config)
+            return
+
+        InfoBar.success(
+            title="导出成功" if is_zh else "Export Succeeded",
+            content=f"已导出到 {output_path}" if is_zh else f"Exported to {output_path}",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2800,
+            parent=self,
+        )
+        append_task_history(
+            self._main.config,
+            event="export_json",
+            status="success",
+            summary=f"导出 JSON: {Path(output_path).name}",
+            payload={"cards_total": len(self._all_cards), "output_path": output_path},
+        )
+        save_config(self._main.config)
+
+    @staticmethod
+    def _normalize_similarity_text(text: str) -> str:
+        plain = re.sub(r"<[^>]+>", " ", text or "")
+        plain = re.sub(r"\s+", " ", plain).strip().lower()
+        return plain
+
+    def _extract_card_question_for_similarity(self, card: CardDraft) -> str:
+        for key in ("Front", "Text", "Question"):
+            value = card.fields.get(key, "")
+            if value and str(value).strip():
+                return self._normalize_similarity_text(str(value))
+        if card.fields:
+            return self._normalize_similarity_text(str(next(iter(card.fields.values()))))
+        return ""
+
+    def _estimate_duplicate_risk(
+        self, cards: list[CardDraft], threshold: float
+    ) -> tuple[int, list[tuple[int, int, float]], bool]:
+        if len(cards) < 2:
+            return 0, [], False
+
+        texts = [self._extract_card_question_for_similarity(card) for card in cards]
+        suspicious_pairs: list[tuple[int, int, float]] = []
+        risky_indices: set[int] = set()
+        max_comparisons = 15000
+        comparisons = 0
+        truncated = False
+
+        for i in range(len(texts)):
+            if comparisons >= max_comparisons:
+                truncated = True
+                break
+            left = texts[i]
+            if not left:
+                continue
+            for j in range(i + 1, len(texts)):
+                comparisons += 1
+                if comparisons > max_comparisons:
+                    truncated = True
+                    break
+                right = texts[j]
+                if not right:
+                    continue
+                ratio = SequenceMatcher(None, left, right).ratio()
+                if ratio >= threshold:
+                    risky_indices.add(i)
+                    risky_indices.add(j)
+                    if len(suspicious_pairs) < 8:
+                        suspicious_pairs.append((i, j, ratio))
+            if truncated:
+                break
+
+        return len(risky_indices), suspicious_pairs, truncated
+
+    def _show_push_preview(self) -> None:
+        is_zh = self._main.config.language == "zh"
+        if not self._all_cards:
+            InfoBar.warning(
+                title="警告" if is_zh else "Warning",
+                content="没有卡片可预演" if is_zh else "No cards for preview",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2800,
+                parent=self,
+            )
+            return
+
+        threshold = float(getattr(self._main.config, "semantic_duplicate_threshold", 0.9))
+        risk_count, pairs, truncated = self._estimate_duplicate_risk(self._all_cards, threshold)
+
+        deck_counter = Counter((card.deck_name or "Default") for card in self._all_cards)
+        top_decks = sorted(deck_counter.items(), key=lambda item: item[1], reverse=True)[:5]
+        mode = (
+            getattr(self._main.config, "last_update_mode", "create_or_update")
+            or "create_or_update"
+        )
+
+        lines: list[str] = []
+        if is_zh:
+            lines.append(f"卡片总数：{len(self._all_cards)}")
+            lines.append(f"推送模式：{mode}")
+            lines.append(
+                f"近重复风险：{risk_count} 张（阈值 {threshold:.2f}）"
+                + ("，已触发比较上限，结果为近似值" if truncated else "")
+            )
+            lines.append("牌组分布（Top 5）：")
+            lines.extend([f"- {deck}: {count}" for deck, count in top_decks])
+            if pairs:
+                lines.append("高相似样例：")
+                for left, right, score in pairs[:5]:
+                    lines.append(f"- #{left + 1} vs #{right + 1}: {score:.2f}")
+        else:
+            lines.append(f"Total cards: {len(self._all_cards)}")
+            lines.append(f"Update mode: {mode}")
+            lines.append(
+                f"Near-duplicate risk: {risk_count} cards (threshold {threshold:.2f})"
+                + (", comparison capped so this is approximate" if truncated else "")
+            )
+            lines.append("Deck distribution (Top 5):")
+            lines.extend([f"- {deck}: {count}" for deck, count in top_decks])
+            if pairs:
+                lines.append("High-similarity samples:")
+                for left, right, score in pairs[:5]:
+                    lines.append(f"- #{left + 1} vs #{right + 1}: {score:.2f}")
+
+        dialog = MessageBox(
+            "推送预演" if is_zh else "Push Preview",
+            "\n".join(lines),
+            self,
+        )
+        dialog.yesButton.setText("确认推送" if is_zh else "Push Now")
+        dialog.cancelButton.setText("取消" if is_zh else "Cancel")
+        if dialog.exec():
+            self._push_to_anki()
 
     def _cleanup_push_worker(self) -> None:
         worker = self.__dict__.get("_push_worker")
@@ -1403,16 +1814,15 @@ class CardPreviewPage(QWidget):
             worker.deleteLater()
 
     def closeEvent(self, event):  # noqa: N802
-        """Force-stop workers quickly during application shutdown."""
+        """Stop workers cooperatively during application shutdown."""
         if self._push_worker and self._push_worker.isRunning():
             if hasattr(self._push_worker, "cancel"):
                 self._push_worker.cancel()
-            self._push_worker.terminate()
-            self._push_worker.wait(100)
+            self._push_worker.requestInterruption()
+            self._push_worker.wait(300)
         if self._export_worker and self._export_worker.isRunning():
-            self._export_worker.terminate()
-            self._export_worker.wait(100)
+            self._export_worker.requestInterruption()
+            self._export_worker.wait(300)
         self._cleanup_push_worker()
         self._cleanup_export_worker()
         super().closeEvent(event)
-

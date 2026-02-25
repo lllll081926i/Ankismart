@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 import threading
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -51,6 +53,87 @@ class CardGenerator:
 
     def generate(self, request):
         return self._impl.generate(request)
+
+
+def _normalize_text_for_quality(text: str) -> str:
+    plain = re.sub(r"<[^>]+>", " ", text or "")
+    plain = re.sub(r"\s+", " ", plain).strip()
+    return plain
+
+
+def _extract_question_text(card: CardDraft) -> str:
+    for key in ("Front", "Question", "Text"):
+        value = str(card.fields.get(key, "") or "")
+        if value.strip():
+            return _normalize_text_for_quality(value)
+    if card.fields:
+        return _normalize_text_for_quality(str(next(iter(card.fields.values())) or ""))
+    return ""
+
+
+def _extract_answer_text(card: CardDraft) -> str:
+    for key in ("Back", "Answer", "Extra"):
+        value = str(card.fields.get(key, "") or "")
+        if value.strip():
+            return _normalize_text_for_quality(value)
+    if (card.note_type or "").startswith("Cloze"):
+        return _normalize_text_for_quality(str(card.fields.get("Text", "") or ""))
+    chunks = []
+    for key, value in card.fields.items():
+        if key in {"Front", "Question", "Text"}:
+            continue
+        text = str(value or "").strip()
+        if text:
+            chunks.append(text)
+    return _normalize_text_for_quality(" ".join(chunks))
+
+
+def _card_quality_issue(card: CardDraft, *, min_chars: int) -> str | None:
+    question = _extract_question_text(card)
+    answer = _extract_answer_text(card)
+    if len(question) < min_chars:
+        return "question_too_short"
+    if len(answer) < min_chars:
+        return "answer_too_short"
+    if not (card.note_type or "").startswith("Cloze") and question == answer:
+        return "question_equals_answer"
+    return None
+
+
+def _is_semantic_duplicate(
+    question: str,
+    existing_questions: list[str],
+    *,
+    threshold: float,
+) -> bool:
+    if not question:
+        return False
+    normalized = question.lower()
+    for candidate in existing_questions:
+        if not candidate:
+            continue
+        if SequenceMatcher(None, normalized, candidate.lower()).ratio() >= threshold:
+            return True
+    return False
+
+
+def _ocr_markdown_quality_warning(text: str, *, min_chars: int) -> str | None:
+    normalized = _normalize_text_for_quality(text)
+    if len(normalized) < min_chars:
+        return f"content_too_short<{min_chars}"
+
+    replacement_count = normalized.count("\ufffd")
+    if replacement_count > 0:
+        ratio = replacement_count / max(1, len(normalized))
+        if ratio > 0.01:
+            return f"replacement_char_ratio={ratio:.3f}"
+
+    useful = sum(1 for ch in normalized if (ch.isalnum() or ("\u4e00" <= ch <= "\u9fff")))
+    useful_ratio = useful / max(1, len(normalized))
+    if useful_ratio < 0.35:
+        return f"useful_char_ratio={useful_ratio:.3f}"
+
+    return None
 
 
 class ConvertWorker(QThread):
@@ -318,6 +401,7 @@ class BatchConvertWorker(QThread):
     page_progress = pyqtSignal(str, int, int)  # file_name, current_page, total_pages
     ocr_progress = pyqtSignal(str)
     file_error = pyqtSignal(str)
+    file_warning = pyqtSignal(str)
     file_completed = pyqtSignal(str, object)  # file_name, ConvertedDocument
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
@@ -333,6 +417,8 @@ class BatchConvertWorker(QThread):
         self._last_file_error_message: str | None = None
         self._ocr_correction_fn = None
         self._ocr_correction_fn_ready = False
+        self._quality_warnings: list[str] = []
+        self._ocr_quality_min_chars = int(getattr(config, "ocr_quality_min_chars", 80))
 
     def cancel(self) -> None:
         """Cancel the conversion operation."""
@@ -410,6 +496,7 @@ class BatchConvertWorker(QThread):
 
                 doc = ConvertedDocument(result=converted, file_name=file_path.name)
                 documents.append(doc)
+                self._check_ocr_quality(file_path.name, converted)
                 self.file_completed.emit(file_path.name, doc)
 
             # Process PDF files (check text layer first)
@@ -444,6 +531,7 @@ class BatchConvertWorker(QThread):
                 if merged_result is not None:
                     doc = ConvertedDocument(result=merged_result, file_name="图片合集")
                     documents.append(doc)
+                    self._check_ocr_quality("图片合集", merged_result)
                     self.file_completed.emit("图片合集", doc)
                 elif self._last_file_error_message:
                     errors.append(self._last_file_error_message)
@@ -468,6 +556,7 @@ class BatchConvertWorker(QThread):
 
                 doc = ConvertedDocument(result=converted, file_name=file_path.name)
                 documents.append(doc)
+                self._check_ocr_quality(file_path.name, converted)
                 self.file_completed.emit(file_path.name, doc)
 
             if self._is_cancelled():
@@ -481,7 +570,9 @@ class BatchConvertWorker(QThread):
                 self._config.total_conversion_time += elapsed_time
                 save_config(self._config)
 
-            batch_result = BatchConvertResult(documents=documents, errors=errors)
+            batch_result = BatchConvertResult(
+                documents=documents, errors=errors, warnings=self._quality_warnings
+            )
             logger.info(
                 "batch conversion finished",
                 extra={
@@ -489,6 +580,7 @@ class BatchConvertWorker(QThread):
                     "total_files": total,
                     "converted_files": len(documents),
                     "failed_files": len(errors),
+                    "quality_warnings": len(self._quality_warnings),
                     "duration_ms": round((time.time() - self._start_time) * 1000, 2),
                 },
             )
@@ -553,6 +645,17 @@ class BatchConvertWorker(QThread):
         generator = CardGenerator(llm_client)
         self._ocr_correction_fn = generator.correct_ocr_text
         return self._ocr_correction_fn
+
+    def _check_ocr_quality(self, file_name: str, result: MarkdownResult) -> None:
+        warning = _ocr_markdown_quality_warning(
+            result.content,
+            min_chars=max(10, self._ocr_quality_min_chars),
+        )
+        if not warning:
+            return
+        message = f"{file_name}: OCR质量警告({warning})"
+        self._quality_warnings.append(message)
+        self.file_warning.emit(message)
 
     def _build_converter(self):
         converter_class = DocumentConverter
@@ -752,6 +855,10 @@ class BatchGenerateWorker(QThread):
         self._split_threshold = split_threshold
         self._config = config
         self._start_time = 0.0
+        threshold = float(getattr(config, "semantic_duplicate_threshold", 0.9))
+        self._semantic_duplicate_threshold = min(1.0, max(0.6, threshold))
+        self._card_quality_min_chars = int(getattr(config, "card_quality_min_chars", 2))
+        self._card_quality_retry_rounds = int(getattr(config, "card_quality_retry_rounds", 2))
 
     def cancel(self) -> None:
         """Cancel the generation operation."""
@@ -854,6 +961,7 @@ class BatchGenerateWorker(QThread):
                 )
 
                 doc_cards: list[CardDraft] = []
+                accepted_questions: list[str] = []
                 generator = CardGenerator(self._llm_client)
 
                 # Generate cards for each strategy in this document's allocation
@@ -868,45 +976,88 @@ class BatchGenerateWorker(QThread):
                         f"正在从 {document.file_name} 生成 {count} 张 {strategy} 卡片"
                     )
 
-                    try:
-                        request = GenerateRequest(
-                            markdown=document.result.content,
-                            strategy=strategy,
-                            deck_name=self._deck_name,
-                            tags=self._tags,
-                            trace_id=document.result.trace_id,
-                            source_path=document.result.source_path,
-                            target_count=count,
-                            enable_auto_split=self._enable_auto_split,
-                            split_threshold=self._split_threshold,
-                        )
+                    accepted_for_strategy: list[CardDraft] = []
+                    rejected_quality = 0
+                    rejected_duplicate = 0
+                    max_rounds = max(1, self._card_quality_retry_rounds + 1)
+                    rounds_used = 0
 
-                        cards = generator.generate(request)
-                        doc_cards.extend(cards)
+                    while len(accepted_for_strategy) < count and rounds_used < max_rounds:
+                        rounds_used += 1
+                        remaining = count - len(accepted_for_strategy)
+                        try:
+                            request = GenerateRequest(
+                                markdown=document.result.content,
+                                strategy=strategy,
+                                deck_name=self._deck_name,
+                                tags=self._tags,
+                                trace_id=document.result.trace_id,
+                                source_path=document.result.source_path,
+                                target_count=remaining,
+                                enable_auto_split=self._enable_auto_split,
+                                split_threshold=self._split_threshold,
+                            )
+                            round_cards = generator.generate(request)
+                        except Exception as e:
+                            with first_error_lock:
+                                if first_error_message[0] is None:
+                                    first_error_message[0] = _format_error_for_ui(e)
+                            logger.warning(
+                                "strategy generation failed",
+                                extra={
+                                    "event": "worker.batch_generate.strategy_failed",
+                                    "strategy": strategy,
+                                    "file_name": document.file_name,
+                                    "round": rounds_used,
+                                    "error_detail": str(e),
+                                },
+                            )
+                            self.progress.emit(
+                                f"生成 {strategy} 卡片时出错 ({document.file_name}): "
+                                f"{_format_error_for_ui(e)}"
+                            )
+                            break
 
-                        # Update progress with lock
-                        with cards_lock:
-                            cards_generated += len(cards)
-                            self.card_progress.emit(cards_generated, total_cards_to_generate)
+                        if not round_cards:
+                            continue
 
-                    except Exception as e:
-                        with first_error_lock:
-                            if first_error_message[0] is None:
-                                first_error_message[0] = _format_error_for_ui(e)
-                        # Log error but continue with other strategies
-                        logger.warning(
-                            "strategy generation failed",
-                            extra={
-                                "event": "worker.batch_generate.strategy_failed",
-                                "strategy": strategy,
-                                "file_name": document.file_name,
-                                "error_detail": str(e),
-                            },
-                        )
+                        for card in round_cards:
+                            issue = _card_quality_issue(
+                                card, min_chars=max(1, self._card_quality_min_chars)
+                            )
+                            if issue is not None:
+                                rejected_quality += 1
+                                continue
+
+                            question = _extract_question_text(card)
+                            if _is_semantic_duplicate(
+                                question,
+                                accepted_questions,
+                                threshold=self._semantic_duplicate_threshold,
+                            ):
+                                rejected_duplicate += 1
+                                continue
+
+                            accepted_for_strategy.append(card)
+                            accepted_questions.append(question)
+                            if len(accepted_for_strategy) >= count:
+                                break
+
+                    if rejected_quality or rejected_duplicate:
                         self.progress.emit(
-                            f"生成 {strategy} 卡片时出错 ({document.file_name}): "
-                            f"{_format_error_for_ui(e)}"
+                            f"{document.file_name}/{strategy}: "
+                            f"质量过滤 {rejected_quality} 张，近重复过滤 {rejected_duplicate} 张"
                         )
+                    if len(accepted_for_strategy) < count:
+                        self.progress.emit(
+                            f"{document.file_name}/{strategy}: "
+                            f"目标 {count} 张，实际 {len(accepted_for_strategy)} 张"
+                        )
+
+                    doc_cards.extend(accepted_for_strategy)
+                    with cards_lock:
+                        cards_generated += len(accepted_for_strategy)
+                        self.card_progress.emit(cards_generated, total_cards_to_generate)
 
                 # Emit document completion signal
                 if doc_cards:

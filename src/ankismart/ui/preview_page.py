@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -21,6 +22,7 @@ from qfluentwidgets import (
 
 from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.gateway import AnkiGateway
+from ankismart.core.config import append_task_history, save_config
 from ankismart.core.errors import ErrorCode, get_error_info
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
@@ -149,6 +151,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._pending_files_count = 0  # Track pending files
         self._ready_documents: set[str] = set()  # Track ready document names
         self._total_expected_docs = 0  # Total expected documents
+        self._generation_start_ts = 0.0
 
         self._setup_ui()
         self._init_shortcuts()
@@ -156,7 +159,9 @@ class PreviewPage(ProgressMixin, QWidget):
     def _setup_ui(self):
         """Setup the UI layout."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
+        layout.setContentsMargins(
+            MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD
+        )
         layout.setSpacing(MARGIN_SMALL)
 
         # Title bar with buttons on the right
@@ -329,10 +334,17 @@ class PreviewPage(ProgressMixin, QWidget):
         self._btn_save.setToolTip(f"{save_text} ({save_shortcut})")
 
         generate_text = "开始制作卡片" if is_zh else "Generate Cards"
-        generate_shortcut = get_shortcut_text(ShortcutKeys.START_GENERATION, self._main.config.language)
+        generate_shortcut = get_shortcut_text(
+            ShortcutKeys.START_GENERATION, self._main.config.language
+        )
         self._btn_generate.setToolTip(f"{generate_text} ({generate_shortcut})")
 
-    def load_documents(self, batch_result: BatchConvertResult, pending_files_count: int = 0, total_expected: int = 0):
+    def load_documents(
+        self,
+        batch_result: BatchConvertResult,
+        pending_files_count: int = 0,
+        total_expected: int = 0,
+    ):
         """Load documents from batch conversion result.
 
         Args:
@@ -358,7 +370,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
         # Add placeholder items for pending documents
         for i in range(pending_files_count):
-            self._file_list.addItem(f"转换中... ({i+1})")
+            self._file_list.addItem(f"转换中... ({i + 1})")
             # Disable placeholder items
             item_widget = self._file_list.item(len(self._documents) + i)
             if item_widget:
@@ -441,9 +453,7 @@ class PreviewPage(ProgressMixin, QWidget):
             if i in self._edited_content:
                 # Create new document with edited content
                 new_doc = ConvertedDocument(
-                    result=doc.result.model_copy(
-                        update={"content": self._edited_content[i]}
-                    ),
+                    result=doc.result.model_copy(update={"content": self._edited_content[i]}),
                     file_name=doc.file_name,
                 )
                 result.append(new_doc)
@@ -471,7 +481,10 @@ class PreviewPage(ProgressMixin, QWidget):
         content = (
             f"还有 {pending_count} 个文件正在转换中，转换完成后才能开始制作卡片"
             if is_zh
-            else f"{pending_count} file(s) still converting. Card generation will be available after conversion completes."
+            else (
+                f"{pending_count} file(s) still converting. "
+                "Card generation will be available after conversion completes."
+            )
         )
 
         self._converting_info_bar = InfoBar.warning(
@@ -481,7 +494,7 @@ class PreviewPage(ProgressMixin, QWidget):
             isClosable=False,
             position=InfoBarPosition.TOP,
             duration=-1,  # Don't auto-hide
-            parent=self
+            parent=self,
         )
 
     def _hide_converting_info_bar(self):
@@ -543,7 +556,7 @@ class PreviewPage(ProgressMixin, QWidget):
             self._file_list.addItem(document.file_name)
 
         # Update main batch result
-        if hasattr(self._main, 'batch_result') and self._main.batch_result:
+        if hasattr(self._main, "batch_result") and self._main.batch_result:
             replaced_in_batch = False
             for idx, existing in enumerate(self._main.batch_result.documents):
                 existing_key = (existing.file_name, existing.result.source_path)
@@ -561,7 +574,9 @@ class PreviewPage(ProgressMixin, QWidget):
         is_zh = self._main.config.language == "zh"
         InfoBar.success(
             title="文档就绪" if is_zh else "Document Ready",
-            content=f"{document.file_name} 已转换完成" if is_zh else f"{document.file_name} converted",
+            content=f"{document.file_name} 已转换完成"
+            if is_zh
+            else f"{document.file_name} converted",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -576,7 +591,11 @@ class PreviewPage(ProgressMixin, QWidget):
             InfoBar.info(
                 title="请稍候" if is_zh else "Please Wait",
                 content="样本卡片正在生成，请稍后再开始正式生成"
-                if is_zh else "Sample generation is in progress. Please wait before starting full generation.",
+                if is_zh
+                else (
+                    "Sample generation is in progress. "
+                    "Please wait before starting full generation."
+                ),
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -590,7 +609,9 @@ class PreviewPage(ProgressMixin, QWidget):
         if not provider:
             InfoBar.warning(
                 title="警告" if self._main.config.language == "zh" else "Warning",
-                content="请先配置 LLM 提供商" if self._main.config.language == "zh" else "Please configure LLM provider first",
+                content="请先配置 LLM 提供商"
+                if self._main.config.language == "zh"
+                else "Please configure LLM provider first",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -604,7 +625,9 @@ class PreviewPage(ProgressMixin, QWidget):
         if not documents:
             InfoBar.warning(
                 title="警告" if self._main.config.language == "zh" else "Warning",
-                content="没有可用的文档" if self._main.config.language == "zh" else "No documents available",
+                content="没有可用的文档"
+                if self._main.config.language == "zh"
+                else "No documents available",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -622,7 +645,9 @@ class PreviewPage(ProgressMixin, QWidget):
         if not deck_name:
             InfoBar.warning(
                 title="警告" if self._main.config.language == "zh" else "Warning",
-                content="请输入牌组名称" if self._main.config.language == "zh" else "Please enter deck name",
+                content="请输入牌组名称"
+                if self._main.config.language == "zh"
+                else "Please enter deck name",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -650,6 +675,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
         # Start generation worker
         self._cleanup_generate_worker()
+        self._generation_start_ts = time.monotonic()
         self._generate_worker = BatchGenerateWorker(
             documents=documents,
             generation_config=generation_config,
@@ -668,6 +694,34 @@ class PreviewPage(ProgressMixin, QWidget):
         self._generate_worker.cancelled.connect(self._on_generation_cancelled)
         self._generate_worker.start()
 
+    @staticmethod
+    def _normalize_card_field(text: str) -> str:
+        plain = re.sub(r"<[^>]+>", " ", text or "")
+        return re.sub(r"\s+", " ", plain).strip()
+
+    def _count_low_quality_cards(self, cards: list) -> int:
+        min_chars = max(1, int(getattr(self._main.config, "card_quality_min_chars", 2)))
+        bad = 0
+        for card in cards:
+            question = ""
+            for key in ("Front", "Question", "Text"):
+                value = self._normalize_card_field(str(card.fields.get(key, "") or ""))
+                if value:
+                    question = value
+                    break
+            answer = ""
+            for key in ("Back", "Answer", "Extra"):
+                value = self._normalize_card_field(str(card.fields.get(key, "") or ""))
+                if value:
+                    answer = value
+                    break
+            if len(question) < min_chars or len(answer) < min_chars:
+                bad += 1
+                continue
+            if not str(card.note_type).startswith("Cloze") and question == answer:
+                bad += 1
+        return bad
+
     def _on_preview_sample(self):
         """Generate and show sample cards."""
         is_zh = self._main.config.language == "zh"
@@ -677,7 +731,11 @@ class PreviewPage(ProgressMixin, QWidget):
             InfoBar.info(
                 title="请稍候" if is_zh else "Please Wait",
                 content="卡片生成/推送进行中，暂时无法生成样本卡片"
-                if is_zh else "Card generation/push is in progress. Sample preview is temporarily unavailable.",
+                if is_zh
+                else (
+                    "Card generation/push is in progress. "
+                    "Sample preview is temporarily unavailable."
+                ),
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -691,7 +749,9 @@ class PreviewPage(ProgressMixin, QWidget):
         if not provider:
             InfoBar.warning(
                 title="警告" if self._main.config.language == "zh" else "Warning",
-                content="请先配置 LLM 提供商" if self._main.config.language == "zh" else "Please configure LLM provider first",
+                content="请先配置 LLM 提供商"
+                if self._main.config.language == "zh"
+                else "Please configure LLM provider first",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -704,7 +764,9 @@ class PreviewPage(ProgressMixin, QWidget):
         if not self._documents:
             InfoBar.warning(
                 title="警告" if self._main.config.language == "zh" else "Warning",
-                content="没有可用的文档" if self._main.config.language == "zh" else "No documents available",
+                content="没有可用的文档"
+                if self._main.config.language == "zh"
+                else "No documents available",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -723,7 +785,9 @@ class PreviewPage(ProgressMixin, QWidget):
         if not strategy_mix:
             InfoBar.warning(
                 title="警告" if self._main.config.language == "zh" else "Warning",
-                content="请先配置卡片生成策略" if self._main.config.language == "zh" else "Please configure card generation strategy first",
+                content="请先配置卡片生成策略"
+                if self._main.config.language == "zh"
+                else "Please configure card generation strategy first",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -771,7 +835,9 @@ class PreviewPage(ProgressMixin, QWidget):
                             continue
 
                         request = GenerateRequest(
-                            markdown=self.document.result.content[:5000],  # Use first 5000 chars for speed
+                            markdown=self.document.result.content[
+                                :5000
+                            ],  # Use first 5000 chars for speed
                             strategy=strategy,
                             deck_name=self.deck_name,
                             tags=self.tags,
@@ -803,6 +869,7 @@ class PreviewPage(ProgressMixin, QWidget):
             deck_name = self._main.import_page._deck_combo.currentText().strip() or "Default"
             tags_text = self._main.import_page._tags_input.text().strip()
             from ankismart.ui.utils import split_tags_text
+
             tags = split_tags_text(tags_text)
 
             # Start worker and prevent duplicate sample requests.
@@ -820,7 +887,9 @@ class PreviewPage(ProgressMixin, QWidget):
             self._btn_preview.setEnabled(True)
             InfoBar.error(
                 title="错误" if is_zh else "Error",
-                content=f"样本生成初始化失败：{e}" if is_zh else f"Failed to initialize sample generation: {e}",
+                content=f"样本生成初始化失败：{e}"
+                if is_zh
+                else f"Failed to initialize sample generation: {e}",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -869,7 +938,9 @@ class PreviewPage(ProgressMixin, QWidget):
         layout = QVBoxLayout(dialog)
 
         title = SubtitleLabel()
-        title.setText(f"生成了 {len(cards)} 张样本卡片" if is_zh else f"Generated {len(cards)} sample cards")
+        title.setText(
+            f"生成了 {len(cards)} 张样本卡片" if is_zh else f"Generated {len(cards)} sample cards"
+        )
         layout.addWidget(title)
 
         # Show cards
@@ -908,7 +979,9 @@ class PreviewPage(ProgressMixin, QWidget):
         is_zh = self._main.config.language == "zh"
         InfoBar.error(
             title="错误" if is_zh else "Error",
-            content=f"生成样本卡片失败：{error}" if is_zh else f"Failed to generate sample cards: {error}",
+            content=f"生成样本卡片失败：{error}"
+            if is_zh
+            else f"Failed to generate sample cards: {error}",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -972,7 +1045,7 @@ class PreviewPage(ProgressMixin, QWidget):
             text = f"{text[: max_chars - 1]}…"
 
         line_len = 40
-        wrapped = [text[i:i + line_len] for i in range(0, len(text), line_len)]
+        wrapped = [text[i : i + line_len] for i in range(0, len(text), line_len)]
         return "\n".join(wrapped) if wrapped else text
 
     def _parse_error_payload(self, error: str) -> tuple[ErrorCode | None, str]:
@@ -1057,7 +1130,9 @@ class PreviewPage(ProgressMixin, QWidget):
         is_zh = self._main.config.language == "zh"
         InfoBar.success(
             title="文档完成" if is_zh else "Document Complete",
-            content=f"{document_name} 生成了 {cards_count} 张卡片" if is_zh else f"{document_name}: {cards_count} cards generated",
+            content=f"{document_name} 生成了 {cards_count} 张卡片"
+            if is_zh
+            else f"{document_name}: {cards_count} cards generated",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -1069,6 +1144,11 @@ class PreviewPage(ProgressMixin, QWidget):
         """Handle generation completion."""
         self._cleanup_generate_worker()
         is_zh = self._main.config.language == "zh"
+        elapsed = (
+            max(0.0, time.monotonic() - self._generation_start_ts)
+            if self._generation_start_ts
+            else 0.0
+        )
         self._finish_state_tooltip(
             True,
             "卡片生成完成" if is_zh else "Card generation completed",
@@ -1091,6 +1171,30 @@ class PreviewPage(ProgressMixin, QWidget):
             return
 
         # Show completion notification
+        target_total = 0
+        try:
+            target_total = int(
+                self._main.import_page.build_generation_config().get("target_total", 0)
+            )
+        except Exception:
+            target_total = 0
+        low_quality_count = self._count_low_quality_cards(cards)
+        meets_target = target_total <= 0 or len(cards) >= target_total
+        status = "success" if (low_quality_count == 0 and meets_target) else "partial"
+        append_task_history(
+            self._main.config,
+            event="batch_generate",
+            status=status,
+            summary=f"生成 {len(cards)} 张卡片",
+            payload={
+                "target_total": target_total,
+                "cards_generated": len(cards),
+                "low_quality_cards": low_quality_count,
+                "duration_seconds": round(elapsed, 2),
+            },
+        )
+        save_config(self._main.config)
+
         InfoBar.success(
             title="制卡完成" if is_zh else "Generation Complete",
             content=f"成功生成 {len(cards)} 张卡片" if is_zh else f"Generated {len(cards)} cards",
@@ -1100,6 +1204,30 @@ class PreviewPage(ProgressMixin, QWidget):
             duration=3000,
             parent=self,
         )
+        if target_total > 0 and len(cards) < target_total:
+            InfoBar.warning(
+                title="数量不足" if is_zh else "Below Target",
+                content=f"目标 {target_total} 张，当前 {len(cards)} 张"
+                if is_zh
+                else f"Target {target_total}, got {len(cards)} cards",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2800,
+                parent=self,
+            )
+        if low_quality_count > 0:
+            InfoBar.warning(
+                title="质量预警" if is_zh else "Quality Warning",
+                content=f"检测到 {low_quality_count} 张可疑卡片，请在预览页复核"
+                if is_zh
+                else f"{low_quality_count} potentially low-quality cards detected. Please review.",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2800,
+                parent=self,
+            )
 
         # Store cards and switch to card preview page
         self._main.cards = cards
@@ -1114,6 +1242,11 @@ class PreviewPage(ProgressMixin, QWidget):
         """Handle generation error."""
         self._cleanup_generate_worker()
         is_zh = self._main.config.language == "zh"
+        elapsed = (
+            max(0.0, time.monotonic() - self._generation_start_ts)
+            if self._generation_start_ts
+            else 0.0
+        )
         code, detail = self._parse_error_payload(error)
         if code is not None:
             error_info = get_error_info(code, self._main.config.language)
@@ -1146,11 +1279,24 @@ class PreviewPage(ProgressMixin, QWidget):
             "generation failed",
             extra={"event": "ui.generation.failed", "error_detail": error},
         )
+        append_task_history(
+            self._main.config,
+            event="batch_generate",
+            status="failed",
+            summary=f"生成失败: {error}",
+            payload={"duration_seconds": round(elapsed, 2)},
+        )
+        save_config(self._main.config)
 
     def _on_generation_cancelled(self):
         """Handle generation cancellation."""
         self._cleanup_generate_worker()
         is_zh = self._main.config.language == "zh"
+        elapsed = (
+            max(0.0, time.monotonic() - self._generation_start_ts)
+            if self._generation_start_ts
+            else 0.0
+        )
         self._finish_state_tooltip(
             False,
             "已取消生成任务" if is_zh else "Generation cancelled",
@@ -1169,22 +1315,34 @@ class PreviewPage(ProgressMixin, QWidget):
             duration=3000,
             parent=self,
         )
+        append_task_history(
+            self._main.config,
+            event="batch_generate",
+            status="cancelled",
+            summary="用户取消卡片生成",
+            payload={"duration_seconds": round(elapsed, 2)},
+        )
+        save_config(self._main.config)
 
     def _cancel_generation(self):
         """Cancel the current generation operation."""
         if self._generate_worker and self._generate_worker.isRunning():
             w = MessageBox(
                 "确认取消" if self._main.config.language == "zh" else "Confirm Cancel",
-                "确定要取消卡片生成吗？" if self._main.config.language == "zh" else "Are you sure you want to cancel card generation?",
-                self
+                "确定要取消卡片生成吗？"
+                if self._main.config.language == "zh"
+                else "Are you sure you want to cancel card generation?",
+                self,
             )
             if w.exec():
                 self._generate_worker.cancel()
         elif self._push_worker and self._push_worker.isRunning():
             w = MessageBox(
                 "确认取消" if self._main.config.language == "zh" else "Confirm Cancel",
-                "确定要取消推送操作吗？" if self._main.config.language == "zh" else "Are you sure you want to cancel push operation?",
-                self
+                "确定要取消推送操作吗？"
+                if self._main.config.language == "zh"
+                else "Are you sure you want to cancel push operation?",
+                self,
             )
             if w.exec():
                 self._push_worker.cancel()
@@ -1201,6 +1359,7 @@ class PreviewPage(ProgressMixin, QWidget):
         for card in cards:
             if card.options is None:
                 from ankismart.core.models import CardOptions
+
                 card.options = CardOptions()
             card.options.allow_duplicate = config.allow_duplicate
             card.options.duplicate_scope = config.duplicate_scope
@@ -1313,7 +1472,6 @@ class PreviewPage(ProgressMixin, QWidget):
             parent=self,
         )
 
-
     def retranslate_ui(self):
         """Retranslate UI elements when language changes."""
         is_zh = self._main.config.language == "zh"
@@ -1339,23 +1497,23 @@ class PreviewPage(ProgressMixin, QWidget):
         self._apply_theme_styles()
 
     def closeEvent(self, event):  # noqa: N802
-        """Force-stop worker threads for fast application shutdown."""
+        """Stop worker threads cooperatively during application shutdown."""
         # Stop generate worker if running
         if self._generate_worker and self._generate_worker.isRunning():
             self._generate_worker.cancel()
-            self._generate_worker.terminate()
-            self._generate_worker.wait(100)
+            self._generate_worker.requestInterruption()
+            self._generate_worker.wait(300)
 
         # Stop push worker if running
         if self._push_worker and self._push_worker.isRunning():
             self._push_worker.cancel()
-            self._push_worker.terminate()
-            self._push_worker.wait(100)
+            self._push_worker.requestInterruption()
+            self._push_worker.wait(300)
 
         # Stop sample worker if running
         if self._sample_worker and self._sample_worker.isRunning():
-            self._sample_worker.terminate()
-            self._sample_worker.wait(100)
+            self._sample_worker.requestInterruption()
+            self._sample_worker.wait(300)
 
         self._cleanup_generate_worker()
         self._cleanup_push_worker()
