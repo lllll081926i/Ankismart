@@ -528,3 +528,70 @@ def test_batch_generate_worker_emits_structured_error_when_all_failed(monkeypatc
 
     assert len(errors) == 1
     assert errors[0].startswith("[E_LLM_AUTH_ERROR]")
+
+
+def test_batch_generate_worker_adaptive_concurrency_reduces_on_throttle() -> None:
+    doc = ConvertedDocument(
+        result=MarkdownResult(
+            content="demo",
+            source_path="a.md",
+            source_format="markdown",
+            trace_id="trace-adapt-down",
+        ),
+        file_name="a.md",
+    )
+    config = SimpleNamespace(
+        llm_concurrency=3,
+        llm_adaptive_concurrency=True,
+        llm_concurrency_max=6,
+    )
+    worker = BatchGenerateWorker(
+        documents=[doc],
+        generation_config={"target_total": 1, "strategy_mix": [{"strategy": "basic", "ratio": 1}]},
+        llm_client=object(),
+        deck_name="Default",
+        tags=[],
+        config=config,
+    )
+    messages: list[str] = []
+    worker.progress.connect(messages.append)
+
+    worker._throttle_events = 1
+    worker._apply_adaptive_concurrency(configured_workers=3, had_error=True)
+
+    assert config.llm_concurrency == 2
+    assert any("自动将并发从 3 调整为 2" in message for message in messages)
+
+
+def test_batch_generate_worker_adaptive_concurrency_increases_when_stable() -> None:
+    doc = ConvertedDocument(
+        result=MarkdownResult(
+            content="demo",
+            source_path="a.md",
+            source_format="markdown",
+            trace_id="trace-adapt-up",
+        ),
+        file_name="a.md",
+    )
+    config = SimpleNamespace(
+        llm_concurrency=2,
+        llm_adaptive_concurrency=True,
+        llm_concurrency_max=3,
+    )
+    worker = BatchGenerateWorker(
+        documents=[doc],
+        generation_config={"target_total": 1, "strategy_mix": [{"strategy": "basic", "ratio": 1}]},
+        llm_client=object(),
+        deck_name="Default",
+        tags=[],
+        config=config,
+    )
+    messages: list[str] = []
+    worker.progress.connect(messages.append)
+
+    worker._throttle_events = 0
+    worker._timeout_events = 0
+    worker._apply_adaptive_concurrency(configured_workers=2, had_error=False)
+
+    assert config.llm_concurrency == 3
+    assert any("自动将并发从 2 调整为 3" in message for message in messages)

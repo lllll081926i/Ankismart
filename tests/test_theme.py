@@ -160,3 +160,42 @@ def test_card_preview_export_finished_does_not_navigate(monkeypatch) -> None:
     page._on_export_finished("D:/tmp/cards.apkg")
 
     main.switchTo.assert_not_called()
+
+
+def test_card_preview_quality_score_distinguishes_low_and_high() -> None:
+    main = _make_card_preview_main()
+    page = CardPreviewPage(main)
+
+    low = CardDraft(note_type="Basic", fields={"Front": "Q", "Back": "A"})
+    high = CardDraft(
+        note_type="Basic",
+        fields={
+            "Front": "请解释布隆过滤器的核心思想与适用场景",
+            "Back": "通过位数组和多个哈希函数实现概率判重，适合大规模去重与缓存预判。",
+        },
+    )
+
+    assert page._compute_card_quality_score(low) < 60
+    assert page._compute_card_quality_score(high) >= 80
+
+
+def test_card_preview_low_quality_filter_only_keeps_low_cards() -> None:
+    main = _make_card_preview_main()
+    page = CardPreviewPage(main)
+    low = CardDraft(note_type="Basic", fields={"Front": "Q", "Back": "A"})
+    high = CardDraft(
+        note_type="Basic",
+        fields={
+            "Front": "什么是幂等操作，为什么在分布式系统里重要？",
+            "Back": "幂等表示重复执行结果一致，可降低重试带来的副作用。",
+        },
+    )
+
+    page.load_cards([low, high])
+    assert len(page._filtered_cards) == 2
+
+    page._on_toggle_low_quality_filter(True)
+
+    assert len(page._filtered_cards) == 1
+    assert page._filtered_cards[0] is low
+    assert "低分 1/2" in page._quality_overview_label.text()

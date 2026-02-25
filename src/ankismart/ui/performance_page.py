@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from statistics import median
 
 from PyQt6.QtWidgets import QMessageBox, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -100,6 +101,36 @@ class PerformancePage(QWidget):
         self._total_cards_card.hBoxLayout.addSpacing(16)
         self._stats_group.addSettingCard(self._total_cards_card)
 
+        self._latency_card = SettingCard(
+            FluentIcon.SPEED_HIGH,
+            "延迟分位数" if self._main.config.language == "zh" else "Latency Quantiles",
+            "展示转换/生成/推送最近样本的 P50/P95"
+            if self._main.config.language == "zh"
+            else "Show P50/P95 of recent convert/generate/push samples",
+            self,
+        )
+        self._latency_label = BodyLabel("-")
+        self._latency_label.setWordWrap(True)
+        self._latency_label.setMinimumWidth(360)
+        self._latency_card.hBoxLayout.addWidget(self._latency_label)
+        self._latency_card.hBoxLayout.addSpacing(16)
+        self._stats_group.addSettingCard(self._latency_card)
+
+        self._error_heatmap_card = SettingCard(
+            FluentIcon.INFO,
+            "错误热力图" if self._main.config.language == "zh" else "Error Heatmap",
+            "按错误类型聚合最近失败次数（Top 6）"
+            if self._main.config.language == "zh"
+            else "Aggregated failure counts by error type (Top 6)",
+            self,
+        )
+        self._error_heatmap_label = BodyLabel("-")
+        self._error_heatmap_label.setWordWrap(True)
+        self._error_heatmap_label.setMinimumWidth(360)
+        self._error_heatmap_card.hBoxLayout.addWidget(self._error_heatmap_label)
+        self._error_heatmap_card.hBoxLayout.addSpacing(16)
+        self._stats_group.addSettingCard(self._error_heatmap_card)
+
         self._reset_stats_card = PushSettingCard(
             "重置统计" if self._main.config.language == "zh" else "Reset Stats",
             FluentIcon.DELETE,
@@ -158,6 +189,19 @@ class PerformancePage(QWidget):
         self._cloud_cost_card.hBoxLayout.addWidget(self._cloud_cost_label)
         self._cloud_cost_card.hBoxLayout.addSpacing(16)
         self._cloud_group.addSettingCard(self._cloud_cost_card)
+
+        self._cloud_trend_card = SettingCard(
+            FluentIcon.DICTIONARY,
+            "近7日云 OCR 趋势" if self._main.config.language == "zh" else "Cloud OCR 7-Day Trend",
+            "按天聚合云 OCR 页数",
+            self,
+        )
+        self._cloud_trend_label = BodyLabel("-")
+        self._cloud_trend_label.setWordWrap(True)
+        self._cloud_trend_label.setMinimumWidth(360)
+        self._cloud_trend_card.hBoxLayout.addWidget(self._cloud_trend_label)
+        self._cloud_trend_card.hBoxLayout.addSpacing(16)
+        self._cloud_group.addSettingCard(self._cloud_trend_card)
         layout.addWidget(self._cloud_group)
 
         self._history_group = SettingCardGroup(
@@ -263,6 +307,54 @@ class PerformancePage(QWidget):
                 lines.append(f"[{timestamp}] {event}/{status}: {summary}")
             self._history_label.setText("\n".join(lines))
 
+        def _fmt_quantiles(values: list[float]) -> tuple[float, float]:
+            if not values:
+                return 0.0, 0.0
+            ordered = sorted(float(v) for v in values)
+            p50 = median(ordered)
+            idx95 = max(0, min(len(ordered) - 1, int(round((len(ordered) - 1) * 0.95))))
+            p95 = ordered[idx95]
+            return p50, p95
+
+        conv_p50, conv_p95 = _fmt_quantiles(
+            list(getattr(config, "ops_conversion_durations", []) or [])
+        )
+        gen_p50, gen_p95 = _fmt_quantiles(
+            list(getattr(config, "ops_generation_durations", []) or [])
+        )
+        push_p50, push_p95 = _fmt_quantiles(list(getattr(config, "ops_push_durations", []) or []))
+        if is_zh:
+            self._latency_label.setText(
+                f"转换 P50/P95: {conv_p50:.2f}/{conv_p95:.2f}s\n"
+                f"生成 P50/P95: {gen_p50:.2f}/{gen_p95:.2f}s\n"
+                f"推送 P50/P95: {push_p50:.2f}/{push_p95:.2f}s"
+            )
+        else:
+            self._latency_label.setText(
+                f"Convert P50/P95: {conv_p50:.2f}/{conv_p95:.2f}s\n"
+                f"Generate P50/P95: {gen_p50:.2f}/{gen_p95:.2f}s\n"
+                f"Push P50/P95: {push_p50:.2f}/{push_p95:.2f}s"
+            )
+
+        error_counters = dict(getattr(config, "ops_error_counters", {}) or {})
+        if not error_counters:
+            self._error_heatmap_label.setText("暂无错误记录" if is_zh else "No error records")
+        else:
+            top_errors = sorted(error_counters.items(), key=lambda item: item[1], reverse=True)[:6]
+            self._error_heatmap_label.setText(
+                "\n".join([f"{name}: {count}" for name, count in top_errors])
+            )
+
+        trend = list(getattr(config, "ops_cloud_pages_daily", []) or [])
+        trend = [item for item in trend if isinstance(item, dict)][-7:]
+        if not trend:
+            self._cloud_trend_label.setText("暂无趋势数据" if is_zh else "No trend data")
+        else:
+            trend_text = " | ".join(
+                [f"{item.get('date', '-')}: {item.get('pages', 0)}" for item in trend]
+            )
+            self._cloud_trend_label.setText(trend_text)
+
     def _reset_statistics(self) -> None:
         is_zh = self._main.config.language == "zh"
         reply = QMessageBox.question(
@@ -279,6 +371,12 @@ class PerformancePage(QWidget):
         self._main.config.total_conversion_time = 0.0
         self._main.config.total_generation_time = 0.0
         self._main.config.total_cards_generated = 0
+        self._main.config.ops_error_counters = {}
+        self._main.config.ops_conversion_durations = []
+        self._main.config.ops_generation_durations = []
+        self._main.config.ops_push_durations = []
+        self._main.config.ops_export_durations = []
+        self._main.config.ops_cloud_pages_daily = []
         save_config(self._main.config)
         self.refresh_statistics()
 

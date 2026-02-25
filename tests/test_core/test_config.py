@@ -12,6 +12,8 @@ from ankismart.core.config import (
     AppConfig,
     LLMProviderConfig,
     load_config,
+    record_cloud_pages_daily,
+    record_operation_metric,
     save_config,
 )
 from ankismart.core.errors import ConfigError
@@ -204,6 +206,26 @@ class TestLoadConfig:
             cfg = load_config()
         assert cfg.ocr_mode == "local"
 
+    def test_load_clamps_runtime_bounds(self, tmp_path: Path):
+        config_file = tmp_path / "config.yaml"
+        data = {
+            "llm_concurrency_max": 0,
+            "llm_concurrency": 9,
+            "card_quality_min_chars": 0,
+            "ocr_quality_min_chars": 5,
+            "semantic_duplicate_threshold": 0.2,
+        }
+        config_file.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+        with patch("ankismart.core.config.CONFIG_PATH", config_file):
+            cfg = load_config()
+
+        assert cfg.llm_concurrency_max == 1
+        assert cfg.llm_concurrency == 1
+        assert cfg.card_quality_min_chars == 1
+        assert cfg.ocr_quality_min_chars == 10
+        assert cfg.semantic_duplicate_threshold == 0.6
+
 
 class TestMigration:
     def test_migrates_openai_legacy(self, tmp_path: Path):
@@ -373,3 +395,35 @@ class TestSaveConfig:
             mock_dir.mkdir = MagicMock()
             mock_path.write_text = MagicMock(side_effect=OSError("disk full"))
             save_config(cfg)
+
+
+class TestObservabilityHelpers:
+    def test_record_operation_metric_tracks_duration_and_error(self):
+        cfg = AppConfig()
+
+        record_operation_metric(
+            cfg,
+            event="generate",
+            duration_seconds=1.25,
+            success=False,
+            error_code="rate_limit",
+        )
+
+        assert cfg.ops_generation_durations == [1.25]
+        assert cfg.ops_error_counters == {"generate:rate_limit": 1}
+
+    def test_record_cloud_pages_daily_aggregates_and_bounded(self):
+        cfg = AppConfig(
+            ops_cloud_pages_daily=[
+                {"date": "2026-02-20", "pages": 10},
+                {"date": "2026-02-21", "pages": 20},
+            ]
+        )
+
+        record_cloud_pages_daily(cfg, pages=5, on_date="2026-02-21", limit=2)
+        record_cloud_pages_daily(cfg, pages=8, on_date="2026-02-22", limit=2)
+
+        assert cfg.ops_cloud_pages_daily == [
+            {"date": "2026-02-21", "pages": 25},
+            {"date": "2026-02-22", "pages": 8},
+        ]

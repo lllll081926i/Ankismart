@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import threading
 import uuid
@@ -70,6 +71,7 @@ CONFIG_DIR: Path = _resolve_app_dir()
 CONFIG_PATH: Path = Path(
     os.getenv("ANKISMART_CONFIG_PATH", str(CONFIG_DIR / "config.yaml"))
 ).expanduser().resolve()
+CONFIG_BACKUP_DIR: Path = CONFIG_DIR / "backups"
 
 _ENCRYPTED_FIELDS: set[str] = {"anki_connect_key", "ocr_cloud_api_key"}
 _ENCRYPTED_PREFIX: str = "encrypted:"
@@ -122,6 +124,8 @@ class AppConfig(BaseModel):
     llm_temperature: float = 0.3
     llm_max_tokens: int = 0  # 0 means use provider default
     llm_concurrency: int = 2  # Max concurrent LLM requests (0 = auto by document count)
+    llm_adaptive_concurrency: bool = True
+    llm_concurrency_max: int = 6
 
     # Persistence: last-used values
     last_deck: str = ""
@@ -133,6 +137,9 @@ class AppConfig(BaseModel):
     proxy_url: str = ""
     theme: str = "light"
     language: str = "zh"
+    auto_check_updates: bool = True
+    last_update_check_at: str = ""
+    last_update_version_seen: str = ""
 
     # Experimental features
     enable_auto_split: bool = False  # Experimental: Auto-split long documents
@@ -166,6 +173,15 @@ class AppConfig(BaseModel):
     ocr_resume_file_paths: list[str] = Field(default_factory=list)
     ocr_resume_updated_at: str = ""
     task_history: list[dict[str, object]] = Field(default_factory=list)
+
+    # Observability
+    ops_error_counters: dict[str, int] = Field(default_factory=dict)
+    ops_conversion_durations: list[float] = Field(default_factory=list)
+    ops_generation_durations: list[float] = Field(default_factory=list)
+    ops_push_durations: list[float] = Field(default_factory=list)
+    ops_export_durations: list[float] = Field(default_factory=list)
+    ops_cloud_pages_daily: list[dict[str, object]] = Field(default_factory=list)
+    last_crash_report_path: str = ""
 
     @property
     def active_provider(self) -> LLMProviderConfig | None:
@@ -322,6 +338,17 @@ def load_config() -> AppConfig:
             config.theme = "light"
         if config.ocr_mode not in {"local", "cloud"}:
             config.ocr_mode = "local"
+        if config.llm_concurrency_max < 1:
+            config.llm_concurrency_max = 1
+        if config.llm_concurrency > config.llm_concurrency_max:
+            config.llm_concurrency = config.llm_concurrency_max
+        if config.card_quality_min_chars < 1:
+            config.card_quality_min_chars = 1
+        if config.ocr_quality_min_chars < 10:
+            config.ocr_quality_min_chars = 10
+        config.semantic_duplicate_threshold = min(
+            1.0, max(0.6, float(config.semantic_duplicate_threshold))
+        )
         _update_config_cache(config_path, True, mtime_ns, config)
         return config
     except Exception as exc:
@@ -379,6 +406,7 @@ def register_cloud_ocr_usage(config: AppConfig, pages: int) -> None:
         0, int(config.ocr_cloud_priority_pages_used_today)
     ) + int(pages)
     config.ocr_cloud_total_pages = max(0, int(config.ocr_cloud_total_pages)) + int(pages)
+    record_cloud_pages_daily(config, pages=pages, on_date=today)
 
 
 def append_task_history(
@@ -414,3 +442,123 @@ def append_task_history(
     history = list(config.task_history or [])
     history.insert(0, record)
     config.task_history = history[: max(1, limit)]
+
+
+def _append_bounded_float(series: list[float], value: float, *, limit: int) -> list[float]:
+    next_series = list(series)
+    next_series.append(float(value))
+    if len(next_series) > limit:
+        next_series = next_series[-limit:]
+    return next_series
+
+
+def record_operation_metric(
+    config: AppConfig,
+    *,
+    event: str,
+    duration_seconds: float = 0.0,
+    success: bool = True,
+    error_code: str = "",
+    limit: int = 240,
+) -> None:
+    """Record latency samples and error counters for observability."""
+    field_map = {
+        "convert": "ops_conversion_durations",
+        "generate": "ops_generation_durations",
+        "push": "ops_push_durations",
+        "export": "ops_export_durations",
+    }
+    duration_field = field_map.get(event)
+    if duration_field and duration_seconds > 0:
+        existing = getattr(config, duration_field, [])
+        setattr(
+            config,
+            duration_field,
+            _append_bounded_float(existing, duration_seconds, limit=max(20, limit)),
+        )
+
+    if success:
+        return
+    key = f"{event}:{(error_code or 'unknown').strip()}"
+    counters = dict(config.ops_error_counters or {})
+    counters[key] = int(counters.get(key, 0)) + 1
+    config.ops_error_counters = counters
+
+
+def record_cloud_pages_daily(
+    config: AppConfig,
+    *,
+    pages: int,
+    on_date: str | None = None,
+    limit: int = 30,
+) -> None:
+    """Aggregate daily cloud OCR page trend."""
+    if pages <= 0:
+        return
+    target_date = on_date or datetime.now().date().isoformat()
+    trend = [dict(item) for item in (config.ops_cloud_pages_daily or []) if isinstance(item, dict)]
+
+    for item in trend:
+        if str(item.get("date", "")) == target_date:
+            item["pages"] = int(item.get("pages", 0)) + int(pages)
+            break
+    else:
+        trend.append({"date": target_date, "pages": int(pages)})
+
+    trend.sort(key=lambda item: str(item.get("date", "")))
+    if len(trend) > limit:
+        trend = trend[-limit:]
+    config.ops_cloud_pages_daily = trend
+
+
+def create_config_backup(
+    config: AppConfig,
+    *,
+    reason: str = "manual",
+    keep_last: int = 20,
+) -> Path:
+    """Create encrypted config backup by copying config file snapshot."""
+    safe_reason = "".join(ch for ch in reason.lower() if ch.isalnum() or ch in {"-", "_"})
+    safe_reason = safe_reason[:20] or "manual"
+
+    save_config(config)
+    CONFIG_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup_path = CONFIG_BACKUP_DIR / f"config-{stamp}-{safe_reason}.yaml"
+    shutil.copy2(CONFIG_PATH, backup_path)
+
+    backups = sorted(CONFIG_BACKUP_DIR.glob("config-*.yaml"), key=lambda p: p.stat().st_mtime)
+    if keep_last > 0 and len(backups) > keep_last:
+        for stale in backups[: len(backups) - keep_last]:
+            try:
+                stale.unlink()
+            except OSError:
+                continue
+    return backup_path
+
+
+def list_config_backups(*, limit: int = 20) -> list[Path]:
+    if not CONFIG_BACKUP_DIR.exists():
+        return []
+    backups = sorted(
+        CONFIG_BACKUP_DIR.glob("config-*.yaml"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return backups[: max(1, limit)]
+
+
+def restore_config_from_backup(backup_path: Path) -> AppConfig:
+    """Restore config file from a backup snapshot and return loaded config."""
+    backup = Path(backup_path).expanduser().resolve()
+    if not backup.exists() or not backup.is_file():
+        raise ConfigError(
+            f"Backup file not found: {backup}",
+            code=ErrorCode.E_CONFIG_INVALID,
+        )
+
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(backup, CONFIG_PATH)
+    return load_config()

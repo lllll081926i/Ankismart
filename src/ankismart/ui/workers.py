@@ -11,7 +11,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from ankismart.anki_gateway.apkg_exporter import ApkgExporter
 from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.gateway import AnkiGateway, UpdateMode
-from ankismart.core.config import LLMProviderConfig
+from ankismart.core.config import LLMProviderConfig, record_operation_metric
 from ankismart.core.errors import AnkiSmartError
 from ankismart.core.logging import get_logger
 from ankismart.core.models import (
@@ -436,7 +436,7 @@ class BatchConvertWorker(QThread):
         import time
 
         from ankismart.converter.detector import detect_file_type
-        from ankismart.core.config import save_config
+        from ankismart.core.config import record_operation_metric, save_config
 
         try:
             self._start_time = time.time()
@@ -568,6 +568,13 @@ class BatchConvertWorker(QThread):
                 elapsed_time = time.time() - self._start_time
                 self._config.total_files_processed += len(documents)
                 self._config.total_conversion_time += elapsed_time
+                record_operation_metric(
+                    self._config,
+                    event="convert",
+                    duration_seconds=elapsed_time,
+                    success=len(errors) == 0,
+                    error_code="partial_failure" if errors else "",
+                )
                 save_config(self._config)
 
             batch_result = BatchConvertResult(
@@ -591,6 +598,18 @@ class BatchConvertWorker(QThread):
                     "batch conversion failed",
                     extra={"event": "worker.batch_convert.failed"},
                 )
+                if self._config:
+                    elapsed_time = (
+                        max(0.0, time.time() - self._start_time) if self._start_time else 0.0
+                    )
+                    record_operation_metric(
+                        self._config,
+                        event="convert",
+                        duration_seconds=elapsed_time,
+                        success=False,
+                        error_code="worker_exception",
+                    )
+                    save_config(self._config)
                 self.error.emit(_format_error_for_ui(exc))
         finally:
             self._release_ocr_runtime()
@@ -859,6 +878,10 @@ class BatchGenerateWorker(QThread):
         self._semantic_duplicate_threshold = min(1.0, max(0.6, threshold))
         self._card_quality_min_chars = int(getattr(config, "card_quality_min_chars", 2))
         self._card_quality_retry_rounds = int(getattr(config, "card_quality_retry_rounds", 2))
+        self._adaptive_enabled = bool(getattr(config, "llm_adaptive_concurrency", True))
+        self._concurrency_cap = int(getattr(config, "llm_concurrency_max", 6))
+        self._throttle_events = 0
+        self._timeout_events = 0
 
     def cancel(self) -> None:
         """Cancel the generation operation."""
@@ -999,6 +1022,7 @@ class BatchGenerateWorker(QThread):
                             )
                             round_cards = generator.generate(request)
                         except Exception as e:
+                            self._mark_runtime_error(e)
                             with first_error_lock:
                                 if first_error_message[0] is None:
                                     first_error_message[0] = _format_error_for_ui(e)
@@ -1086,6 +1110,7 @@ class BatchGenerateWorker(QThread):
                         cards = future.result()
                         all_cards.extend(cards)
                     except Exception as e:
+                        self._mark_runtime_error(e)
                         with first_error_lock:
                             if first_error_message[0] is None:
                                 first_error_message[0] = _format_error_for_ui(e)
@@ -1111,11 +1136,23 @@ class BatchGenerateWorker(QThread):
                 self.error.emit(first_error_message[0])
                 return
 
+            self._apply_adaptive_concurrency(
+                configured_workers=configured_workers,
+                had_error=first_error_message[0] is not None,
+            )
+
             # Update statistics
             if self._config and all_cards:
                 elapsed_time = time.time() - self._start_time
                 self._config.total_generation_time += elapsed_time
                 self._config.total_cards_generated += len(all_cards)
+                record_operation_metric(
+                    self._config,
+                    event="generate",
+                    duration_seconds=elapsed_time,
+                    success=first_error_message[0] is None,
+                    error_code="strategy_error" if first_error_message[0] else "",
+                )
                 save_config(self._config)
 
             logger.info(
@@ -1124,6 +1161,8 @@ class BatchGenerateWorker(QThread):
                     "event": "worker.batch_generate.finished",
                     "documents_count": len(self._documents),
                     "cards_generated": len(all_cards),
+                    "throttle_events": self._throttle_events,
+                    "timeout_events": self._timeout_events,
                     "duration_ms": round((time.time() - self._start_time) * 1000, 2),
                 },
             )
@@ -1134,7 +1173,54 @@ class BatchGenerateWorker(QThread):
                 "batch generation failed",
                 extra={"event": "worker.batch_generate.failed"},
             )
+            if self._config:
+                elapsed_time = max(0.0, time.time() - self._start_time) if self._start_time else 0.0
+                record_operation_metric(
+                    self._config,
+                    event="generate",
+                    duration_seconds=elapsed_time,
+                    success=False,
+                    error_code="worker_exception",
+                )
+                save_config(self._config)
             self.error.emit(_format_error_for_ui(e))
+
+    def _mark_runtime_error(self, exc: Exception) -> None:
+        message = _format_error_for_ui(exc).lower()
+        if "429" in message or "rate limit" in message or "rate_limit" in message:
+            self._throttle_events += 1
+        if "timeout" in message or "timed out" in message:
+            self._timeout_events += 1
+
+    def _apply_adaptive_concurrency(self, *, configured_workers: int, had_error: bool) -> None:
+        if not self._config or not self._adaptive_enabled:
+            return
+        if configured_workers <= 0:
+            # Keep "auto" mode unchanged.
+            return
+
+        current = int(getattr(self._config, "llm_concurrency", configured_workers))
+        if current <= 0:
+            return
+
+        next_value = current
+        if self._throttle_events > 0 or self._timeout_events > 0:
+            next_value = max(1, current - 1)
+        elif not had_error:
+            next_value = min(max(1, self._concurrency_cap), current + 1)
+
+        if next_value == current:
+            return
+
+        self._config.llm_concurrency = next_value
+        if next_value < current:
+            self.progress.emit(
+                f"检测到限流/超时，已自动将并发从 {current} 调整为 {next_value}"
+            )
+        else:
+            self.progress.emit(
+                f"运行稳定，已自动将并发从 {current} 调整为 {next_value}"
+            )
 
     @staticmethod
     def _allocate_mix_counts(

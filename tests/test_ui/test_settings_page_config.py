@@ -189,3 +189,40 @@ def test_save_config_prefers_runtime_apply_when_available(_qapp, monkeypatch) ->
     assert applied["persist"] is True
     assert isinstance(applied["config"], AppConfig)
     assert applied["config"].language == "en"
+
+
+def test_parse_version_tuple_ignores_non_numeric_suffix(_qapp) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    assert page._parse_version_tuple("v1.2.3rc1") == (1, 2, 3)
+    assert page._parse_version_tuple("2.4.beta") == (2, 4, 0)
+
+
+def test_save_config_persists_adaptive_concurrency_and_update_flags(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    captured: dict[str, AppConfig] = {}
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c)
+    )
+    monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+
+    page._concurrency_spin.setValue(8)
+    page._concurrency_max_spin.setValue(4)
+    page._adaptive_concurrency_switch.setChecked(False)
+    page._auto_update_card.setChecked(False)
+    page._save_config()
+
+    assert "cfg" in captured
+    assert captured["cfg"].llm_concurrency == 4
+    assert captured["cfg"].llm_concurrency_max == 4
+    assert captured["cfg"].llm_adaptive_concurrency is False
+    assert captured["cfg"].auto_check_updates is False

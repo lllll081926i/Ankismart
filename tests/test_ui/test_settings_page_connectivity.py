@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from PyQt6.QtWidgets import QMessageBox
 
@@ -395,3 +397,117 @@ def test_error_handler_maps_cloud_ocr_page_limit_code() -> None:
 
     assert info.category == ErrorCategory.FILE_FORMAT
     assert "600" in info.message
+
+
+def test_check_for_updates_failure_updates_metadata_and_warns(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    applied: dict[str, object] = {}
+
+    def _apply_runtime(config: AppConfig, *, persist: bool = True, changed_fields=None):
+        applied["config"] = config
+        applied["persist"] = persist
+        applied["changed_fields"] = set(changed_fields or set())
+        main.config = config
+        return set(changed_fields or set())
+
+    main.apply_runtime_config = _apply_runtime
+
+    class _FailingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, *args, **kwargs):
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr("ankismart.ui.settings_page.httpx.Client", _FailingClient)
+    infobar_calls = []
+    monkeypatch.setattr(
+        page, "_show_info_bar", lambda *args, **kwargs: infobar_calls.append((args, kwargs))
+    )
+
+    page._check_for_updates()
+
+    assert "config" in applied
+    assert applied["persist"] is True
+    assert applied["changed_fields"] == {"last_update_check_at", "last_update_version_seen"}
+    assert main.config.last_update_check_at != ""
+    assert len(infobar_calls) == 1
+    assert infobar_calls[0][0][0] == "warning"
+
+
+def test_backup_current_config_reports_success(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    backup_path = Path("D:/tmp/config-backup.yaml")
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.create_config_backup",
+        lambda *_args, **_kwargs: backup_path,
+    )
+    infobar_calls = []
+    monkeypatch.setattr(
+        page, "_show_info_bar", lambda *args, **kwargs: infobar_calls.append((args, kwargs))
+    )
+
+    page._backup_current_config()
+
+    assert len(infobar_calls) == 1
+    assert infobar_calls[0][0][0] == "success"
+    assert str(backup_path) in infobar_calls[0][0][2]
+
+
+def test_restore_config_backup_applies_runtime_config(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    selected_backup = Path("D:/tmp/config-backup.yaml")
+    restored_cfg = main.config.model_copy(update={"language": "en"})
+    applied: dict[str, object] = {}
+
+    def _apply_runtime(config: AppConfig, *, persist: bool = True, changed_fields=None):
+        applied["config"] = config
+        applied["persist"] = persist
+        main.config = config
+        return set(changed_fields or set())
+
+    main.apply_runtime_config = _apply_runtime
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.list_config_backups",
+        lambda limit=30: [selected_backup],
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.QFileDialog.getOpenFileName",
+        lambda *args, **kwargs: (str(selected_backup), "YAML Files (*.yaml *.yml)"),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.restore_config_from_backup",
+        lambda _path: restored_cfg,
+    )
+    load_calls: list[bool] = []
+    monkeypatch.setattr(page, "_load_config", lambda: load_calls.append(True))
+    infobar_calls = []
+    monkeypatch.setattr(
+        page, "_show_info_bar", lambda *args, **kwargs: infobar_calls.append((args, kwargs))
+    )
+
+    page._restore_config_backup()
+
+    assert "config" in applied
+    assert applied["config"].language == "en"
+    assert applied["persist"] is False
+    assert load_calls == [True]
+    assert len(infobar_calls) == 1
+    assert infobar_calls[0][0][0] == "success"

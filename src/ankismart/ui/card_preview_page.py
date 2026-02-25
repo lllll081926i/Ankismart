@@ -38,7 +38,7 @@ from qfluentwidgets import (
     isDarkTheme,
 )
 
-from ankismart.core.config import append_task_history, save_config
+from ankismart.core.config import append_task_history, record_operation_metric, save_config
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft
 from ankismart.ui.styles import (
@@ -726,6 +726,7 @@ class CardPreviewPage(QWidget):
         self._all_cards: list[CardDraft] = []
         self._filtered_cards: list[CardDraft] = []
         self._current_index = -1
+        self._quality_low_only = False
         self._push_worker = None
         self._export_worker = None
         self._push_start_ts = 0.0
@@ -812,6 +813,18 @@ class CardPreviewPage(QWidget):
         self._search_input.textChanged.connect(self._apply_filters)
         layout.addWidget(self._search_input, 0, Qt.AlignmentFlag.AlignVCenter)
 
+        self._quality_overview_label = BodyLabel(
+            "质量: -" if self._main.config.language == "zh" else "Quality: -"
+        )
+        layout.addWidget(self._quality_overview_label, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._btn_low_quality = PushButton(
+            "仅低分" if self._main.config.language == "zh" else "Low Quality"
+        )
+        self._btn_low_quality.setCheckable(True)
+        self._btn_low_quality.clicked.connect(self._on_toggle_low_quality_filter)
+        layout.addWidget(self._btn_low_quality, 0, Qt.AlignmentFlag.AlignVCenter)
+
         return layout
 
     def _create_left_panel(self) -> QWidget:
@@ -860,6 +873,9 @@ class CardPreviewPage(QWidget):
         self._tags_label = BodyLabel("标签: -")
         self._tags_label.setWordWrap(True)
         info_bar.addWidget(self._tags_label)
+
+        self._quality_label = BodyLabel("质量: -")
+        info_bar.addWidget(self._quality_label)
 
         info_bar.addStretch()
 
@@ -955,14 +971,19 @@ class CardPreviewPage(QWidget):
             self._note_type_label.setText("类型: -" if is_zh else "Type: -")
             self._deck_label.setText("牌组: -" if is_zh else "Deck: -")
             self._tags_label.setText("标签: -" if is_zh else "Tags: -")
+            self._quality_label.setText("质量: -" if is_zh else "Quality: -")
             return
 
         tags_text = ", ".join(card.tags) if card.tags else "-"
+        quality_score = self._compute_card_quality_score(card)
         self._note_type_label.setText(
             f"类型: {card.note_type}" if is_zh else f"Type: {card.note_type}"
         )
         self._deck_label.setText(f"牌组: {card.deck_name}" if is_zh else f"Deck: {card.deck_name}")
         self._tags_label.setText(f"标签: {tags_text}" if is_zh else f"Tags: {tags_text}")
+        self._quality_label.setText(
+            f"质量: {quality_score}" if is_zh else f"Quality: {quality_score}"
+        )
 
     def _apply_filters(self):
         """Apply current filter settings to card list."""
@@ -980,6 +1001,9 @@ class CardPreviewPage(QWidget):
                 c for c in filtered if any(search_text in v.lower() for v in c.fields.values())
             ]
 
+        if self._quality_low_only:
+            filtered = [c for c in filtered if self._compute_card_quality_score(c) < 60]
+
         self._filtered_cards = filtered
         self._refresh_card_list()
 
@@ -991,6 +1015,8 @@ class CardPreviewPage(QWidget):
             question = self._get_card_question_text(card)
             item = QListWidgetItem(question)
             self._card_list.addItem(item)
+
+        self._update_quality_overview()
 
         # Update count label
         self._set_total_count_text(len(self._filtered_cards))
@@ -1007,6 +1033,62 @@ class CardPreviewPage(QWidget):
         if not plain:
             return "（空问题）" if self._main.config.language == "zh" else "(Empty question)"
         return plain if len(plain) <= max_len else f"{plain[: max_len - 1]}…"
+
+    @staticmethod
+    def _normalize_quality_text(text: str) -> str:
+        plain = re.sub(r"<[^>]+>", " ", text or "")
+        return re.sub(r"\s+", " ", plain).strip()
+
+    def _get_card_answer_text(self, card: CardDraft) -> str:
+        for key in ("Back", "Answer", "Extra"):
+            value = str(card.fields.get(key, "") or "")
+            normalized = self._normalize_quality_text(value)
+            if normalized:
+                return normalized
+        if str(card.note_type or "").startswith("Cloze"):
+            return self._normalize_quality_text(str(card.fields.get("Text", "") or ""))
+        return ""
+
+    def _compute_card_quality_score(self, card: CardDraft) -> int:
+        question = self._normalize_quality_text(self._get_card_question_text(card))
+        answer = self._get_card_answer_text(card)
+        score = 100
+        if len(question) < 8:
+            score -= 35
+        elif len(question) < 15:
+            score -= 15
+        if len(answer) < 4:
+            score -= 40
+        elif len(answer) < 10:
+            score -= 20
+        if (
+            not str(card.note_type or "").startswith("Cloze")
+            and question
+            and answer
+            and question == answer
+        ):
+            score -= 35
+        return max(0, min(100, score))
+
+    def _update_quality_overview(self) -> None:
+        is_zh = self._main.config.language == "zh"
+        if not self._all_cards:
+            self._quality_overview_label.setText("质量: -" if is_zh else "Quality: -")
+            return
+
+        scores = [self._compute_card_quality_score(card) for card in self._all_cards]
+        avg = sum(scores) / max(1, len(scores))
+        low = sum(1 for score in scores if score < 60)
+        if is_zh:
+            self._quality_overview_label.setText(f"质量均分 {avg:.1f}，低分 {low}/{len(scores)}")
+        else:
+            self._quality_overview_label.setText(
+                f"Quality avg {avg:.1f}, low {low}/{len(scores)}"
+            )
+
+    def _on_toggle_low_quality_filter(self, checked: bool) -> None:
+        self._quality_low_only = bool(checked)
+        self._apply_filters()
 
     def _get_card_question_text(self, card: CardDraft) -> str:
         kind = CardRenderer.detect_card_kind(card)
@@ -1144,6 +1226,7 @@ class CardPreviewPage(QWidget):
         self._search_input.setPlaceholderText(
             "搜索卡片内容..." if is_zh else "Search card content..."
         )
+        self._btn_low_quality.setText("仅低分" if is_zh else "Low Quality")
         self._list_title_label.setText("问题列表" if is_zh else "Questions")
         self._btn_prev.setText("上一张" if is_zh else "Previous")
         self._btn_next.setText("下一张" if is_zh else "Next")
@@ -1158,6 +1241,7 @@ class CardPreviewPage(QWidget):
         else:
             self._set_total_count_text(len(self._filtered_cards))
             self._set_card_meta_labels(None)
+            self._update_quality_overview()
 
     def _push_to_anki(self):
         """Push all cards to Anki."""
@@ -1273,6 +1357,13 @@ class CardPreviewPage(QWidget):
                 "duration_seconds": round(elapsed, 2),
             },
         )
+        record_operation_metric(
+            self._main.config,
+            event="push",
+            duration_seconds=elapsed,
+            success=failed == 0,
+            error_code="partial_failure" if failed else "",
+        )
         save_config(self._main.config)
 
     def _on_push_error(self, error: str):
@@ -1306,6 +1397,13 @@ class CardPreviewPage(QWidget):
                 "duration_seconds": round(elapsed, 2),
             },
         )
+        record_operation_metric(
+            self._main.config,
+            event="push",
+            duration_seconds=elapsed,
+            success=False,
+            error_code="push_error",
+        )
         save_config(self._main.config)
 
     def _on_push_cancelled(self):
@@ -1334,6 +1432,13 @@ class CardPreviewPage(QWidget):
                 "cards_total": len(self._all_cards),
                 "duration_seconds": round(elapsed, 2),
             },
+        )
+        record_operation_metric(
+            self._main.config,
+            event="push",
+            duration_seconds=elapsed,
+            success=False,
+            error_code="cancelled",
         )
         save_config(self._main.config)
 
@@ -1445,6 +1550,12 @@ class CardPreviewPage(QWidget):
                 "output_path": output_path,
             },
         )
+        record_operation_metric(
+            self._main.config,
+            event="export",
+            duration_seconds=elapsed,
+            success=True,
+        )
         save_config(self._main.config)
 
     def _on_export_error(self, error: str) -> None:
@@ -1475,6 +1586,13 @@ class CardPreviewPage(QWidget):
                 "cards_total": len(self._all_cards),
                 "duration_seconds": round(elapsed, 2),
             },
+        )
+        record_operation_metric(
+            self._main.config,
+            event="export",
+            duration_seconds=elapsed,
+            success=False,
+            error_code="export_error",
         )
         save_config(self._main.config)
 

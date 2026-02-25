@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import re
 import uuid
+from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+import httpx
 from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
@@ -40,7 +44,15 @@ from qfluentwidgets import (
     isDarkTheme,
 )
 
-from ankismart.core.config import LLMProviderConfig, save_config
+from ankismart import __version__
+from ankismart.core.config import (
+    CONFIG_BACKUP_DIR,
+    LLMProviderConfig,
+    create_config_backup,
+    list_config_backups,
+    restore_config_from_backup,
+    save_config,
+)
 from ankismart.core.errors import ErrorCode, get_error_info
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
 from ankismart.ui.styles import (
@@ -301,6 +313,8 @@ class SettingsPage(ScrollArea):
         self._temperature_slider.valueChanged.connect(self._schedule_auto_save)
         self._max_tokens_spin.valueChanged.connect(self._schedule_auto_save)
         self._concurrency_spin.valueChanged.connect(self._schedule_auto_save)
+        self._adaptive_concurrency_switch.checkedChanged.connect(self._schedule_auto_save)
+        self._concurrency_max_spin.valueChanged.connect(self._schedule_auto_save)
 
         # Anki settings
         self._anki_url_edit.textChanged.connect(self._schedule_auto_save)
@@ -310,6 +324,7 @@ class SettingsPage(ScrollArea):
 
         # Other settings
         self._language_combo.currentIndexChanged.connect(self._schedule_auto_save)
+        self._auto_update_card.checkedChanged.connect(self._schedule_auto_save)
         self._proxy_mode_combo.currentIndexChanged.connect(self._schedule_auto_save)
         self._proxy_edit.textChanged.connect(self._schedule_auto_save)
         self._ocr_correction_switch.checkedChanged.connect(self._schedule_auto_save)
@@ -496,6 +511,32 @@ class SettingsPage(ScrollArea):
         self._concurrency_card.hBoxLayout.addWidget(self._concurrency_spin)
         self._concurrency_card.hBoxLayout.addSpacing(16)
         self._llm_group.addSettingCard(self._concurrency_card)
+
+        self._adaptive_concurrency_card = SettingCard(
+            FluentIcon.ROBOT,
+            "自适应并发",
+            "根据限流/超时自动调低并发，稳定后自动回升",
+            self.scrollWidget,
+        )
+        self._adaptive_concurrency_switch = SwitchButton(self._adaptive_concurrency_card)
+        self._adaptive_concurrency_card.hBoxLayout.addWidget(self._adaptive_concurrency_switch)
+        self._adaptive_concurrency_card.hBoxLayout.addSpacing(16)
+        self._llm_group.addSettingCard(self._adaptive_concurrency_card)
+
+        self._concurrency_max_card = SettingCard(
+            FluentIcon.SPEED_HIGH,
+            "并发上限",
+            "自适应回升时可达到的最大并发",
+            self.scrollWidget,
+        )
+        self._concurrency_max_spin = SpinBox(self._concurrency_max_card)
+        self._concurrency_max_spin.setRange(1, 20)
+        self._concurrency_max_spin.setSingleStep(1)
+        self._concurrency_max_spin.setValue(6)
+        self._concurrency_max_spin.setMinimumWidth(200)
+        self._concurrency_max_card.hBoxLayout.addWidget(self._concurrency_max_spin)
+        self._concurrency_max_card.hBoxLayout.addSpacing(16)
+        self._llm_group.addSettingCard(self._concurrency_max_card)
 
         # ── Anki Configuration Group ──
         self._anki_group = SettingCardGroup("Anki 配置", self.scrollWidget)
@@ -910,6 +951,47 @@ class SettingsPage(ScrollArea):
         self._export_logs_card.clicked.connect(self._export_logs)
         self._other_group.addSettingCard(self._export_logs_card)
 
+        self._auto_update_card = SwitchSettingCard(
+            FluentIcon.SYNC,
+            "自动检查更新" if is_zh else "Auto Check Updates",
+            "启动时自动检查新版本（仅查询，不自动安装）"
+            if is_zh
+            else "Check for new versions at startup (check only, no auto install)",
+            parent=self._other_group,
+        )
+        self._other_group.addSettingCard(self._auto_update_card)
+
+        self._check_update_card = PushSettingCard(
+            "立即检查" if is_zh else "Check Now",
+            FluentIcon.INFO,
+            "版本更新" if is_zh else "Version Update",
+            "查询 GitHub Releases 最新版本"
+            if is_zh
+            else "Query latest version from GitHub Releases",
+        )
+        self._check_update_card.clicked.connect(self._check_for_updates)
+        self._other_group.addSettingCard(self._check_update_card)
+
+        self._backup_config_card = PushSettingCard(
+            "创建备份" if is_zh else "Create Backup",
+            FluentIcon.DOCUMENT,
+            "配置备份" if is_zh else "Config Backup",
+            "保存当前加密配置快照，便于回滚" if is_zh else "Create encrypted config snapshot",
+        )
+        self._backup_config_card.clicked.connect(self._backup_current_config)
+        self._other_group.addSettingCard(self._backup_config_card)
+
+        self._restore_config_card = PushSettingCard(
+            "从备份恢复" if is_zh else "Restore Backup",
+            FluentIcon.RETURN,
+            "配置回滚" if is_zh else "Config Rollback",
+            "选择备份文件并恢复配置（即时生效）"
+            if is_zh
+            else "Select backup file and restore config immediately",
+        )
+        self._restore_config_card.clicked.connect(self._restore_config_backup)
+        self._other_group.addSettingCard(self._restore_config_card)
+
         self._reset_card = PushSettingCard(
             "恢复默认",
             FluentIcon.RETURN,
@@ -936,6 +1018,10 @@ class SettingsPage(ScrollArea):
         self._temperature_slider.setValue(temp_value)
         self._max_tokens_spin.setValue(config.llm_max_tokens)
         self._concurrency_spin.setValue(getattr(config, "llm_concurrency", 2))
+        self._adaptive_concurrency_switch.setChecked(
+            getattr(config, "llm_adaptive_concurrency", True)
+        )
+        self._concurrency_max_spin.setValue(getattr(config, "llm_concurrency_max", 6))
 
         # Anki settings
         self._anki_url_edit.setText(config.anki_connect_url)
@@ -949,6 +1035,7 @@ class SettingsPage(ScrollArea):
 
         lang_map = {"zh": 0, "en": 1}
         self._language_combo.setCurrentIndex(lang_map.get(config.language, 0))
+        self._auto_update_card.setChecked(getattr(config, "auto_check_updates", True))
 
         # Proxy settings - load mode and manual URL
         proxy_mode = getattr(config, "proxy_mode", "system")
@@ -1574,6 +1661,154 @@ class SettingsPage(ScrollArea):
                 duration=3000,
             )
 
+    @staticmethod
+    def _parse_version_tuple(version_text: str) -> tuple[int, ...]:
+        cleaned = (version_text or "").strip().lstrip("vV")
+        parts = []
+        for chunk in cleaned.split("."):
+            match = re.match(r"^(\d+)", chunk)
+            parts.append(int(match.group(1)) if match else 0)
+        return tuple(parts) if parts else (0,)
+
+    def _check_for_updates(self) -> None:
+        """Check latest version from GitHub releases."""
+        is_zh = self._main.config.language == "zh"
+        release_api = "https://api.github.com/repos/lllll081926i/Ankismart/releases/latest"
+        latest_version = ""
+        latest_url = "https://github.com/lllll081926i/Ankismart/releases"
+        error = ""
+
+        try:
+            with httpx.Client(timeout=8.0) as client:
+                response = client.get(
+                    release_api,
+                    headers={"Accept": "application/vnd.github+json"},
+                )
+                response.raise_for_status()
+                payload = response.json() if response.content else {}
+            latest_version = str(payload.get("tag_name", "")).strip().lstrip("vV")
+            latest_url = str(payload.get("html_url", latest_url)).strip() or latest_url
+        except Exception as exc:
+            error = str(exc)
+
+        now = datetime.now().isoformat(timespec="seconds")
+        config = self._main.config.model_copy(
+            update={
+                "last_update_check_at": now,
+                "last_update_version_seen": (
+                    latest_version or self._main.config.last_update_version_seen
+                ),
+            }
+        )
+        self._main.apply_runtime_config(
+            config,
+            persist=True,
+            changed_fields={"last_update_check_at", "last_update_version_seen"},
+        )
+
+        if error:
+            self._show_info_bar(
+                "warning",
+                "检查更新失败" if is_zh else "Update Check Failed",
+                error,
+                duration=3500,
+            )
+            return
+
+        current_tuple = self._parse_version_tuple(__version__)
+        latest_tuple = self._parse_version_tuple(latest_version)
+        if latest_tuple > current_tuple:
+            reply = QMessageBox.question(
+                self,
+                "发现新版本" if is_zh else "Update Available",
+                (
+                    f"当前版本 {__version__}，最新版本 {latest_version}。\n是否打开发布页面？"
+                    if is_zh
+                    else (
+                        f"Current version {__version__}, latest {latest_version}.\n"
+                        "Open release page now?"
+                    )
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                QDesktopServices.openUrl(QUrl(latest_url))
+            return
+
+        self._show_info_bar(
+            "success",
+            "已是最新版本" if is_zh else "Up to Date",
+            f"当前版本 {__version__}" if is_zh else f"Current version {__version__}",
+            duration=2500,
+        )
+
+    def _backup_current_config(self) -> None:
+        is_zh = self._main.config.language == "zh"
+        try:
+            backup = create_config_backup(self._main.config, reason="manual")
+        except Exception as exc:
+            self._show_info_bar(
+                "error",
+                "备份失败" if is_zh else "Backup Failed",
+                str(exc),
+                duration=4000,
+            )
+            return
+
+        self._show_info_bar(
+            "success",
+            "备份成功" if is_zh else "Backup Created",
+            str(backup),
+            duration=3200,
+        )
+
+    def _restore_config_backup(self) -> None:
+        is_zh = self._main.config.language == "zh"
+        backups = list_config_backups(limit=30)
+        initial_dir = str(CONFIG_BACKUP_DIR if CONFIG_BACKUP_DIR.exists() else Path.home())
+        initial_file = str(backups[0]) if backups else initial_dir
+        selected_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择配置备份文件" if is_zh else "Select Config Backup",
+            initial_file,
+            "YAML Files (*.yaml *.yml)",
+        )
+        if not selected_path:
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "确认恢复" if is_zh else "Confirm Restore",
+            "恢复后将立即覆盖当前配置，是否继续？"
+            if is_zh
+            else "Current config will be overwritten immediately. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            restored = restore_config_from_backup(Path(selected_path))
+            self._main.apply_runtime_config(restored, persist=False)
+            self._load_config()
+        except Exception as exc:
+            self._show_info_bar(
+                "error",
+                "恢复失败" if is_zh else "Restore Failed",
+                str(exc),
+                duration=4000,
+            )
+            return
+
+        self._show_info_bar(
+            "success",
+            "恢复成功" if is_zh else "Restore Succeeded",
+            "配置已从备份恢复并生效" if is_zh else "Config restored from backup",
+            duration=3000,
+        )
+
     def _save_config(self) -> None:
         """Save configuration."""
         from ankismart.ui.i18n import t
@@ -1620,6 +1855,10 @@ class SettingsPage(ScrollArea):
 
         # Get temperature (convert from 0-20 to 0.0-2.0)
         temperature = self._temperature_slider.value() / 10.0
+        concurrency_cap = self._concurrency_max_spin.value()
+        concurrency_value = self._concurrency_spin.value()
+        if concurrency_value > 0:
+            concurrency_value = min(concurrency_value, concurrency_cap)
 
         # Get log level
         log_level_values = ["DEBUG", "INFO", "WARNING", "ERROR"]
@@ -1660,10 +1899,13 @@ class SettingsPage(ScrollArea):
                 "ocr_model_locked_by_user": ocr_model_locked_by_user,
                 "llm_temperature": temperature,
                 "llm_max_tokens": self._max_tokens_spin.value(),
-                "llm_concurrency": self._concurrency_spin.value(),
+                "llm_concurrency": concurrency_value,
+                "llm_adaptive_concurrency": self._adaptive_concurrency_switch.isChecked(),
+                "llm_concurrency_max": concurrency_cap,
                 "proxy_mode": proxy_mode,
                 "proxy_url": proxy_url,
                 "language": language,
+                "auto_check_updates": self._auto_update_card.isChecked(),
                 "log_level": log_level,
                 "enable_auto_split": self._auto_split_switch.isChecked(),
                 "split_threshold": self._split_threshold_spinbox.value(),
