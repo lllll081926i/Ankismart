@@ -1,0 +1,17 @@
+* text=auto
+
+# Keep source/config/docs in LF to avoid CRLF noise in diffs.
+*.py text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.iss text eol=lf
+
+# Common binary assets.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.pdf binary
