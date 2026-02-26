@@ -131,9 +131,17 @@ def make_page():
         },
     )()
     page._btn_convert = type("_Btn", (), {"setEnabled": lambda self, v: None})()
-    page._progress_ring = type("_Ring", (), {"show": lambda self: None, "hide": lambda self: None})()
+    page._progress_ring = type(
+        "_Ring", (), {"show": lambda self: None, "hide": lambda self: None}
+    )()
     page._progress_bar = type(
-        "_Bar", (), {"show": lambda self: None, "hide": lambda self: None, "setValue": lambda self, value: None}
+        "_Bar",
+        (),
+        {
+            "show": lambda self: None,
+            "hide": lambda self: None,
+            "setValue": lambda self, value: None,
+        },
     )()
     page._btn_cancel = type(
         "_Btn",
@@ -151,9 +159,7 @@ def make_warning_box_collector(collected: list[tuple[str, str]]):
     return type(
         "_MB",
         (),
-        {
-            "warning": staticmethod(lambda _parent, title, msg: collected.append((title, msg)))
-        },
+        {"warning": staticmethod(lambda _parent, title, msg: collected.append((title, msg)))},
     )
 
 

@@ -103,7 +103,7 @@ class TestLLMClientChat:
 
         assert result == "recovered"
         assert mock_client.chat.completions.create.call_count == 2
-        mock_sleep.assert_called_once_with(_BASE_DELAY * (2 ** 0))
+        mock_sleep.assert_called_once_with(_BASE_DELAY * (2**0))
 
     @patch("ankismart.card_gen.llm_client.time.sleep")
     @patch("ankismart.card_gen.llm_client.OpenAI")
@@ -167,7 +167,7 @@ class TestLLMClientChat:
         with pytest.raises(CardGenError):
             client.chat("sys", "usr")
 
-        expected_delays = [_BASE_DELAY * (2 ** i) for i in range(_MAX_RETRIES - 1)]
+        expected_delays = [_BASE_DELAY * (2**i) for i in range(_MAX_RETRIES - 1)]
         actual_delays = [call.args[0] for call in mock_sleep.call_args_list]
         assert actual_delays == expected_delays
 
@@ -199,7 +199,9 @@ class TestLLMClientChat:
 
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
-        response = httpx.Response(401, request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"))
+        response = httpx.Response(
+            401, request=httpx.Request("POST", "https://api.example.com/v1/chat/completions")
+        )
         mock_client.chat.completions.create.side_effect = AuthenticationError(
             message="invalid api key",
             response=response,
@@ -220,7 +222,9 @@ class TestLLMClientChat:
 
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
-        response = httpx.Response(403, request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"))
+        response = httpx.Response(
+            403, request=httpx.Request("POST", "https://api.example.com/v1/chat/completions")
+        )
         mock_client.chat.completions.create.side_effect = PermissionDeniedError(
             message="model access denied",
             response=response,
@@ -299,7 +303,9 @@ class TestLLMClientValidateConnection:
 
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
-        response = httpx.Response(401, request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"))
+        response = httpx.Response(
+            401, request=httpx.Request("POST", "https://api.example.com/v1/chat/completions")
+        )
         mock_client.chat.completions.create.side_effect = AuthenticationError(
             message="invalid api key",
             response=response,
@@ -427,7 +433,9 @@ class TestLLMClientMetrics:
         metrics.reset()
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
-        mock_client.chat.completions.create.return_value = _make_response("ok", prompt_tokens=12, completion_tokens=8)
+        mock_client.chat.completions.create.return_value = _make_response(
+            "ok", prompt_tokens=12, completion_tokens=8
+        )
 
         client = LLMClient(api_key="sk-test")
         assert client.chat("sys", "usr") == "ok"
@@ -443,7 +451,9 @@ class TestLLMClientMetrics:
         metrics.reset()
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
-        response = httpx.Response(401, request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"))
+        response = httpx.Response(
+            401, request=httpx.Request("POST", "https://api.example.com/v1/chat/completions")
+        )
         mock_client.chat.completions.create.side_effect = AuthenticationError(
             message="bad auth",
             response=response,
@@ -454,4 +464,9 @@ class TestLLMClientMetrics:
         with pytest.raises(CardGenError):
             client.chat("sys", "usr")
 
-        assert metrics.get_counter("llm_requests_failed_total", labels={"code": ErrorCode.E_LLM_AUTH_ERROR.value}) == 1.0
+        assert (
+            metrics.get_counter(
+                "llm_requests_failed_total", labels={"code": ErrorCode.E_LLM_AUTH_ERROR.value}
+            )
+            == 1.0
+        )

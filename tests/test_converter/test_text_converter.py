@@ -1,4 +1,5 @@
 """Tests for ankismart.converter.text_converter."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,6 +19,7 @@ from ankismart.core.errors import ConvertError, ErrorCode
 # _detect_encoding
 # ---------------------------------------------------------------------------
 
+
 class TestDetectEncoding:
     def test_utf8_bytes(self) -> None:
         raw = "Hello world".encode("utf-8")
@@ -36,7 +38,9 @@ class TestDetectEncoding:
         assert enc.lower().replace("-", "") in ("utf8", "ascii")
 
     def test_chardet_returns_none_encoding(self) -> None:
-        with patch("ankismart.converter.text_converter.chardet.detect", return_value={"encoding": None}):
+        with patch(
+            "ankismart.converter.text_converter.chardet.detect", return_value={"encoding": None}
+        ):
             assert _detect_encoding(b"abc") == "utf-8"
 
 
@@ -44,12 +48,14 @@ class TestDetectEncoding:
 # _is_heading
 # ---------------------------------------------------------------------------
 
+
 class TestIsHeading:
     def test_all_uppercase_is_heading(self) -> None:
         assert _is_heading("INTRODUCTION", 50.0) is True
 
     def test_single_char_uppercase_still_heading_by_short_line_heuristic(self) -> None:
-        # "A" is short (len=1 < 50*0.4=20) and doesn't end with ".", so short-line heuristic triggers
+        # "A" is short (len=1 < 50*0.4=20) and doesn't end with ".",
+        # so short-line heuristic triggers.
         assert _is_heading("A", 50.0) is True
 
     def test_single_char_not_heading_when_avg_zero(self) -> None:
@@ -86,6 +92,7 @@ class TestIsHeading:
 # _structure_as_markdown
 # ---------------------------------------------------------------------------
 
+
 class TestStructureAsMarkdown:
     def test_single_paragraph(self) -> None:
         text = "This is a normal paragraph with enough text to not be a heading."
@@ -94,7 +101,10 @@ class TestStructureAsMarkdown:
         assert "##" not in result
 
     def test_heading_detection(self) -> None:
-        text = "INTRODUCTION\n\nThis is a long paragraph that provides enough average length for heading detection to work properly."
+        text = (
+            "INTRODUCTION\n\nThis is a long paragraph that provides enough average "
+            "length for heading detection to work properly."
+        )
         result = _structure_as_markdown(text)
         assert "## INTRODUCTION" in result
 
@@ -123,6 +133,7 @@ class TestStructureAsMarkdown:
 # ---------------------------------------------------------------------------
 # convert
 # ---------------------------------------------------------------------------
+
 
 class TestConvert:
     def test_convert_utf8_file(self, tmp_path: Path) -> None:
@@ -159,7 +170,10 @@ class TestConvert:
     def test_convert_lookup_error(self, tmp_path: Path) -> None:
         f = tmp_path / "lookup.txt"
         f.write_bytes(b"hello")
-        with patch("ankismart.converter.text_converter._detect_encoding", return_value="nonexistent-encoding"):
+        with patch(
+            "ankismart.converter.text_converter._detect_encoding",
+            return_value="nonexistent-encoding",
+        ):
             with pytest.raises(ConvertError):
                 convert(f, trace_id="t5")
 

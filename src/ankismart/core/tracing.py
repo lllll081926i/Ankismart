@@ -20,6 +20,7 @@ logger = logging.getLogger("ankismart.tracing")
 # Metrics collector
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class StageMetrics:
     count: int = 0
@@ -89,14 +90,18 @@ class MetricsCollector:
         with self._lock:
             self._cache_misses += 1
 
-    def increment(self, name: str, value: float = 1.0, labels: Mapping[str, object] | None = None) -> None:
+    def increment(
+        self, name: str, value: float = 1.0, labels: Mapping[str, object] | None = None
+    ) -> None:
         if value == 0:
             return
         key = (name, self._normalize_labels(labels))
         with self._lock:
             self._counters[key] += float(value)
 
-    def set_gauge(self, name: str, value: float, labels: Mapping[str, object] | None = None) -> None:
+    def set_gauge(
+        self, name: str, value: float, labels: Mapping[str, object] | None = None
+    ) -> None:
         key = (name, self._normalize_labels(labels))
         with self._lock:
             self._gauges[key] = float(value)
@@ -156,7 +161,9 @@ class MetricsCollector:
             cache_hits = self._cache_hits
             cache_misses = self._cache_misses
             stage_items = sorted(self._stages.items(), key=lambda item: item[0])
-            counter_items = sorted(self._counters.items(), key=lambda item: (item[0][0], item[0][1]))
+            counter_items = sorted(
+                self._counters.items(), key=lambda item: (item[0][0], item[0][1])
+            )
             gauge_items = sorted(self._gauges.items(), key=lambda item: (item[0][0], item[0][1]))
 
         lines: list[str] = [

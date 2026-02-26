@@ -30,8 +30,16 @@ MODERN_CARD_CSS = """
     line-height: 1.7;
     color: var(--as-text);
     background:
-        radial-gradient(900px 540px at -10% -10%, var(--as-bg-grad-a) 0%, rgba(217, 233, 255, 0) 60%),
-        radial-gradient(760px 420px at 110% 15%, var(--as-bg-grad-b) 0%, rgba(223, 247, 236, 0) 60%),
+        radial-gradient(
+            900px 540px at -10% -10%,
+            var(--as-bg-grad-a) 0%,
+            rgba(217, 233, 255, 0) 60%
+        ),
+        radial-gradient(
+            760px 420px at 110% 15%,
+            var(--as-bg-grad-b) 0%,
+            rgba(223, 247, 236, 0) 60%
+        ),
         var(--as-bg);
     margin: 0;
     padding: 16px;

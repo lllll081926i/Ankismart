@@ -288,7 +288,9 @@ def patch_batch_generate_worker(monkeypatch):
                 for doc_index, document in enumerate(self._documents):
                     self.progress.emit(f"generating {document.file_name}")
                     for item_index in range(cards_per_document):
-                        strategy = strategy_mix[(doc_index + item_index) % len(strategy_mix)]["strategy"]
+                        strategy = strategy_mix[(doc_index + item_index) % len(strategy_mix)][
+                            "strategy"
+                        ]
                         note_type = "Cloze" if strategy == "cloze" else "Basic"
                         if note_type == "Cloze":
                             fields = {
@@ -334,7 +336,9 @@ def patch_batch_generate_worker(monkeypatch):
 def patch_push_worker(monkeypatch):
     def _patch(*, fail: bool = False, error_message: str = "AnkiConnect unavailable"):
         class _PushWorker:
-            def __init__(self, gateway, cards: list[CardDraft], update_mode: str = "create_only") -> None:
+            def __init__(
+                self, gateway, cards: list[CardDraft], update_mode: str = "create_only"
+            ) -> None:
                 self._cards = list(cards)
                 self.progress = _SignalStub()
                 self.finished = _SignalStub()
@@ -346,7 +350,9 @@ def patch_push_worker(monkeypatch):
                 statuses: list[CardPushStatus] = []
                 if fail:
                     for index in range(len(self._cards)):
-                        statuses.append(CardPushStatus(index=index, success=False, error=error_message))
+                        statuses.append(
+                            CardPushStatus(index=index, success=False, error=error_message)
+                        )
                     result = PushResult(
                         total=len(self._cards),
                         succeeded=0,
@@ -356,7 +362,9 @@ def patch_push_worker(monkeypatch):
                     )
                 else:
                     for index in range(len(self._cards)):
-                        statuses.append(CardPushStatus(index=index, success=True, note_id=10000 + index))
+                        statuses.append(
+                            CardPushStatus(index=index, success=True, note_id=10000 + index)
+                        )
                     result = PushResult(
                         total=len(self._cards),
                         succeeded=len(self._cards),

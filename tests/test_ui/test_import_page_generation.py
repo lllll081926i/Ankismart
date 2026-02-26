@@ -88,7 +88,9 @@ def test_persist_ocr_config_updates_prefers_runtime_apply(monkeypatch):
     page._main.apply_runtime_config = apply_runtime
 
     def unexpected_save(_):
-        raise AssertionError("save_config should not be called directly when runtime apply is available")
+        raise AssertionError(
+            "save_config should not be called directly when runtime apply is available"
+        )
 
     monkeypatch.setattr("ankismart.ui.import_page.save_config", unexpected_save)
 

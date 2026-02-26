@@ -1,4 +1,5 @@
 """Tests for ankismart.converter.docx_converter."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,6 +18,7 @@ from ankismart.core.errors import ConvertError, ErrorCode
 # ---------------------------------------------------------------------------
 # _is_list_style
 # ---------------------------------------------------------------------------
+
 
 class TestIsListStyle:
     def test_bullet_list(self) -> None:
@@ -52,6 +54,7 @@ class TestIsListStyle:
 # ---------------------------------------------------------------------------
 # _convert_table
 # ---------------------------------------------------------------------------
+
 
 class TestConvertTable:
     def _make_table(self, rows_data: list[list[str]]) -> MagicMock:
@@ -106,6 +109,7 @@ class TestConvertTable:
 # convert
 # ---------------------------------------------------------------------------
 
+
 class TestConvert:
     def _make_paragraph_element(self, text: str, style_name: str, tag: str = "p") -> MagicMock:
         elem = MagicMock()
@@ -116,7 +120,10 @@ class TestConvert:
 
     def test_convert_file_not_found(self, tmp_path: Path) -> None:
         f = tmp_path / "missing.docx"
-        with patch("ankismart.converter.docx_converter.Document", side_effect=FileNotFoundError("not found")):
+        with patch(
+            "ankismart.converter.docx_converter.Document",
+            side_effect=FileNotFoundError("not found"),
+        ):
             with pytest.raises(ConvertError) as exc_info:
                 convert(f, trace_id="d1")
             assert exc_info.value.code == ErrorCode.E_FILE_NOT_FOUND
@@ -124,7 +131,9 @@ class TestConvert:
     def test_convert_generic_open_error(self, tmp_path: Path) -> None:
         f = tmp_path / "corrupt.docx"
         f.write_bytes(b"not a docx")
-        with patch("ankismart.converter.docx_converter.Document", side_effect=ValueError("bad format")):
+        with patch(
+            "ankismart.converter.docx_converter.Document", side_effect=ValueError("bad format")
+        ):
             with pytest.raises(ConvertError) as exc_info:
                 convert(f, trace_id="d2")
             assert "Failed to open docx" in exc_info.value.message
@@ -157,7 +166,9 @@ class TestConvert:
         para_calls = iter([mock_para1, mock_para2])
 
         with patch("ankismart.converter.docx_converter.Document", return_value=mock_doc):
-            with patch("docx.text.paragraph.Paragraph", side_effect=lambda el, doc: next(para_calls)):
+            with patch(
+                "docx.text.paragraph.Paragraph", side_effect=lambda el, doc: next(para_calls)
+            ):
                 result = convert(f, trace_id="d3")
 
         assert result.source_format == "docx"

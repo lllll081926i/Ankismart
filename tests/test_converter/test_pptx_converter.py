@@ -1,4 +1,5 @@
 """Tests for ankismart.converter.pptx_converter."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,6 +17,7 @@ from ankismart.core.errors import ConvertError, ErrorCode
 # ---------------------------------------------------------------------------
 # _get_slide_title
 # ---------------------------------------------------------------------------
+
 
 class TestGetSlideTitle:
     def test_returns_title_text(self) -> None:
@@ -42,6 +44,7 @@ class TestGetSlideTitle:
 # ---------------------------------------------------------------------------
 # _extract_slide_text
 # ---------------------------------------------------------------------------
+
 
 class TestExtractSlideText:
     def test_extracts_text_from_shapes(self) -> None:
@@ -91,10 +94,13 @@ class TestExtractSlideText:
 # convert
 # ---------------------------------------------------------------------------
 
+
 class TestConvert:
     def test_convert_file_not_found(self, tmp_path: Path) -> None:
         f = tmp_path / "missing.pptx"
-        with patch("ankismart.converter.pptx_converter.Presentation", side_effect=FileNotFoundError):
+        with patch(
+            "ankismart.converter.pptx_converter.Presentation", side_effect=FileNotFoundError
+        ):
             with pytest.raises(ConvertError) as exc_info:
                 convert(f, trace_id="p1")
             assert exc_info.value.code == ErrorCode.E_FILE_NOT_FOUND
@@ -102,7 +108,9 @@ class TestConvert:
     def test_convert_generic_open_error(self, tmp_path: Path) -> None:
         f = tmp_path / "corrupt.pptx"
         f.write_bytes(b"not pptx")
-        with patch("ankismart.converter.pptx_converter.Presentation", side_effect=ValueError("bad")):
+        with patch(
+            "ankismart.converter.pptx_converter.Presentation", side_effect=ValueError("bad")
+        ):
             with pytest.raises(ConvertError) as exc_info:
                 convert(f, trace_id="p2")
             assert "Failed to open pptx" in exc_info.value.message

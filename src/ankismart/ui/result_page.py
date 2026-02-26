@@ -72,7 +72,9 @@ class ResultPage(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setSpacing(SPACING_SMALL)
-        layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
+        layout.setContentsMargins(
+            MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD
+        )
 
         # Title
         self._title_label = TitleLabel(t("result.title"))
@@ -85,7 +87,9 @@ class ResultPage(QWidget):
 
         lang = getattr(self._main.config, "language", "zh")
         self._card_total = self._create_stat_card(t("result.total_cards", lang), "0", "#409EFF")
-        self._card_success = self._create_stat_card(t("result.success_pushed", lang), "0", "#67C23A")
+        self._card_success = self._create_stat_card(
+            t("result.success_pushed", lang), "0", "#67C23A"
+        )
         self._card_failed = self._create_stat_card(t("result.failed", lang), "0", "#F56C6C")
         self._card_skipped = self._create_stat_card(t("result.skipped", lang), "0", "#E6A23C")
 
@@ -119,13 +123,25 @@ class ResultPage(QWidget):
         self._header_checkbox.stateChanged.connect(self._on_select_all_changed)
 
         self._table.setHorizontalHeaderLabels(
-            ["", t("result.card_title", lang), t("result.status", lang), t("result.error_message", lang), "操作" if lang == "zh" else "Action"]
+            [
+                "",
+                t("result.card_title", lang),
+                t("result.status", lang),
+                t("result.error_message", lang),
+                "操作" if lang == "zh" else "Action",
+            ]
         )
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.ResizeToContents
+        )
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.ResizeToContents
+        )
         self._table.setSortingEnabled(False)  # Disable sorting to keep checkbox alignment
         self._table.setEditTriggers(TableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(TableWidget.SelectionBehavior.SelectRows)
@@ -135,7 +151,9 @@ class ResultPage(QWidget):
         bottom_actions = CardWidget()
         bottom_actions.setBorderRadius(8)
         all_buttons_row = QHBoxLayout(bottom_actions)
-        all_buttons_row.setContentsMargins(MARGIN_STANDARD, MARGIN_SMALL, MARGIN_STANDARD, MARGIN_SMALL)
+        all_buttons_row.setContentsMargins(
+            MARGIN_STANDARD, MARGIN_SMALL, MARGIN_STANDARD, MARGIN_SMALL
+        )
         all_buttons_row.setSpacing(MARGIN_SMALL)
         all_buttons_row.addStretch()
 
@@ -225,14 +243,14 @@ class ResultPage(QWidget):
         scope_label = BodyLabel(t("result.duplicate_scope"))
         self._duplicate_scope_combo = ComboBox()
         self._duplicate_scope_combo.addItem(t("result.duplicate_scope_deck"), userData="deck")
-        self._duplicate_scope_combo.addItem(t("result.duplicate_scope_collection"), userData="collection")
+        self._duplicate_scope_combo.addItem(
+            t("result.duplicate_scope_collection"), userData="collection"
+        )
         self._duplicate_scope_combo.setMinimumWidth(170)
         self._duplicate_scope_combo.setFixedHeight(30)
         apply_compact_combo_metrics(self._duplicate_scope_combo)
         duplicate_scope = getattr(self._main.config, "duplicate_scope", "deck")
-        self._duplicate_scope_combo.setCurrentIndex(
-            0 if duplicate_scope == "deck" else 1
-        )
+        self._duplicate_scope_combo.setCurrentIndex(0 if duplicate_scope == "deck" else 1)
         self._duplicate_scope_combo.currentIndexChanged.connect(self._on_duplicate_scope_changed)
         scope_row.addWidget(scope_label, 0, Qt.AlignmentFlag.AlignVCenter)
         scope_row.addWidget(self._duplicate_scope_combo, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -243,7 +261,9 @@ class ResultPage(QWidget):
         model_row.setSpacing(SPACING_SMALL)
         model_label = BodyLabel(t("result.duplicate_check_model"))
         self._check_model_switch = SwitchButton()
-        self._check_model_switch.setChecked(getattr(self._main.config, "duplicate_check_model", True))
+        self._check_model_switch.setChecked(
+            getattr(self._main.config, "duplicate_check_model", True)
+        )
         self._check_model_switch.checkedChanged.connect(self._on_check_model_changed)
         model_row.addWidget(model_label)
         model_row.addStretch(1)
@@ -254,7 +274,9 @@ class ResultPage(QWidget):
         allow_row.setSpacing(SPACING_SMALL)
         allow_label = BodyLabel(t("result.allow_duplicate"))
         self._allow_duplicate_switch = SwitchButton()
-        self._allow_duplicate_switch.setChecked(getattr(self._main.config, "allow_duplicate", False))
+        self._allow_duplicate_switch.setChecked(
+            getattr(self._main.config, "allow_duplicate", False)
+        )
         self._allow_duplicate_switch.checkedChanged.connect(self._on_allow_duplicate_changed)
         allow_row.addWidget(allow_label)
         allow_row.addStretch(1)
@@ -274,7 +296,9 @@ class ResultPage(QWidget):
 
         card_layout = QVBoxLayout(card)
         card_layout.setSpacing(SPACING_MEDIUM)
-        card_layout.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
+        card_layout.setContentsMargins(
+            MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD
+        )
 
         # Title
         title_label = SubtitleLabel(t("result.duplicate_check_settings"))
@@ -290,11 +314,11 @@ class ResultPage(QWidget):
 
         self._duplicate_scope_combo = ComboBox()
         self._duplicate_scope_combo.addItem(t("result.duplicate_scope_deck"), userData="deck")
-        self._duplicate_scope_combo.addItem(t("result.duplicate_scope_collection"), userData="collection")
-        duplicate_scope = getattr(self._main.config, "duplicate_scope", "deck")
-        self._duplicate_scope_combo.setCurrentIndex(
-            0 if duplicate_scope == "deck" else 1
+        self._duplicate_scope_combo.addItem(
+            t("result.duplicate_scope_collection"), userData="collection"
         )
+        duplicate_scope = getattr(self._main.config, "duplicate_scope", "deck")
+        self._duplicate_scope_combo.setCurrentIndex(0 if duplicate_scope == "deck" else 1)
         self._duplicate_scope_combo.currentIndexChanged.connect(self._on_duplicate_scope_changed)
         self._duplicate_scope_combo.setMinimumWidth(150)
         apply_compact_combo_metrics(self._duplicate_scope_combo)
@@ -315,7 +339,9 @@ class ResultPage(QWidget):
         model_row.addWidget(model_label)
 
         self._check_model_switch = SwitchButton()
-        self._check_model_switch.setChecked(getattr(self._main.config, "duplicate_check_model", True))
+        self._check_model_switch.setChecked(
+            getattr(self._main.config, "duplicate_check_model", True)
+        )
         self._check_model_switch.checkedChanged.connect(self._on_check_model_changed)
         model_row.addWidget(self._check_model_switch)
 
@@ -334,7 +360,9 @@ class ResultPage(QWidget):
         allow_row.addWidget(allow_label)
 
         self._allow_duplicate_switch = SwitchButton()
-        self._allow_duplicate_switch.setChecked(getattr(self._main.config, "allow_duplicate", False))
+        self._allow_duplicate_switch.setChecked(
+            getattr(self._main.config, "allow_duplicate", False)
+        )
         self._allow_duplicate_switch.checkedChanged.connect(self._on_allow_duplicate_changed)
         allow_row.addWidget(self._allow_duplicate_switch)
 
@@ -392,7 +420,9 @@ class ResultPage(QWidget):
 
             InfoBar.success(
                 title="成功" if is_zh else "Success",
-                content=f"已导出 {len(self._cards)} 张卡片到 {path}" if is_zh else f"Exported {len(self._cards)} cards to {path}",
+                content=f"已导出 {len(self._cards)} 张卡片到 {path}"
+                if is_zh
+                else f"Exported {len(self._cards)} cards to {path}",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -496,7 +526,9 @@ class ResultPage(QWidget):
         if should_show_feedback and result.succeeded == result.total:
             InfoBar.success(
                 title="推送成功" if is_zh else "Push Success",
-                content=f"成功推送 {result.succeeded} 张卡片" if is_zh else f"Successfully pushed {result.succeeded} cards",
+                content=f"成功推送 {result.succeeded} 张卡片"
+                if is_zh
+                else f"Successfully pushed {result.succeeded} cards",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -508,7 +540,8 @@ class ResultPage(QWidget):
             InfoBar.warning(
                 title="部分失败" if is_zh else "Partial Failure",
                 content=f"成功 {result.succeeded} 张，失败 {result.failed} 张"
-                if is_zh else f"Success {result.succeeded}, Failed {result.failed}",
+                if is_zh
+                else f"Success {result.succeeded}, Failed {result.failed}",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -525,7 +558,9 @@ class ResultPage(QWidget):
         # Checkbox for selection
         checkbox = CheckBox()
         checkbox.setProperty("card_index", status.index)
-        checkbox.stateChanged.connect(lambda state, idx=status.index: self._on_row_checkbox_changed(idx, state))
+        checkbox.stateChanged.connect(
+            lambda state, idx=status.index: self._on_row_checkbox_changed(idx, state)
+        )
         checkbox_widget = QWidget()
         checkbox_layout = QHBoxLayout(checkbox_widget)
         checkbox_layout.addWidget(checkbox)
@@ -581,6 +616,7 @@ class ResultPage(QWidget):
     @staticmethod
     def _extract_question_title(card: CardDraft, *, lang: str) -> str:
         """Extract display title from question field only."""
+
         def _compact(value: str) -> str:
             plain = " ".join(value.replace("\r", " ").replace("\n", " ").split())
             return plain if len(plain) <= 56 else f"{plain[:55]}…"
@@ -614,6 +650,7 @@ class ResultPage(QWidget):
         for card in cards:
             if card.options is None:
                 from ankismart.core.models import CardOptions
+
                 card.options = CardOptions()
             card.options.allow_duplicate = config.allow_duplicate
             card.options.duplicate_scope = config.duplicate_scope
@@ -684,7 +721,8 @@ class ResultPage(QWidget):
         InfoBar.info(
             title="重试中" if is_zh else "Retrying",
             content=f"正在重试 {len(failed_cards)} 张失败卡片..."
-            if is_zh else f"Retrying {len(failed_cards)} failed cards...",
+            if is_zh
+            else f"Retrying {len(failed_cards)} failed cards...",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -715,7 +753,8 @@ class ResultPage(QWidget):
             InfoBar.success(
                 title="重试成功" if is_zh else "Retry Succeeded",
                 content=f"成功推送 {result.succeeded} 张卡片"
-                if is_zh else f"Successfully pushed {result.succeeded} cards",
+                if is_zh
+                else f"Successfully pushed {result.succeeded} cards",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -787,7 +826,8 @@ class ResultPage(QWidget):
             self,
             "确认返回" if is_zh else "Confirm Back",
             "返回预览页面将丢失当前结果，是否继续？"
-            if is_zh else "Going back to preview will lose current results. Continue?",
+            if is_zh
+            else "Going back to preview will lose current results. Continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -1017,7 +1057,8 @@ class ResultPage(QWidget):
         InfoBar.info(
             title="推送中" if is_zh else "Pushing",
             content=f"正在推送 {len(self._cards)} 张卡片..."
-            if is_zh else f"Pushing {len(self._cards)} cards...",
+            if is_zh
+            else f"Pushing {len(self._cards)} cards...",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -1048,7 +1089,9 @@ class ResultPage(QWidget):
 
             # Recalculate statistics
             self._push_result.succeeded = sum(1 for s in self._push_result.results if s.success)
-            self._push_result.failed = sum(1 for s in self._push_result.results if not s.success and s.error)
+            self._push_result.failed = sum(
+                1 for s in self._push_result.results if not s.success and s.error
+            )
 
             # Clear edited indices
             self._edited_card_indices.clear()
@@ -1060,7 +1103,8 @@ class ResultPage(QWidget):
             InfoBar.success(
                 title="推送成功" if is_zh else "Push Success",
                 content=f"成功推送 {result.succeeded} 张已编辑卡片"
-                if is_zh else f"Successfully pushed {result.succeeded} edited cards",
+                if is_zh
+                else f"Successfully pushed {result.succeeded} edited cards",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -1104,7 +1148,13 @@ class ResultPage(QWidget):
         self._title_label.setText(t("result.title", lang))
         self._table_label.setText(t("result.detail_results", lang))
         self._table.setHorizontalHeaderLabels(
-            ["", t("result.card_title", lang), t("result.status", lang), t("result.error_message", lang), "操作" if is_zh else "Action"]
+            [
+                "",
+                t("result.card_title", lang),
+                t("result.status", lang),
+                t("result.error_message", lang),
+                "操作" if is_zh else "Action",
+            ]
         )
 
         self._set_stat_card_title(self._card_total, t("result.total_cards", lang))
@@ -1168,7 +1218,9 @@ class BatchEditTagsDialog(MessageBoxBase):
         self._lang = lang
 
         self.titleLabel = SubtitleLabel(t("result.batch_edit_tags_title", lang), self)
-        self.countLabel = CaptionLabel(t("result.selected_cards_count", lang, count=selected_count), self)
+        self.countLabel = CaptionLabel(
+            t("result.selected_cards_count", lang, count=selected_count), self
+        )
 
         self.tagsLineEdit = LineEdit(self)
         self.tagsLineEdit.setPlaceholderText(t("result.tags_placeholder", lang))
@@ -1202,7 +1254,9 @@ class BatchEditDeckDialog(MessageBoxBase):
         self._lang = lang
 
         self.titleLabel = SubtitleLabel(t("result.batch_edit_deck_title", lang), self)
-        self.countLabel = CaptionLabel(t("result.selected_cards_count", lang, count=selected_count), self)
+        self.countLabel = CaptionLabel(
+            t("result.selected_cards_count", lang, count=selected_count), self
+        )
 
         self.deckLineEdit = LineEdit(self)
         self.deckLineEdit.setPlaceholderText(t("result.deck_placeholder", lang))

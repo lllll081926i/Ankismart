@@ -27,7 +27,9 @@ def _is_loopback_endpoint(url: str) -> bool:
 
 
 class AnkiConnectClient:
-    def __init__(self, url: str = "http://127.0.0.1:8765", key: str = "", proxy_url: str = "") -> None:
+    def __init__(
+        self, url: str = "http://127.0.0.1:8765", key: str = "", proxy_url: str = ""
+    ) -> None:
         self._url = url
         self._key = key
         self._proxy_url = proxy_url

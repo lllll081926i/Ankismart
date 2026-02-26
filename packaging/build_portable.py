@@ -4,7 +4,6 @@ import argparse
 import shutil
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 SOURCE_DIR = PROJECT_ROOT / "dist" / "release" / "app"
@@ -38,7 +37,7 @@ def read_version(pyproject_path: Path) -> str:
         stripped = line.strip()
         if stripped.startswith("version ="):
             return stripped.split("=", 1)[1].strip().strip('"')
-    return "0.1.0"
+    return "0.1.2"
 
 
 def ensure_runtime_dirs(target_dir: Path) -> None:

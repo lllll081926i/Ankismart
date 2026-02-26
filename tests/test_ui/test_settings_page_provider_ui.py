@@ -137,7 +137,10 @@ def test_proxy_manual_layout_places_input_left_of_mode_combo(_qapp) -> None:
     _qapp.processEvents()
 
     assert page._proxy_edit.isVisible()
-    assert page._proxy_edit.y() == page._proxy_mode_combo.y() or abs(page._proxy_edit.y() - page._proxy_mode_combo.y()) <= 8
+    assert (
+        page._proxy_edit.y() == page._proxy_mode_combo.y()
+        or abs(page._proxy_edit.y() - page._proxy_mode_combo.y()) <= 8
+    )
     assert page._proxy_edit.x() < page._proxy_mode_combo.x()
 
 

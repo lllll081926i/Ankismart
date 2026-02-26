@@ -64,7 +64,7 @@ def create_shortcut(
     parent: QWidget,
     key_sequence: QKeySequence,
     callback: Callable,
-    context: Qt.ShortcutContext = Qt.ShortcutContext.WidgetWithChildrenShortcut
+    context: Qt.ShortcutContext = Qt.ShortcutContext.WidgetWithChildrenShortcut,
 ) -> QShortcut | None:
     """Create and configure a keyboard shortcut.
 
@@ -105,7 +105,7 @@ SHORTCUT_DESCRIPTIONS = {
         "open_settings": "Open Settings",
         "help": "Help",
         "quit": "Quit Application",
-    }
+    },
 }
 
 
@@ -122,7 +122,10 @@ def get_all_shortcuts(language: str = "zh") -> list[tuple[str, str]]:
 
     shortcuts = [
         (get_shortcut_text(ShortcutKeys.OPEN_FILE, language), descriptions["open_file"]),
-        (get_shortcut_text(ShortcutKeys.START_GENERATION, language), descriptions["start_generation"]),
+        (
+            get_shortcut_text(ShortcutKeys.START_GENERATION, language),
+            descriptions["start_generation"],
+        ),
         (get_shortcut_text(ShortcutKeys.SAVE_EDIT, language), descriptions["save_edit"]),
         (get_shortcut_text(ShortcutKeys.EXPORT_CARDS, language), descriptions["export_cards"]),
         (get_shortcut_text(ShortcutKeys.OPEN_SETTINGS, language), descriptions["open_settings"]),

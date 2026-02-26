@@ -10,9 +10,9 @@ from qfluentwidgets import BodyLabel, isDarkTheme
 
 # Color constants
 COLOR_SUCCESS = "#10b981"  # Green
-COLOR_ERROR = "#ef4444"    # Red
+COLOR_ERROR = "#ef4444"  # Red
 COLOR_WARNING = "#f59e0b"  # Orange
-COLOR_INFO = "#3b82f6"     # Blue
+COLOR_INFO = "#3b82f6"  # Blue
 FIXED_THEME_ACCENT_HEX = "#2563eb"
 FIXED_THEME_ACCENT_RGB = "37, 99, 235"
 FIXED_PAGE_BACKGROUND_HEX = "#f5f7fb"
@@ -61,19 +61,19 @@ ICON_SIZE_MEDIUM = 24
 ICON_SIZE_LARGE = 32
 
 # Spacing constants (following QFluentWidgets official standards)
-SPACING_SMALL = 8      # 小间距，用于紧密排列的元素
-SPACING_MEDIUM = 12    # 中等间距，用于一般元素之间（从16减小到12）
-SPACING_LARGE = 20     # 大间距，用于主要区块之间
-SPACING_XLARGE = 24    # 超大间距，用于页面级别的分隔
+SPACING_SMALL = 8  # 小间距，用于紧密排列的元素
+SPACING_MEDIUM = 12  # 中等间距，用于一般元素之间（从16减小到12）
+SPACING_LARGE = 20  # 大间距，用于主要区块之间
+SPACING_XLARGE = 24  # 超大间距，用于页面级别的分隔
 
 # Margin constants
-MARGIN_STANDARD = 20   # 标准边距，用于页面和卡片的外边距
-MARGIN_SMALL = 10      # 小边距，用于紧凑布局
-MARGIN_LARGE = 30      # 大边距，用于需要更多空白的区域
+MARGIN_STANDARD = 20  # 标准边距，用于页面和卡片的外边距
+MARGIN_SMALL = 10  # 小边距，用于紧凑布局
+MARGIN_LARGE = 30  # 大边距，用于需要更多空白的区域
 
 # Component-specific constants
-PROVIDER_ITEM_HEIGHT = 36        # 提供商列表项高度（横向表格布局）
-MAX_VISIBLE_PROVIDERS = 2        # 默认可见提供商数量（超过则显示滚动条）
+PROVIDER_ITEM_HEIGHT = 36  # 提供商列表项高度（横向表格布局）
+MAX_VISIBLE_PROVIDERS = 2  # 默认可见提供商数量（超过则显示滚动条）
 
 # Font sizes
 FONT_SIZE_SMALL = 12
@@ -160,7 +160,9 @@ def apply_compact_combo_metrics(
             base_create_menu = getattr(combo, "_ankismart_original_create_combo_menu", None)
             menu = base_create_menu() if callable(base_create_menu) else create_menu()
             try:
-                item_height = int(getattr(combo, "_ankismart_combo_item_height", target_popup_item_height))
+                item_height = int(
+                    getattr(combo, "_ankismart_combo_item_height", target_popup_item_height)
+                )
                 menu.setItemHeight(item_height)
             except Exception:
                 pass
@@ -252,7 +254,10 @@ def get_stylesheet(*, dark: bool = False) -> str:
     combo_padding_bottom = scale_px(2, scale=scale, min_value=1)
     combo_padding_left = scale_px(10, scale=scale, min_value=8)
     combo_padding_right = scale_px(28, scale=scale, min_value=22)
-    combo_min_height = max(scale_px(22, scale=scale, min_value=20), combo_text_px + scale_px(8, scale=scale, min_value=6))
+    combo_min_height = max(
+        scale_px(22, scale=scale, min_value=20),
+        combo_text_px + scale_px(8, scale=scale, min_value=6),
+    )
     menu_border_radius = scale_px(9, scale=scale, min_value=7)
     menu_item_radius = scale_px(5, scale=scale, min_value=4)
     menu_item_padding_h = scale_px(10, scale=scale, min_value=8)
@@ -338,7 +343,11 @@ QPushButton:hover, QToolButton:hover {{
 ComboBox, ModelComboBox, EditableComboBox {{
     border: 1px solid {palette.BORDER};
     border-radius: {combo_radius}px;
-    padding: {combo_padding_top}px {combo_padding_right}px {combo_padding_bottom}px {combo_padding_left}px;
+    padding:
+        {combo_padding_top}px
+        {combo_padding_right}px
+        {combo_padding_bottom}px
+        {combo_padding_left}px;
     color: {palette.TEXT_PRIMARY};
     background-color: {palette.SURFACE};
     text-align: left;

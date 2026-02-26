@@ -14,7 +14,9 @@ class ImportPageObject(BasePageObject):
         self.page._add_files(list(file_paths))
         self.process_events()
 
-    def configure(self, *, deck_name: str = "Default", tags: str = "ankismart,e2e", target_total: int = 20) -> None:
+    def configure(
+        self, *, deck_name: str = "Default", tags: str = "ankismart,e2e", target_total: int = 20
+    ) -> None:
         self.page._deck_combo.setCurrentText(deck_name)
         self.page._tags_input.setText(tags)
         self.page._total_count_input.setText(str(target_total))

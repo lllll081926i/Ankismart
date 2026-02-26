@@ -53,7 +53,12 @@ _ANKI_TEMPLATE_FORMATTER_SCRIPT = """
       return "";
     }
 
-    var mathRe = /(\\$\\$[\\s\\S]*?\\$\\$|\\\\\\[[\\s\\S]*?\\\\\\]|\\\\\\([\\s\\S]*?\\\\\\)|\\\\begin\\{[a-zA-Z*]+\\}[\\s\\S]*?\\\\end\\{[a-zA-Z*]+\\}|\\$[^$\\n]+\\$)/g;
+    var mathRe = new RegExp(
+      "(\\\\$\\\\$[\\\\s\\\\S]*?\\\\$\\\\$|\\\\\\\\\\\\[[\\\\s\\\\S]*?\\\\\\\\\\\\]|" +
+      "\\\\\\\\\\([\\\\s\\\\S]*?\\\\\\\\\\\\)|\\\\\\\\begin\\\\{[a-zA-Z*]+\\\\}[\\\\s\\\\S]*?" +
+      "\\\\\\\\end\\\\{[a-zA-Z*]+\\\\}|\\\\$[^$\\\\n]+\\\\$)",
+      "g"
+    );
     var output = "";
     var lastIndex = 0;
     var match;
@@ -67,7 +72,12 @@ _ANKI_TEMPLATE_FORMATTER_SCRIPT = """
   }
 
   function containsLatex(text) {
-    return /(\\$\\$[\\s\\S]*?\\$\\$|\\\\\\[[\\s\\S]*?\\\\\\]|\\\\\\([\\s\\S]*?\\\\\\)|\\\\begin\\{[a-zA-Z*]+\\}|\\\\[a-zA-Z]{2,})/.test(String(text || ""));
+    var latexRe = new RegExp(
+      "(\\\\$\\\\$[\\\\s\\\\S]*?\\\\$\\\\$|\\\\\\\\\\\\[[\\\\s\\\\S]*?\\\\\\\\\\\\]|" +
+      "\\\\\\\\\\([\\\\s\\\\S]*?\\\\\\\\\\\\)|\\\\\\\\begin\\\\{[a-zA-Z*]+\\\\}|" +
+      "\\\\\\\\[a-zA-Z]{2,})"
+    );
+    return latexRe.test(String(text || ""));
   }
 
   function parseFront(raw) {
@@ -119,7 +129,9 @@ _ANKI_TEMPLATE_FORMATTER_SCRIPT = """
       return { answer: "（未标注）", explanation: "" };
     }
 
-    var labeled = text.match(/^(?:答案|正确答案|answer)\\s*[:：]\\s*([\\s\\S]+?)\\n(?:解析|explanation)\\s*[:：]\\s*([\\s\\S]+)$/i);
+    var labeled = text.match(
+      /^(?:答案|正确答案|answer)\\s*[:：]\\s*([\\s\\S]+?)\\n(?:解析|explanation)\\s*[:：]\\s*([\\s\\S]+)$/i
+    );
     if (labeled) {
       return {
         answer: labeled[1].trim() || "（未标注）",
@@ -152,14 +164,19 @@ _ANKI_TEMPLATE_FORMATTER_SCRIPT = """
       if (firstLineWithText) {
         explanationLines[0] = firstLineWithText[1].trim();
       }
-      while (explanationLines.length && /^(?:解析|explanation)\\s*[:：]?\\s*$/i.test(explanationLines[0])) {
+      while (
+        explanationLines.length &&
+        /^(?:解析|explanation)\\s*[:：]?\\s*$/i.test(explanationLines[0])
+      ) {
         explanationLines.shift();
       }
       return explanationLines.join("\\n").trim();
     }
 
     var first = normalizedLines[0] || "";
-    var match = first.match(/^(?:答案|正确答案|answer)?\\s*[:：]?\\s*([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)$/i);
+    var match = first.match(
+      /^(?:答案|正确答案|answer)?\\s*[:：]?\\s*([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)$/i
+    );
     if (match) {
       return {
         answer: normalizeAnswerKeys(match[1]) || "（未标注）",
@@ -175,15 +192,21 @@ _ANKI_TEMPLATE_FORMATTER_SCRIPT = """
       };
     }
 
-    var prefixed = first.match(/^([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)(?:[\\.、\\):：\\-]\\s*|\\s+)(.+)$/);
+    var prefixed = first.match(
+      /^([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)(?:[\\.、\\):：\\-]\\s*|\\s+)(.+)$/
+    );
     if (prefixed) {
       return {
         answer: normalizeAnswerKeys(prefixed[1]) || "（未标注）",
-        explanation: normalizeExplanation([prefixed[2]].concat(normalizedLines.slice(1)).join("\\n"))
+        explanation: normalizeExplanation(
+          [prefixed[2]].concat(normalizedLines.slice(1)).join("\\n")
+        )
       };
     }
 
-    var inline = text.match(/(?:答案|正确答案|answer)\\s*[:：]?\\s*([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)/i);
+    var inline = text.match(
+      /(?:答案|正确答案|answer)\\s*[:：]?\\s*([A-Ea-e](?:\\s*[,，、/]\\s*[A-Ea-e])*)/i
+    );
     if (inline) {
       return {
         answer: normalizeAnswerKeys(inline[1]) || "（未标注）",
@@ -304,8 +327,7 @@ _ANKI_BASIC_QFMT = (
     '<div class="as-block-title">问题</div>'
     '<div id="as-front-content" class="as-block-content">{{Front}}</div>'
     "</section>"
-    "</div>"
-    + _ANKI_TEMPLATE_FORMATTER_SCRIPT
+    "</div>" + _ANKI_TEMPLATE_FORMATTER_SCRIPT
 )
 
 _ANKI_BASIC_AFMT = (
@@ -322,8 +344,7 @@ _ANKI_BASIC_AFMT = (
     '<div class="as-block-title">解析</div>'
     '<div id="as-back-explain" class="as-block-content as-extra">（无解析）</div>'
     "</section>"
-    "</div>"
-    + _ANKI_TEMPLATE_FORMATTER_SCRIPT
+    "</div>" + _ANKI_TEMPLATE_FORMATTER_SCRIPT
 )
 
 _ANKI_CLOZE_QFMT = (
@@ -351,11 +372,10 @@ _ANKI_CLOZE_AFMT = (
     '<section class="as-block as-extra-block">'
     '<div class="as-block-title">解析</div>'
     '<div id="as-cloze-explain" class="as-block-content as-extra">'
-    '{{#Extra}}{{Extra}}{{/Extra}}{{^Extra}}（无解析）{{/Extra}}'
+    "{{#Extra}}{{Extra}}{{/Extra}}{{^Extra}}（无解析）{{/Extra}}"
     "</div>"
     "</section>"
-    "</div>"
-    + _ANKI_TEMPLATE_FORMATTER_SCRIPT
+    "</div>" + _ANKI_TEMPLATE_FORMATTER_SCRIPT
 )
 
 
@@ -458,7 +478,10 @@ class AnkiGateway:
         """Create a note or update it if a duplicate front field exists."""
         resolved_card = _resolve_card_note_type(card)
         available_models = self._ensure_ankismart_models([resolved_card])
-        if resolved_card.note_type in _STYLEABLE_MODELS and resolved_card.note_type not in available_models:
+        if (
+            resolved_card.note_type in _STYLEABLE_MODELS
+            and resolved_card.note_type not in available_models
+        ):
             resolved_card = card
         deck_cache = self._fetch_deck_cache()
         self._ensure_deck_exists(resolved_card.deck_name, deck_cache)
@@ -560,11 +583,7 @@ class AnkiGateway:
         trace_id: str,
     ) -> CardPushStatus:
         """Process a single card according to *update_mode*."""
-        existing_id = (
-            self._find_existing_note(card)
-            if update_mode != "create_only"
-            else None
-        )
+        existing_id = self._find_existing_note(card) if update_mode != "create_only" else None
 
         if update_mode == "create_only":
             note_params = _card_to_note_params(card)
@@ -577,13 +596,19 @@ class AnkiGateway:
                 logger.warning(msg, extra={"index": index, "trace_id": trace_id})
                 return CardPushStatus(index=index, success=False, error=msg)
             self._client.update_note_fields(existing_id, card.fields)
-            logger.info("Updated existing note", extra={"index": index, "note_id": existing_id, "trace_id": trace_id})
+            logger.info(
+                "Updated existing note",
+                extra={"index": index, "note_id": existing_id, "trace_id": trace_id},
+            )
             return CardPushStatus(index=index, note_id=existing_id, success=True)
 
         # create_or_update
         if existing_id is not None:
             self._client.update_note_fields(existing_id, card.fields)
-            logger.info("Updated existing note", extra={"index": index, "note_id": existing_id, "trace_id": trace_id})
+            logger.info(
+                "Updated existing note",
+                extra={"index": index, "note_id": existing_id, "trace_id": trace_id},
+            )
             return CardPushStatus(index=index, note_id=existing_id, success=True)
         note_params = _card_to_note_params(card)
         note_id = self._client.add_note(note_params)
@@ -631,14 +656,13 @@ class AnkiGateway:
             return []
         if not available_models:
             return [
-                original
-                if prepared.note_type in _STYLEABLE_MODELS
-                else prepared
+                original if prepared.note_type in _STYLEABLE_MODELS else prepared
                 for original, prepared in zip(original_cards, prepared_cards)
             ]
         return [
             original
-            if prepared.note_type in _STYLEABLE_MODELS and prepared.note_type not in available_models
+            if prepared.note_type in _STYLEABLE_MODELS
+            and prepared.note_type not in available_models
             else prepared
             for original, prepared in zip(original_cards, prepared_cards)
         ]
@@ -661,7 +685,10 @@ class AnkiGateway:
         if not callable(get_model_names) or not callable(create_model):
             logger.warning(
                 "Client does not support model auto-creation, skip Ankismart model ensure",
-                extra={"missing_get_model_names": not callable(get_model_names), "missing_create_model": not callable(create_model)},
+                extra={
+                    "missing_get_model_names": not callable(get_model_names),
+                    "missing_create_model": not callable(create_model),
+                },
             )
             return set()
 
@@ -680,7 +707,9 @@ class AnkiGateway:
                 continue
             if model_name == ANKISMART_BASIC_MODEL:
                 fields = ["Front", "Back"]
-                templates = [{"Name": "Card 1", "Front": _ANKI_BASIC_QFMT, "Back": _ANKI_BASIC_AFMT}]
+                templates = [
+                    {"Name": "Card 1", "Front": _ANKI_BASIC_QFMT, "Back": _ANKI_BASIC_AFMT}
+                ]
                 is_cloze = False
             elif model_name == ANKISMART_CLOZE_MODEL:
                 fields = ["Text", "Extra"]
@@ -713,7 +742,11 @@ class AnkiGateway:
         get_templates = getattr(self._client, "get_model_templates", None)
         update_templates = getattr(self._client, "update_model_templates", None)
         update_styling = getattr(self._client, "update_model_styling", None)
-        if not callable(get_templates) or not callable(update_templates) or not callable(update_styling):
+        if (
+            not callable(get_templates)
+            or not callable(update_templates)
+            or not callable(update_styling)
+        ):
             return
         model_names = {
             (card.note_type or "").strip()
@@ -724,9 +757,7 @@ class AnkiGateway:
             try:
                 raw_templates = get_templates(model_name)
                 template_names = (
-                    list(raw_templates.keys())
-                    if isinstance(raw_templates, dict)
-                    else []
+                    list(raw_templates.keys()) if isinstance(raw_templates, dict) else []
                 )
                 payload = _build_anki_templates_payload(model_name, template_names)
                 if not payload:

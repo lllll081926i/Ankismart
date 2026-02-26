@@ -181,7 +181,12 @@ def create_portable_package(version: str) -> Path:
     remove_ocr_model_artifacts(portable_dir)
 
     archive_base = portable_dir.parent / portable_dir.name
-    archive_file = shutil.make_archive(str(archive_base), "zip", portable_dir.parent, portable_dir.name)
+    archive_file = shutil.make_archive(
+        str(archive_base),
+        "zip",
+        portable_dir.parent,
+        portable_dir.name,
+    )
     _print(f"便携版压缩包: {archive_file}")
     return portable_dir
 
@@ -238,7 +243,7 @@ def read_version(pyproject_path: Path) -> str:
         stripped = line.strip()
         if stripped.startswith("version ="):
             return stripped.split("=", 1)[1].strip().strip('"')
-    return "0.1.0"
+    return "0.1.2"
 
 
 def verify_no_ocr_models(target_dir: Path) -> None:
@@ -297,7 +302,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="构建 Ankismart 安装版 + 便携版（不含 OCR 模型）")
     parser.add_argument("--clean", action="store_true", help="构建前清理 build/dist")
     parser.add_argument("--skip-installer", action="store_true", help="跳过安装版构建")
-    parser.add_argument("--spec", default=str(SCRIPT_DIR / "ankismart.spec"), help="PyInstaller spec 文件")
+    parser.add_argument(
+        "--spec",
+        default=str(SCRIPT_DIR / "ankismart.spec"),
+        help="PyInstaller spec 文件",
+    )
     args = parser.parse_args()
 
     if args.clean:

@@ -16,7 +16,15 @@ from tests.e2e.page_objects.result_page import ResultPageObject
     [("docx", "docx"), ("md", "markdown")],
     ids=["E2E-MAIN-DOCX-001", "E2E-MAIN-MD-002"],
 )
-def test_e2e_main_workflow(window, e2e_files, patch_batch_convert_worker, patch_batch_generate_worker, patch_push_worker, file_key: str, expected_source_format: str):
+def test_e2e_main_workflow(
+    window,
+    e2e_files,
+    patch_batch_convert_worker,
+    patch_batch_generate_worker,
+    patch_push_worker,
+    file_key: str,
+    expected_source_format: str,
+):
     patch_batch_convert_worker()
     patch_batch_generate_worker(cards_per_document=2)
     patch_push_worker(fail=False)

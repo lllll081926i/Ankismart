@@ -1,4 +1,5 @@
 """Tests for ankismart.converter.markdown_converter."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,6 +18,7 @@ from ankismart.core.errors import ConvertError, ErrorCode
 # _detect_encoding
 # ---------------------------------------------------------------------------
 
+
 class TestDetectEncoding:
     def test_utf8_detected(self) -> None:
         raw = "# Hello".encode("utf-8")
@@ -24,13 +26,16 @@ class TestDetectEncoding:
         assert enc.lower().replace("-", "") in ("utf8", "ascii")
 
     def test_none_encoding_falls_back_to_utf8(self) -> None:
-        with patch("ankismart.converter.markdown_converter.chardet.detect", return_value={"encoding": None}):
+        with patch(
+            "ankismart.converter.markdown_converter.chardet.detect", return_value={"encoding": None}
+        ):
             assert _detect_encoding(b"data") == "utf-8"
 
 
 # ---------------------------------------------------------------------------
 # _normalize
 # ---------------------------------------------------------------------------
+
 
 class TestNormalize:
     def test_preserves_trailing_spaces(self) -> None:
@@ -66,6 +71,7 @@ class TestNormalize:
 # ---------------------------------------------------------------------------
 # convert
 # ---------------------------------------------------------------------------
+
 
 class TestConvert:
     def test_convert_simple_markdown(self, tmp_path: Path) -> None:
@@ -110,7 +116,9 @@ class TestConvert:
     def test_convert_lookup_error(self, tmp_path: Path) -> None:
         f = tmp_path / "lookup.md"
         f.write_bytes(b"hello")
-        with patch("ankismart.converter.markdown_converter._detect_encoding", return_value="bogus-codec"):
+        with patch(
+            "ankismart.converter.markdown_converter._detect_encoding", return_value="bogus-codec"
+        ):
             with pytest.raises(ConvertError):
                 convert(f, trace_id="md6")
 

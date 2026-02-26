@@ -1,7 +1,7 @@
 ; Ankismart installer script (Inno Setup 6)
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.0"
+  #define MyAppVersion "0.1.2"
 #endif
 
 #ifndef ProjectRoot
@@ -67,4 +67,3 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('{autodesktop}\{#MyAppName}.lnk'); $s.TargetPath='{app}\{#MyAppExeName}'; $s.WorkingDirectory='{app}'; $s.IconLocation='{app}\{#MyAppExeName},0'; $s.Save()"""; Description: "{cm:CreateDesktopShortcutOnFinish}"; Flags: runhidden postinstall skipifsilent
-

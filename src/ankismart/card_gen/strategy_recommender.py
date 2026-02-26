@@ -132,9 +132,7 @@ class StrategyRecommender:
 
         return max(scores, key=scores.get)
 
-    def _rule_based_recommend(
-        self, content: str, doc_type: str
-    ) -> StrategyRecommendation:
+    def _rule_based_recommend(self, content: str, doc_type: str) -> StrategyRecommendation:
         """Generate recommendation using rule-based heuristics.
 
         Args:
@@ -226,9 +224,7 @@ class StrategyRecommender:
             document_type=doc_type,
         )
 
-    def _llm_recommend(
-        self, content: str, doc_type: str
-    ) -> StrategyRecommendation:
+    def _llm_recommend(self, content: str, doc_type: str) -> StrategyRecommendation:
         """Generate recommendation using LLM analysis.
 
         Args:
@@ -238,7 +234,8 @@ class StrategyRecommender:
         Returns:
             StrategyRecommendation
         """
-        system_prompt = """你是一个 Anki 卡片生成策略专家。分析文档内容，推荐最佳的卡片生成策略组合。
+        system_prompt = """你是一个 Anki 卡片生成策略专家。
+分析文档内容，推荐最佳的卡片生成策略组合。
 
 可用策略：
 1. basic_qa - 基础问答：适合事实性知识和概念理解
@@ -271,6 +268,7 @@ class StrategyRecommender:
 
             # Parse JSON response
             import json
+
             # Extract JSON from markdown code block if present
             json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
             if json_match:

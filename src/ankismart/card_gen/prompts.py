@@ -10,7 +10,8 @@ BASIC_SYSTEM_PROMPT = (
     '  1) First line: "答案: <one-line answer>" (or "Answer: <...>")\n'
     '  2) Then "解析:" (or "Explanation:") with layered points on new lines\n'
     '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
-    "- For long explanations, split into 2+ short paragraphs on new lines (do NOT add numbering prefixes like 1./2.)\n"
+    "- For long explanations, split into 2+ short paragraphs on new lines "
+    "(do NOT add numbering prefixes like 1./2.)\n"
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
@@ -26,7 +27,8 @@ BASIC_SYSTEM_PROMPT = (
     "[\n"
     '  {"Front": "What is photosynthesis?",\n'
     '   "Back": "Answer: The process that converts light energy into chemical energy.\\n'
-    'Explanation:\\nOccurs mainly in chloroplasts.\\nProduces glucose and oxygen from CO2 and water."},\n'
+    'Explanation:\\nOccurs mainly in chloroplasts.\\n'
+    'Produces glucose and oxygen from CO2 and water."},\n'
     '  {"Front": "What is the Pythagorean theorem?",\n'
     '   "Back": "Answer: In a right triangle, $a^2 + b^2 = c^2$.\\n'
     'Explanation:\\n$c$ is the hypotenuse.\\n$a$ and $b$ are the other two sides."}\n'
@@ -50,7 +52,8 @@ CLOZE_SYSTEM_PROMPT = (
     "or important facts\n"
     "- Avoid overly simple or overly broad deletions; each cloze should "
     "test a specific, meaningful piece of knowledge\n"
-    '- Extra must be a layered explanation block using multiple lines; do NOT add numbering prefixes like 1./2.\n'
+    "- Extra must be a layered explanation block using multiple lines; "
+    "do NOT add numbering prefixes like 1./2.\n"
     "- If the content is in Chinese, generate cards in Chinese\n"
     "- For math formulas: use $formula$ for inline (e.g., $x^2 + y^2 = z^2$) "
     "and $$formula$$ for display mode (e.g., $$\\\\int_0^\\\\infty e^{-x^2} dx$$)\n"
@@ -62,7 +65,7 @@ CLOZE_SYSTEM_PROMPT = (
     '{{c2::chemical energy}} in the form of glucose.",\n'
     '   "Extra": "This process occurs in chloroplasts."},\n'
     '  {"Text": "The quadratic formula is {{c1::$x = \\\\frac{-b \\\\pm '
-    '\\\\sqrt{b^2 - 4ac}}{2a}$}}, used to solve equations of the form '
+    "\\\\sqrt{b^2 - 4ac}}{2a}$}}, used to solve equations of the form "
     '{{c2::$ax^2 + bx + c = 0$}}.","Extra": ""}\n'
     "]\n"
 )
@@ -77,11 +80,12 @@ IMAGE_QA_SYSTEM_PROMPT = (
     "- Each card should test recall of one specific element or concept\n"
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- Front: a question asking to identify or recall a specific element\n"
-    '- Back must follow a two-part structure:\n'
+    "- Back must follow a two-part structure:\n"
     '  1) First line: "答案: <one-line answer>" (or "Answer: <...>")\n'
     '  2) Then "解析:" (or "Explanation:") with layered points on new lines\n'
     '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
-    "- For long explanations, split into 2+ short paragraphs on new lines (do NOT add numbering prefixes like 1./2.)\n"
+    "- For long explanations, split into 2+ short paragraphs on new lines "
+    "(do NOT add numbering prefixes like 1./2.)\n"
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
     "- For math formulas: use $formula$ for inline (e.g., $x^2 + y^2 = z^2$) "
@@ -108,11 +112,13 @@ CONCEPT_SYSTEM_PROMPT = (
     "\n"
     "Rules:\n"
     "- Front: the concept name or phrase (concise)\n"
-    '- Back must follow a two-part structure:\n'
+    "- Back must follow a two-part structure:\n"
     '  1) First line: "答案: <one-line concept summary>" (or "Answer: <...>")\n'
-    '  2) Then "解析:" (or "Explanation:") covering principle/significance/example in layered lines\n'
+    '  2) Then "解析:" (or "Explanation:") covering principle/significance/'
+    'example in layered lines\n'
     '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
-    "- For long explanations, split into 2+ short paragraphs on new lines (do NOT add numbering prefixes like 1./2.)\n"
+    "- For long explanations, split into 2+ short paragraphs on new lines "
+    "(do NOT add numbering prefixes like 1./2.)\n"
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
@@ -126,12 +132,12 @@ CONCEPT_SYSTEM_PROMPT = (
     "[\n"
     '  {"Front": "Photosynthesis",\n'
     '   "Back": "Answer: The process converting light energy to chemical energy in plants.\\n'
-    'Explanation:\\nOccurs in chloroplasts via light reactions and Calvin cycle.\\n'
+    "Explanation:\\nOccurs in chloroplasts via light reactions and Calvin cycle.\\n"
     'It is a primary source of oxygen and organic matter on Earth."},\n'
     '  {"Front": "Euler\'s Identity",\n'
     '   "Back": "Answer: $e^{i\\\\pi} + 1 = 0$.\\n'
-    'Explanation:\\nConnects constants $e$, $i$, $\\\\pi$, 1, and 0.\\n'
-    'Shows relation between exponentials and trigonometry via Euler\'s formula."}\n'
+    "Explanation:\\nConnects constants $e$, $i$, $\\\\pi$, 1, and 0.\\n"
+    "Shows relation between exponentials and trigonometry via Euler's formula.\"}\n"
     "]\n"
 )
 
@@ -142,11 +148,12 @@ KEY_TERMS_SYSTEM_PROMPT = (
     "\n"
     "Rules:\n"
     "- Front: the key term or phrase\n"
-    '- Back must follow a two-part structure:\n'
+    "- Back must follow a two-part structure:\n"
     '  1) First line: "答案: <one-line definition>" (or "Answer: <...>")\n'
     '  2) Then "解析:" (or "Explanation:") with layered lines, including context/example\n'
     '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
-    "- For long explanations, split into 2+ short paragraphs on new lines (do NOT add numbering prefixes like 1./2.)\n"
+    "- For long explanations, split into 2+ short paragraphs on new lines "
+    "(do NOT add numbering prefixes like 1./2.)\n"
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
@@ -160,12 +167,14 @@ KEY_TERMS_SYSTEM_PROMPT = (
     "[\n"
     '  {"Front": "Chloroplast",\n'
     '   "Back": "Answer: A plant-cell organelle where photosynthesis happens.\\n'
-    'Explanation:\\nContains chlorophyll to capture light energy.\\n'
+    "Explanation:\\nContains chlorophyll to capture light energy.\\n"
     'Example: chloroplasts enable leaves to produce glucose from sunlight."},\n'
     '  {"Front": "Derivative",\n'
-    '   "Back": "Answer: The rate of change of a function, denoted by $\\\\frac{df}{dx}$ or $f\'(x)$.\\n'
-    'Explanation:\\nRepresents tangent slope at a point.\\n'
-    'Example: for $f(x)=x^2$, derivative is $2x$."}' "\n"
+    '   "Back": "Answer: The rate of change of a function, denoted by '
+    '$\\\\frac{df}{dx}$ or $f\'(x)$.\\n'
+    "Explanation:\\nRepresents tangent slope at a point.\\n"
+    'Example: for $f(x)=x^2$, derivative is $2x$."}'
+    "\n"
     "]\n"
 )
 
@@ -174,13 +183,14 @@ SINGLE_CHOICE_SYSTEM_PROMPT = (
     "create single-choice question cards.\n"
     "\n"
     "Rules:\n"
-    "- Output ONLY a JSON array of objects with \"Front\" and \"Back\" fields\n"
+    '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- Front must contain: question + 4 options labeled A/B/C/D\n"
-    '- Back must follow a strict structure:\n'
+    "- Back must follow a strict structure:\n"
     '  1) First line: "答案: <single option letter>"\n'
     '  2) Then "解析:" with layered lines; each key point on a new line\n'
     '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
-    "- For long explanations, split into 2+ short paragraphs on new lines (do NOT add numbering prefixes like 1./2.)\n"
+    "- For long explanations, split into 2+ short paragraphs on new lines "
+    "(do NOT add numbering prefixes like 1./2.)\n"
     "- Exactly one option should be correct\n"
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
@@ -197,7 +207,7 @@ SINGLE_CHOICE_SYSTEM_PROMPT = (
     "C. $x^2$\\n"
     'D. $3x$",\n'
     '   "Back": "答案: B\\n'
-    '解析:\\nUsing the power rule $\\\\frac{d}{dx}(x^n) = nx^{n-1}$.\\nSo $f\'(x) = 3x^2$."}\n'
+    "解析:\\nUsing the power rule $\\\\frac{d}{dx}(x^n) = nx^{n-1}$.\\nSo $f'(x) = 3x^2$.\"}\n"
     "]\n"
 )
 
@@ -206,13 +216,14 @@ MULTIPLE_CHOICE_SYSTEM_PROMPT = (
     "create multiple-choice question cards.\n"
     "\n"
     "Rules:\n"
-    "- Output ONLY a JSON array of objects with \"Front\" and \"Back\" fields\n"
+    '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- Front must contain: question + 4 to 5 options labeled A/B/C/D(/E)\n"
-    '- Back must follow a strict structure:\n'
+    "- Back must follow a strict structure:\n"
     '  1) First line: "答案: <all correct option letters>"\n'
     '  2) Then "解析:" with layered lines; each key point on a new line\n'
     '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
-    "- For long explanations, split into 2+ short paragraphs on new lines (do NOT add numbering prefixes like 1./2.)\n"
+    "- For long explanations, split into 2+ short paragraphs on new lines "
+    "(do NOT add numbering prefixes like 1./2.)\n"
     "- Each question should have 2 or more correct options\n"
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"

@@ -58,7 +58,7 @@ class CardGenerator:
         current_length = 0
 
         # Split by double newlines (paragraph boundaries)
-        paragraphs = re.split(r'\n\n+', markdown)
+        paragraphs = re.split(r"\n\n+", markdown)
 
         # Track if we're inside a code block or table
         in_code_block = False
@@ -70,7 +70,7 @@ class CardGenerator:
                 continue
 
             # Detect code block boundaries
-            if para.startswith('```'):
+            if para.startswith("```"):
                 if not in_code_block:
                     # Start of code block
                     in_code_block = True
@@ -80,12 +80,12 @@ class CardGenerator:
                     # End of code block
                     in_code_block = False
                     code_block_buffer.append(para)
-                    complete_block = '\n\n'.join(code_block_buffer)
+                    complete_block = "\n\n".join(code_block_buffer)
 
                     # If code block is too large, add it as separate chunk
                     if len(complete_block) > threshold:
                         if current_chunk:
-                            chunks.append('\n\n'.join(current_chunk))
+                            chunks.append("\n\n".join(current_chunk))
                             current_chunk = []
                             current_length = 0
                         chunks.append(complete_block)
@@ -93,7 +93,7 @@ class CardGenerator:
                         # Try to add to current chunk
                         if current_length + len(complete_block) > threshold:
                             if current_chunk:
-                                chunks.append('\n\n'.join(current_chunk))
+                                chunks.append("\n\n".join(current_chunk))
                             current_chunk = [complete_block]
                             current_length = len(complete_block)
                         else:
@@ -113,12 +113,12 @@ class CardGenerator:
             # If single paragraph exceeds threshold, split it by sentences
             if para_length > threshold:
                 if current_chunk:
-                    chunks.append('\n\n'.join(current_chunk))
+                    chunks.append("\n\n".join(current_chunk))
                     current_chunk = []
                     current_length = 0
 
                 # Split by sentences for very long paragraphs
-                sentences = re.split(r'([.!?。！？]\s+)', para)
+                sentences = re.split(r"([.!?。！？]\s+)", para)
                 sentence_chunk = []
                 sentence_length = 0
 
@@ -129,7 +129,7 @@ class CardGenerator:
 
                     if sentence_length + len(sentence) > threshold:
                         if sentence_chunk:
-                            chunks.append(''.join(sentence_chunk))
+                            chunks.append("".join(sentence_chunk))
                         sentence_chunk = [sentence]
                         sentence_length = len(sentence)
                     else:
@@ -137,13 +137,13 @@ class CardGenerator:
                         sentence_length += len(sentence)
 
                 if sentence_chunk:
-                    chunks.append(''.join(sentence_chunk))
+                    chunks.append("".join(sentence_chunk))
                 continue
 
             # Normal paragraph handling
             if current_length + para_length > threshold:
                 if current_chunk:
-                    chunks.append('\n\n'.join(current_chunk))
+                    chunks.append("\n\n".join(current_chunk))
                 current_chunk = [para]
                 current_length = para_length
             else:
@@ -153,14 +153,14 @@ class CardGenerator:
         # Add remaining content
         if code_block_buffer:
             # Unclosed code block
-            remaining = '\n\n'.join(code_block_buffer)
+            remaining = "\n\n".join(code_block_buffer)
             if current_chunk:
                 current_chunk.append(remaining)
             else:
                 current_chunk = [remaining]
 
         if current_chunk:
-            chunks.append('\n\n'.join(current_chunk))
+            chunks.append("\n\n".join(current_chunk))
 
         logger.info(
             "Document split into chunks",
@@ -168,7 +168,7 @@ class CardGenerator:
                 "original_length": len(markdown),
                 "chunk_count": len(chunks),
                 "threshold": threshold,
-            }
+            },
         )
 
         return chunks
@@ -185,7 +185,9 @@ class CardGenerator:
 
                 # Add target count to system prompt if specified
                 if request.target_count > 0:
-                    system_prompt = system_prompt + f"\n- Generate exactly {request.target_count} cards\n"
+                    system_prompt = (
+                        system_prompt + f"\n- Generate exactly {request.target_count} cards\n"
+                    )
 
                 logger.info(
                     "Generating cards",
@@ -199,8 +201,8 @@ class CardGenerator:
                 )
 
                 # Check if auto-split is needed
-                enable_split = getattr(request, 'enable_auto_split', False)
-                split_threshold = getattr(request, 'split_threshold', 70000)
+                enable_split = getattr(request, "enable_auto_split", False)
+                split_threshold = getattr(request, "split_threshold", 70000)
 
                 all_drafts = []
 
@@ -260,10 +262,7 @@ class CardGenerator:
                     )
 
                 # Attach source image for image-based strategy
-                if (
-                    request.strategy in {"image_qa", "image_occlusion"}
-                    and request.source_path
-                ):
+                if request.strategy in {"image_qa", "image_occlusion"} and request.source_path:
                     self._attach_image(drafts, request.source_path)
 
                 if request.target_count > 0 and len(drafts) > request.target_count:
@@ -279,9 +278,7 @@ class CardGenerator:
                 )
                 return drafts
 
-    def _attach_image(
-        self, drafts: list[CardDraft], source_path: str
-    ) -> None:
+    def _attach_image(self, drafts: list[CardDraft], source_path: str) -> None:
         """Attach source image to card fields and media."""
         p = Path(source_path)
         if p.suffix.lower() not in _IMAGE_EXTENSIONS:

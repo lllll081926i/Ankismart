@@ -1,4 +1,5 @@
 """Tests for ankismart.core.logging module."""
+
 from __future__ import annotations
 
 import json
@@ -21,7 +22,9 @@ def _reset_ankismart_logging() -> None:
 
 
 class TestJsonFormatter:
-    def _make_record(self, msg: str = "hello", level: int = logging.INFO, **extra) -> logging.LogRecord:
+    def _make_record(
+        self, msg: str = "hello", level: int = logging.INFO, **extra
+    ) -> logging.LogRecord:
         record = logging.LogRecord(
             name="ankismart.test",
             level=level,
@@ -79,6 +82,7 @@ class TestJsonFormatter:
             raise ValueError("test error")
         except ValueError:
             import sys
+
             record = logging.LogRecord(
                 name="ankismart.test",
                 level=logging.ERROR,
@@ -122,8 +126,10 @@ class TestJsonFormatter:
 
 class TestSetupLogging:
     def test_sets_level_and_adds_handlers(self):
-        with patch("ankismart.core.logging._resolve_app_dir") as mock_app_dir, \
-             patch("ankismart.core.logging.logging.FileHandler") as mock_fh:
+        with (
+            patch("ankismart.core.logging._resolve_app_dir") as mock_app_dir,
+            patch("ankismart.core.logging.logging.FileHandler") as mock_fh,
+        ):
             mock_app_dir.return_value = Path("/fake/app")
             mock_fh_instance = mock_fh.return_value
             mock_fh_instance.setFormatter = lambda f: None
@@ -140,8 +146,10 @@ class TestSetupLogging:
         root.addHandler(logging.StreamHandler())
         root.addHandler(logging.StreamHandler())
 
-        with patch("ankismart.core.logging._resolve_app_dir") as mock_app_dir, \
-             patch("ankismart.core.logging.logging.FileHandler") as mock_fh:
+        with (
+            patch("ankismart.core.logging._resolve_app_dir") as mock_app_dir,
+            patch("ankismart.core.logging.logging.FileHandler") as mock_fh,
+        ):
             mock_app_dir.return_value = Path("/fake/app")
             mock_fh_instance = mock_fh.return_value
             mock_fh_instance.setFormatter = lambda f: None
@@ -162,8 +170,10 @@ class TestSetupLogging:
         assert len(stream_handlers) >= 1
 
     def test_default_level_is_info(self):
-        with patch("ankismart.core.logging._resolve_app_dir") as mock_app_dir, \
-             patch("ankismart.core.logging.logging.FileHandler") as mock_fh:
+        with (
+            patch("ankismart.core.logging._resolve_app_dir") as mock_app_dir,
+            patch("ankismart.core.logging.logging.FileHandler") as mock_fh,
+        ):
             mock_app_dir.return_value = Path("/fake/app")
             mock_fh_instance = mock_fh.return_value
             mock_fh_instance.setFormatter = lambda f: None

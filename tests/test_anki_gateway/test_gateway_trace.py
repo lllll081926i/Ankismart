@@ -44,7 +44,9 @@ def test_push_reuses_first_card_trace_id(monkeypatch):
 
     monkeypatch.setattr("ankismart.anki_gateway.gateway.trace_context", fake_trace_context)
     monkeypatch.setattr("ankismart.anki_gateway.gateway.timed", fake_timed)
-    monkeypatch.setattr("ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None)
+    monkeypatch.setattr(
+        "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+    )
 
     card = CardDraft(
         fields={"Front": "Q", "Back": "A"},

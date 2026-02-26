@@ -132,7 +132,11 @@ class CardEditWidget(QWidget):
         if not changed:
             return
 
-        item = self._list.item(self._current_index) if self._list and hasattr(self._list, "item") else None
+        item = (
+            self._list.item(self._current_index)
+            if self._list and hasattr(self._list, "item")
+            else None
+        )
         if item is not None and hasattr(item, "setText"):
             item.setText(self._card_title(card))
 

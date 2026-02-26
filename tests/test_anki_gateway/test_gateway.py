@@ -21,6 +21,7 @@ from ankismart.core.models import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _fake_client(add_note_return: int = 1001) -> MagicMock:
     client = MagicMock()
     client.add_note.return_value = add_note_return
@@ -48,6 +49,7 @@ def _card(**overrides) -> CardDraft:
 # ---------------------------------------------------------------------------
 # _card_to_note_params
 # ---------------------------------------------------------------------------
+
 
 class TestCardToNoteParams:
     def test_basic_conversion(self) -> None:
@@ -112,6 +114,7 @@ class TestCardToNoteParams:
 # AnkiGateway – delegation methods
 # ---------------------------------------------------------------------------
 
+
 class TestGatewayDelegation:
     def test_check_connection(self) -> None:
         client = _fake_client()
@@ -138,6 +141,7 @@ class TestGatewayDelegation:
 # ---------------------------------------------------------------------------
 # AnkiGateway.push
 # ---------------------------------------------------------------------------
+
 
 class TestPush:
     def test_push_single_success(self, monkeypatch) -> None:
@@ -170,9 +174,7 @@ class TestPush:
         def fail_validate(card, client):
             raise AnkiGatewayError("bad card", code=ErrorCode.E_DECK_NOT_FOUND)
 
-        monkeypatch.setattr(
-            "ankismart.anki_gateway.gateway.validate_card_draft", fail_validate
-        )
+        monkeypatch.setattr("ankismart.anki_gateway.gateway.validate_card_draft", fail_validate)
         client = _fake_client()
         gw = AnkiGateway(client)
         result = gw.push([_card()])
@@ -191,9 +193,7 @@ class TestPush:
             if call_count["n"] == 2:
                 raise AnkiGatewayError("fail on second", code=ErrorCode.E_ANKICONNECT_ERROR)
 
-        monkeypatch.setattr(
-            "ankismart.anki_gateway.gateway.validate_card_draft", sometimes_fail
-        )
+        monkeypatch.setattr("ankismart.anki_gateway.gateway.validate_card_draft", sometimes_fail)
         client = _fake_client()
         gw = AnkiGateway(client)
         result = gw.push([_card(), _card(), _card()])
@@ -380,6 +380,7 @@ class TestPushOrUpdate:
 # AnkiGateway.find_notes / update_note / create_or_update_note
 # ---------------------------------------------------------------------------
 
+
 class TestFindNotes:
     def test_find_notes_delegates(self) -> None:
         client = _fake_client()
@@ -407,6 +408,7 @@ class TestUpdateNote:
         client.update_note_fields.side_effect = AnkiGatewayError("not found")
         gw = AnkiGateway(client)
         import pytest
+
         with pytest.raises(AnkiGatewayError, match="not found"):
             gw.update_note(999, {"Front": "x"})
 
@@ -450,6 +452,7 @@ class TestCreateOrUpdateNote:
         client = _fake_client()
         gw = AnkiGateway(client)
         import pytest
+
         with pytest.raises(AnkiGatewayError, match="bad"):
             gw.create_or_update_note(_card())
 
@@ -473,6 +476,7 @@ class TestCreateOrUpdateNote:
 # ---------------------------------------------------------------------------
 # AnkiGateway.push with update_mode parameter
 # ---------------------------------------------------------------------------
+
 
 class TestPushUpdateMode:
     def test_create_only_does_not_search(self, monkeypatch) -> None:
@@ -536,7 +540,9 @@ class TestPushUpdateMode:
         client.find_notes.return_value = [300]
         gw = AnkiGateway(client)
 
-        result = gw.push([_card(fields={"Front": "Q", "Back": "A"})], update_mode="create_or_update")
+        result = gw.push(
+            [_card(fields={"Front": "Q", "Back": "A"})], update_mode="create_or_update"
+        )
         assert result.succeeded == 1
         assert result.results[0].note_id == 300
         client.update_note_fields.assert_called_once_with(300, {"Front": "Q", "Back": "A"})
