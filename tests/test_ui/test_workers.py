@@ -330,6 +330,54 @@ def test_batch_convert_worker_has_ocr_progress_signal() -> None:
     assert hasattr(worker, "ocr_progress")
 
 
+def test_build_converter_disables_manual_proxy_for_mineru_cloud(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeConverter:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr("ankismart.ui.workers.DocumentConverter", _FakeConverter)
+
+    config = SimpleNamespace(
+        ocr_correction=False,
+        proxy_mode="manual",
+        proxy_url="http://proxy.local:8080",
+        ocr_mode="cloud",
+        ocr_cloud_provider="mineru",
+        ocr_cloud_endpoint="https://mineru.net",
+        ocr_cloud_api_key="token",
+    )
+    worker = BatchConvertWorker([Path("demo.pdf")], config=config)
+    worker._build_converter()
+
+    assert captured["proxy_url"] == ""
+
+
+def test_build_converter_keeps_manual_proxy_for_non_mineru_cloud(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeConverter:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr("ankismart.ui.workers.DocumentConverter", _FakeConverter)
+
+    config = SimpleNamespace(
+        ocr_correction=False,
+        proxy_mode="manual",
+        proxy_url="http://proxy.local:8080",
+        ocr_mode="cloud",
+        ocr_cloud_provider="other-cloud",
+        ocr_cloud_endpoint="https://api.example.com",
+        ocr_cloud_api_key="token",
+    )
+    worker = BatchConvertWorker([Path("demo.pdf")], config=config)
+    worker._build_converter()
+
+    assert captured["proxy_url"] == "http://proxy.local:8080"
+
+
 def test_batch_convert_worker_emits_ocr_progress(monkeypatch) -> None:
     captured_messages: list[str] = []
 
@@ -355,6 +403,32 @@ def test_batch_convert_worker_emits_ocr_progress(monkeypatch) -> None:
     worker.run()
 
     assert any("OCR" in msg for msg in captured_messages)
+
+
+def test_batch_convert_worker_skips_page_progress_for_cloud_stage_message() -> None:
+    worker = BatchConvertWorker([Path("demo.pdf")])
+    page_events: list[tuple[str, int, int]] = []
+    ocr_messages: list[str] = []
+    worker.page_progress.connect(lambda f, c, t: page_events.append((f, c, t)))
+    worker.ocr_progress.connect(ocr_messages.append)
+
+    worker._forward_progress_callback("demo.pdf", 1, 3, "云端 OCR: 上传文件中...")
+
+    assert page_events == []
+    assert ocr_messages == ["云端 OCR: 上传文件中..."]
+
+
+def test_batch_convert_worker_emits_page_progress_for_real_page_message() -> None:
+    worker = BatchConvertWorker([Path("demo.pdf")])
+    page_events: list[tuple[str, int, int]] = []
+    ocr_messages: list[str] = []
+    worker.page_progress.connect(lambda f, c, t: page_events.append((f, c, t)))
+    worker.ocr_progress.connect(ocr_messages.append)
+
+    worker._forward_progress_callback("demo.pdf", 2, 10, "正在识别第 2/10 页")
+
+    assert page_events == [("demo.pdf", 2, 10)]
+    assert ocr_messages == ["正在识别第 2/10 页"]
 
 
 def test_batch_convert_worker_cancel_stops_processing(monkeypatch) -> None:

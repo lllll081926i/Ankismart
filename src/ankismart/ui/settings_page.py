@@ -87,6 +87,10 @@ _OCR_CLOUD_PROVIDER_CHOICES = (
     ("mineru", "MinerU 云 OCR", "MinerU Cloud OCR"),
 )
 
+_GITHUB_RELEASES_API_URL = "https://api.github.com/repos/lllll081926i/Ankismart/releases/latest"
+_GITHUB_TAGS_API_URL = "https://api.github.com/repos/lllll081926i/Ankismart/tags?per_page=1"
+_GITHUB_RELEASES_WEB_URL = "https://github.com/lllll081926i/Ankismart/releases"
+
 
 _OCR_CONVERTER_MODULE = None
 
@@ -245,6 +249,7 @@ class SettingsPage(ScrollArea):
         self._provider_test_worker = None
         self._anki_test_worker = None
         self._ocr_cloud_test_worker = None
+        self._ocr_card_height_bounds: dict[int, tuple[int, int]] = {}
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setSingleShot(True)
         self._autosave_timer.setInterval(400)
@@ -782,7 +787,7 @@ class SettingsPage(ScrollArea):
         )
         self._ocr_cloud_api_key_edit = PasswordLineEdit(self._ocr_cloud_api_key_card)
         self._ocr_cloud_api_key_edit.setPlaceholderText("sk-...")
-        self._ocr_cloud_api_key_edit.setMinimumWidth(260)
+        self._ocr_cloud_api_key_edit.setMinimumWidth(460)
         self._ocr_cloud_api_key_card.hBoxLayout.addWidget(self._ocr_cloud_api_key_edit)
         self._ocr_cloud_api_key_card.hBoxLayout.addSpacing(16)
         self._ocr_group.addSettingCard(self._ocr_cloud_api_key_card)
@@ -792,13 +797,15 @@ class SettingsPage(ScrollArea):
             "云 OCR 官方限制" if is_zh else "Cloud OCR Official Limits",
             (
                 "单文件<=200MB，PDF<=600页；每天2000页为最高优先级，超出后优先级降低；"
-                "需 Authorization: Bearer <Token>，且先申请上传地址再上传文件。"
+                "需 Authorization: Bearer <Token>；MinerU 专业版还需额外 token 头；"
+                "且先申请上传地址再上传文件。"
             )
             if is_zh
             else (
                 "Single file <=200MB and PDF <=600 pages; first 2000 pages/day are "
-                "high-priority, then lower priority; requires Authorization: Bearer <Token>, "
-                "and file must be uploaded via pre-signed URL."
+                "high-priority, then lower priority; requires Authorization: Bearer <Token>; "
+                "MinerU Pro additionally requires `token` header; file must be uploaded via "
+                "pre-signed URL."
             ),
             self.scrollWidget,
         )
@@ -1169,6 +1176,12 @@ class SettingsPage(ScrollArea):
             return ""
         return self._proxy_edit.text().strip()
 
+    def _current_ocr_cloud_proxy_url(self, provider: str) -> str:
+        normalized = str(provider or "").strip().lower()
+        if normalized == "mineru":
+            return ""
+        return self._current_proxy_url()
+
     def _refresh_ocr_recommendation(self) -> None:
         tier = self._get_combo_current_data(self._ocr_model_tier_combo, "lite")
         is_zh = self._main.config.language == "zh"
@@ -1193,6 +1206,23 @@ class SettingsPage(ScrollArea):
     def _on_ocr_mode_changed(self, *_args) -> None:
         self._update_ocr_mode_ui()
 
+    def _set_ocr_card_collapsed(self, card: QWidget, *, collapsed: bool) -> None:
+        key = id(card)
+        if key not in self._ocr_card_height_bounds:
+            self._ocr_card_height_bounds[key] = (card.minimumHeight(), card.maximumHeight())
+
+        if collapsed:
+            card.setMinimumHeight(0)
+            card.setMaximumHeight(0)
+            card.hide()
+        else:
+            min_height, max_height = self._ocr_card_height_bounds[key]
+            card.setMinimumHeight(min_height)
+            card.setMaximumHeight(max_height)
+            card.show()
+
+        card.updateGeometry()
+
     def _update_ocr_mode_ui(self) -> None:
         mode = self._get_combo_current_data(self._ocr_mode_combo, "local")
         is_cloud = mode == "cloud"
@@ -1211,9 +1241,15 @@ class SettingsPage(ScrollArea):
         )
 
         for card in local_cards:
-            card.setVisible(not is_cloud)
+            self._set_ocr_card_collapsed(card, collapsed=is_cloud)
         for card in cloud_cards:
-            card.setVisible(is_cloud)
+            self._set_ocr_card_collapsed(card, collapsed=not is_cloud)
+
+        self._ocr_group.adjustSize()
+        self._cache_group.adjustSize()
+        self.scrollWidget.adjustSize()
+        self.expandLayout.activate()
+        self.scrollWidget.updateGeometry()
 
     def _test_ocr_connectivity(self) -> None:
         is_zh = self._main.config.language == "zh"
@@ -1251,7 +1287,7 @@ class SettingsPage(ScrollArea):
                 provider=provider,
                 endpoint=endpoint,
                 api_key=api_key,
-                proxy_url=self._current_proxy_url(),
+                proxy_url=self._current_ocr_cloud_proxy_url(provider),
             )
             self._ocr_cloud_test_worker = worker
 
@@ -1670,24 +1706,54 @@ class SettingsPage(ScrollArea):
             parts.append(int(match.group(1)) if match else 0)
         return tuple(parts) if parts else (0,)
 
+    @staticmethod
+    def _github_update_headers() -> dict[str, str]:
+        return {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": f"Ankismart/{__version__}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+    def _fetch_latest_github_release(self) -> tuple[str, str]:
+        latest_url = _GITHUB_RELEASES_WEB_URL
+        proxy_url = self._current_proxy_url()
+        client_kwargs: dict[str, object] = {"timeout": 8.0}
+        if proxy_url:
+            client_kwargs["proxy"] = proxy_url
+
+        with httpx.Client(**client_kwargs) as client:
+            headers = self._github_update_headers()
+
+            latest_response = client.get(_GITHUB_RELEASES_API_URL, headers=headers)
+            if latest_response.status_code < 400:
+                payload = latest_response.json() if latest_response.content else {}
+                if isinstance(payload, dict):
+                    latest_version = str(payload.get("tag_name", "")).strip().lstrip("vV")
+                    latest_url = str(payload.get("html_url", latest_url)).strip() or latest_url
+                    if latest_version:
+                        return latest_version, latest_url
+
+            tags_response = client.get(_GITHUB_TAGS_API_URL, headers=headers)
+            tags_response.raise_for_status()
+            payload = tags_response.json() if tags_response.content else []
+            if isinstance(payload, list) and payload:
+                first = payload[0]
+                if isinstance(first, dict):
+                    latest_version = str(first.get("name", "")).strip().lstrip("vV")
+                    if latest_version:
+                        return latest_version, latest_url
+
+        raise RuntimeError("GitHub did not return a valid latest version tag")
+
     def _check_for_updates(self) -> None:
         """Check latest version from GitHub releases."""
         is_zh = self._main.config.language == "zh"
-        release_api = "https://api.github.com/repos/lllll081926i/Ankismart/releases/latest"
         latest_version = ""
-        latest_url = "https://github.com/lllll081926i/Ankismart/releases"
+        latest_url = _GITHUB_RELEASES_WEB_URL
         error = ""
 
         try:
-            with httpx.Client(timeout=8.0) as client:
-                response = client.get(
-                    release_api,
-                    headers={"Accept": "application/vnd.github+json"},
-                )
-                response.raise_for_status()
-                payload = response.json() if response.content else {}
-            latest_version = str(payload.get("tag_name", "")).strip().lstrip("vV")
-            latest_url = str(payload.get("html_url", latest_url)).strip() or latest_url
+            latest_version, latest_url = self._fetch_latest_github_release()
         except Exception as exc:
             error = str(exc)
 

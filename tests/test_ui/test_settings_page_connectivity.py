@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from PyQt6.QtCore import QUrl
 from PyQt6.QtWidgets import QMessageBox
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
@@ -46,6 +47,8 @@ def test_ocr_connectivity_cloud_mode_uses_worker(_qapp, monkeypatch) -> None:
     main, _ = make_main()
     main.config.ocr_cloud_endpoint = "https://mineru.net"
     main.config.ocr_cloud_api_key = "test-token"
+    main.config.proxy_mode = "manual"
+    main.config.proxy_url = "http://proxy.local:8080"
     page = SettingsPage(main)
 
     for index in range(page._ocr_mode_combo.count()):
@@ -54,8 +57,11 @@ def test_ocr_connectivity_cloud_mode_uses_worker(_qapp, monkeypatch) -> None:
             break
 
     class _WorkerStub:
+        last_kwargs: dict[str, object] | None = None
+
         def __init__(self, **kwargs):
             self.kwargs = kwargs
+            _WorkerStub.last_kwargs = kwargs
             self.finished = _SignalStub()
 
         def start(self):
@@ -73,6 +79,8 @@ def test_ocr_connectivity_cloud_mode_uses_worker(_qapp, monkeypatch) -> None:
     assert len(calls) == 2
     assert calls[0][0][0] == "info"
     assert calls[1][0][0] == "success"
+    assert _WorkerStub.last_kwargs is not None
+    assert _WorkerStub.last_kwargs.get("proxy_url", "") == ""
 
 
 def test_ocr_connectivity_local_reports_missing_models(_qapp, monkeypatch) -> None:
@@ -441,6 +449,132 @@ def test_check_for_updates_failure_updates_metadata_and_warns(_qapp, monkeypatch
     assert main.config.last_update_check_at != ""
     assert len(infobar_calls) == 1
     assert infobar_calls[0][0][0] == "warning"
+
+
+def test_check_for_updates_detects_new_release_and_opens_page(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    applied: dict[str, object] = {}
+
+    def _apply_runtime(config: AppConfig, *, persist: bool = True, changed_fields=None):
+        applied["config"] = config
+        applied["persist"] = persist
+        applied["changed_fields"] = set(changed_fields or set())
+        main.config = config
+        return set(changed_fields or set())
+
+    main.apply_runtime_config = _apply_runtime
+
+    class _Response:
+        def __init__(self, status_code: int, payload):
+            self.status_code = status_code
+            self._payload = payload
+            self.content = b"payload"
+
+        def json(self):
+            return self._payload
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(f"http {self.status_code}")
+
+    class _Client:
+        request_headers = None
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, _url, headers=None):
+            _Client.request_headers = headers
+            return _Response(
+                200,
+                {
+                    "tag_name": "v9.9.9",
+                    "html_url": "https://github.com/lllll081926i/Ankismart/releases/tag/v9.9.9",
+                },
+            )
+
+    monkeypatch.setattr("ankismart.ui.settings_page.httpx.Client", _Client)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+    opened: list[str] = []
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.QDesktopServices.openUrl",
+        lambda url: opened.append(url.toString() if isinstance(url, QUrl) else str(url)),
+    )
+
+    page._check_for_updates()
+
+    assert "config" in applied
+    assert applied["persist"] is True
+    assert applied["changed_fields"] == {"last_update_check_at", "last_update_version_seen"}
+    assert main.config.last_update_version_seen == "9.9.9"
+    assert opened and opened[0].endswith("/v9.9.9")
+    assert isinstance(_Client.request_headers, dict)
+    assert "User-Agent" in _Client.request_headers
+    assert "X-GitHub-Api-Version" in _Client.request_headers
+
+
+def test_check_for_updates_falls_back_to_tags_api(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+    main.apply_runtime_config = lambda config, **_kwargs: setattr(main, "config", config) or set()
+
+    class _Response:
+        def __init__(self, status_code: int, payload):
+            self.status_code = status_code
+            self._payload = payload
+            self.content = b"payload"
+
+        def json(self):
+            return self._payload
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(f"http {self.status_code}")
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            self.calls = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, url, headers=None):
+            self.calls += 1
+            if "releases/latest" in url:
+                return _Response(403, {"message": "rate limited"})
+            return _Response(200, [{"name": "v1.2.3"}])
+
+    monkeypatch.setattr("ankismart.ui.settings_page.httpx.Client", _Client)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.No,
+    )
+    monkeypatch.setattr("ankismart.ui.settings_page.QDesktopServices.openUrl", lambda *_args: None)
+    infobar_calls = []
+    monkeypatch.setattr(
+        page, "_show_info_bar", lambda *args, **kwargs: infobar_calls.append((args, kwargs))
+    )
+
+    page._check_for_updates()
+
+    # Should not emit warning in fallback-success path.
+    assert not any(call[0][0] == "warning" for call in infobar_calls)
 
 
 def test_backup_current_config_reports_success(_qapp, monkeypatch) -> None:

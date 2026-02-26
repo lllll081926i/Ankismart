@@ -544,6 +544,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._auto_generate_after_convert = False  # Flag for auto card generation
         self._last_ocr_progress_message: str = ""
         self._last_ocr_page_status_message: str = ""
+        self._last_convert_ocr_message: str = ""
         self._convert_start_ts: float = 0.0
 
         # Lazy-loaded heavy dependencies
@@ -868,6 +869,7 @@ class ImportPage(ProgressMixin, QWidget):
                 str(meta["zh"] if is_zh else meta["en"]),
                 userData=key,
             )
+        self._strategy_template_combo.currentIndexChanged.connect(self._on_strategy_template_changed)
         self._btn_apply_strategy_template = PushButton("应用" if is_zh else "Apply")
         self._btn_apply_strategy_template.clicked.connect(self._apply_selected_strategy_template)
         template_card.hBoxLayout.addWidget(self._strategy_template_combo)
@@ -945,7 +947,10 @@ class ImportPage(ProgressMixin, QWidget):
 
         return group
 
-    def _apply_selected_strategy_template(self) -> None:
+    def _on_strategy_template_changed(self, *_args) -> None:
+        self._apply_selected_strategy_template(show_feedback=False)
+
+    def _apply_selected_strategy_template(self, *, show_feedback: bool = True) -> None:
         template_id = str(self._strategy_template_combo.currentData() or "")
         template = _STRATEGY_TEMPLATE_LIBRARY.get(template_id)
         is_zh = self._main.config.language == "zh"
@@ -953,15 +958,16 @@ class ImportPage(ProgressMixin, QWidget):
             return
         strategy_mix = dict(template.get("mix", {}))
         self._apply_strategy_mix(strategy_mix)
-        InfoBar.success(
-            title="已应用模板" if is_zh else "Template Applied",
-            content=f"策略模板：{template['zh'] if is_zh else template['en']}",
-            orient=Qt.Orientation.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP,
-            duration=2200,
-            parent=self,
-        )
+        if show_feedback:
+            InfoBar.success(
+                title="已应用模板" if is_zh else "Template Applied",
+                content=f"策略模板：{template['zh'] if is_zh else template['en']}",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2200,
+                parent=self,
+            )
 
     def _get_converter(self):
         """获取或创建文档转换器（懒加载）"""
@@ -1738,6 +1744,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._progress_bar.setValue(0)
         self._btn_cancel.show()
         self._last_ocr_page_status_message = ""
+        self._last_convert_ocr_message = ""
         self._convert_start_ts = time.monotonic()
         self._status_label.setText(
             "正在转换文件..." if self._main.config.language == "zh" else "Converting files..."
@@ -1751,6 +1758,9 @@ class ImportPage(ProgressMixin, QWidget):
         if worker_warning is not None and hasattr(worker_warning, "connect"):
             worker_warning.connect(self._on_file_warning)
         self._worker.page_progress.connect(self._on_page_progress)
+        worker_ocr_progress = getattr(self._worker, "ocr_progress", None)
+        if worker_ocr_progress is not None and hasattr(worker_ocr_progress, "connect"):
+            worker_ocr_progress.connect(self._on_ocr_progress)
         self._worker.finished.connect(self._on_batch_convert_done)
         self._worker.error.connect(self._on_convert_error)
         self._worker.cancelled.connect(self._on_operation_cancelled)
@@ -1978,7 +1988,8 @@ class ImportPage(ProgressMixin, QWidget):
         if status_key is not None:
             self._file_status[status_key] = "converting"
 
-        percentage = int((current / total) * 100) if total > 0 else 0
+        # File-level progress only marks file start; page/stage callbacks refine it.
+        percentage = int(((max(1, current) - 1) / total) * 100) if total > 0 else 0
         self._progress_bar.setValue(percentage)
 
         # Store current file info for page progress updates
@@ -2016,6 +2027,10 @@ class ImportPage(ProgressMixin, QWidget):
             status_key = self._resolve_status_key_for_filename(filename)
             if status_key is not None:
                 self._file_status[status_key] = "completed"
+        completed = sum(1 for status in self._file_status.values() if status == "completed")
+        total_files = len(self._file_status)
+        if total_files > 0:
+            self._progress_bar.setValue(int((completed / total_files) * 100))
         self._refresh_file_item_colors()
 
         # Update preview page if it's already showing
@@ -2060,22 +2075,47 @@ class ImportPage(ProgressMixin, QWidget):
     def _on_page_progress(self, filename: str, current_page: int, total_pages: int):
         """Handle OCR page-by-page progress."""
         from ankismart.ui.i18n import get_text
+        is_cloud = str(getattr(self._main.config, "ocr_mode", "local")).strip().lower() == "cloud"
 
         # Update status label with detailed page information
         if total_pages > 0:
-            file_text = get_text(
-                "import.converting_file_with_page",
-                self._main.config.language,
-                filename=filename,
-                page=current_page,
-                total_pages=total_pages,
-            )
+            if is_cloud:
+                file_text = (
+                    f"云端 OCR 处理中：{filename} ({current_page}/{total_pages})"
+                    if self._main.config.language == "zh"
+                    else f"Cloud OCR processing: {filename} ({current_page}/{total_pages})"
+                )
+            else:
+                file_text = get_text(
+                    "import.converting_file_with_page",
+                    self._main.config.language,
+                    filename=filename,
+                    page=current_page,
+                    total_pages=total_pages,
+                )
 
             # Calculate overall progress
             current_file_index = self.__dict__.get("_current_file_index")
             total_files = self.__dict__.get("_total_files")
             if current_file_index is not None and total_files is not None:
-                percentage = int((current_file_index / total_files) * 100) if total_files > 0 else 0
+                if total_files > 0:
+                    bounded_total = max(1, int(total_pages))
+                    if is_cloud:
+                        bounded_current = max(0, min(int(current_page), bounded_total))
+                    else:
+                        bounded_current = max(1, min(int(current_page), bounded_total))
+                    file_ratio = bounded_current / bounded_total
+                    percentage = int(
+                        (
+                            (max(0, int(current_file_index) - 1) + file_ratio)
+                            / max(1, int(total_files))
+                        )
+                        * 100
+                    )
+                    percentage = max(0, min(100, percentage))
+                    self._progress_bar.setValue(percentage)
+                else:
+                    percentage = 0
                 overall_text = get_text(
                     "import.overall_progress",
                     self._main.config.language,
@@ -2100,6 +2140,33 @@ class ImportPage(ProgressMixin, QWidget):
                     duration=1500,
                     parent=self,
                 )
+
+    def _on_ocr_progress(self, message: str) -> None:
+        text = str(message).strip()
+        if not text:
+            return
+        if text == getattr(self, "_last_convert_ocr_message", ""):
+            return
+        self._last_convert_ocr_message = text
+
+        is_cloud = str(getattr(self._main.config, "ocr_mode", "local")).strip().lower() == "cloud"
+        if not is_cloud:
+            return
+
+        current_file_index = self.__dict__.get("_current_file_index")
+        total_files = self.__dict__.get("_total_files")
+        if current_file_index is not None and total_files is not None and total_files > 0:
+            percentage = max(0, min(100, int(self._progress_bar.value())))
+            overall_text = get_text(
+                "import.overall_progress",
+                self._main.config.language,
+                percentage=percentage,
+                current=current_file_index,
+                total=total_files,
+            )
+            self._status_label.setText(f"{text}\n{overall_text}")
+        else:
+            self._status_label.setText(text)
 
     def _collect_failed_file_paths_from_status(self) -> list[str]:
         failed_paths: list[str] = []
@@ -2153,6 +2220,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._set_generate_actions_enabled(True)
         self._last_ocr_page_status_message = ""
+        self._last_convert_ocr_message = ""
         self._update_resume_queue_from_status()
 
         convert_start_ts = float(self.__dict__.get("_convert_start_ts", 0.0) or 0.0)
@@ -2242,6 +2310,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._set_generate_actions_enabled(True)
         self._last_ocr_page_status_message = ""
+        self._last_convert_ocr_message = ""
         self._update_resume_queue_from_status()
         convert_start_ts = float(self.__dict__.get("_convert_start_ts", 0.0) or 0.0)
         elapsed = max(0.0, time.monotonic() - convert_start_ts) if convert_start_ts else 0.0
@@ -2294,6 +2363,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._set_generate_actions_enabled(True)
         self._last_ocr_page_status_message = ""
+        self._last_convert_ocr_message = ""
         self._update_resume_queue_from_status()
         append_task_history(
             self._main.config,
@@ -2668,16 +2738,22 @@ class ImportPage(ProgressMixin, QWidget):
 
         if hasattr(self, "_strategy_template_combo"):
             current = self._strategy_template_combo.currentData()
+            self._strategy_template_combo.blockSignals(True)
             self._strategy_template_combo.clear()
             for key, meta in _STRATEGY_TEMPLATE_LIBRARY.items():
                 self._strategy_template_combo.addItem(
                     str(meta["zh"] if is_zh else meta["en"]),
                     userData=key,
                 )
+            restored = False
             for idx in range(self._strategy_template_combo.count()):
                 if self._strategy_template_combo.itemData(idx) == current:
                     self._strategy_template_combo.setCurrentIndex(idx)
+                    restored = True
                     break
+            if not restored and self._strategy_template_combo.count() > 0:
+                self._strategy_template_combo.setCurrentIndex(0)
+            self._strategy_template_combo.blockSignals(False)
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""

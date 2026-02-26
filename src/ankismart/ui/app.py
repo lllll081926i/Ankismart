@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import traceback
+from datetime import date, datetime
 from pathlib import Path
 
 # Set environment variables as early as possible to avoid startup delays
@@ -20,7 +21,7 @@ import httpx
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
-from qfluentwidgets import Theme, isDarkTheme, setTheme, setThemeColor
+from qfluentwidgets import InfoBar, InfoBarPosition, Theme, isDarkTheme, setTheme, setThemeColor
 
 from ankismart import __version__
 from ankismart.core.config import CONFIG_DIR, create_config_backup, load_config, save_config
@@ -29,6 +30,10 @@ from ankismart.ui.main_window import MainWindow
 from ankismart.ui.styles import FIXED_THEME_ACCENT_HEX, get_stylesheet
 
 logger = get_logger("app")
+
+_GITHUB_RELEASES_API_URL = "https://api.github.com/repos/lllll081926i/Ankismart/releases/latest"
+_GITHUB_TAGS_API_URL = "https://api.github.com/repos/lllll081926i/Ankismart/tags?per_page=1"
+_GITHUB_RELEASES_WEB_URL = "https://github.com/lllll081926i/Ankismart/releases"
 
 
 def _get_icon_path() -> Path:
@@ -121,40 +126,94 @@ def _parse_version_tuple(version_text: str) -> tuple[int, ...]:
     return tuple(parts) if parts else (0,)
 
 
-def _auto_check_latest_version(config) -> None:
+def _github_update_headers() -> dict[str, str]:
+    return {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": f"Ankismart/{__version__}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def _resolve_update_check_proxy(config) -> str:
+    mode = str(getattr(config, "proxy_mode", "system")).strip().lower()
+    if mode != "manual":
+        return ""
+    return str(getattr(config, "proxy_url", "")).strip()
+
+
+def _fetch_latest_github_release(*, timeout: float, proxy_url: str = "") -> tuple[str, str]:
+    latest_url = _GITHUB_RELEASES_WEB_URL
+    client_kwargs: dict[str, object] = {"timeout": timeout}
+    if proxy_url:
+        client_kwargs["proxy"] = proxy_url
+
+    with httpx.Client(**client_kwargs) as client:
+        headers = _github_update_headers()
+
+        latest_response = client.get(_GITHUB_RELEASES_API_URL, headers=headers)
+        if latest_response.status_code < 400:
+            payload = latest_response.json() if latest_response.content else {}
+            if isinstance(payload, dict):
+                latest_version = str(payload.get("tag_name", "")).strip().lstrip("vV")
+                latest_url = str(payload.get("html_url", latest_url)).strip() or latest_url
+                if latest_version:
+                    return latest_version, latest_url
+
+        tags_response = client.get(_GITHUB_TAGS_API_URL, headers=headers)
+        tags_response.raise_for_status()
+        payload = tags_response.json() if tags_response.content else []
+        if isinstance(payload, list) and payload:
+            first = payload[0]
+            if isinstance(first, dict):
+                latest_version = str(first.get("name", "")).strip().lstrip("vV")
+                if latest_version:
+                    return latest_version, latest_url
+
+    raise RuntimeError("GitHub did not return a valid latest version tag")
+
+
+def _auto_check_latest_version(config) -> dict[str, object]:
     """Silent startup update check (query only, no auto-install)."""
+    result: dict[str, object] = {
+        "checked": False,
+        "has_update": False,
+        "should_notify": False,
+        "latest_version": "",
+        "latest_url": _GITHUB_RELEASES_WEB_URL,
+    }
     if not getattr(config, "auto_check_updates", True):
-        return
-    from datetime import date
+        return result
 
     if str(getattr(config, "last_update_check_at", "")).startswith(date.today().isoformat()):
-        return
+        return result
 
+    result["checked"] = True
+    previous_seen = str(getattr(config, "last_update_version_seen", "")).strip()
     latest = ""
+    latest_url = _GITHUB_RELEASES_WEB_URL
     try:
-        with httpx.Client(timeout=6.0) as client:
-            response = client.get(
-                "https://api.github.com/repos/lllll081926i/Ankismart/releases/latest",
-                headers={"Accept": "application/vnd.github+json"},
-            )
-            response.raise_for_status()
-            payload = response.json() if response.content else {}
-            latest = str(payload.get("tag_name", "")).strip().lstrip("vV")
+        latest, latest_url = _fetch_latest_github_release(
+            timeout=6.0,
+            proxy_url=_resolve_update_check_proxy(config),
+        )
     except Exception as exc:
         logger.debug(f"Silent update check failed: {exc}")
         latest = ""
 
-    from datetime import datetime
-
     config.last_update_check_at = datetime.now().isoformat(timespec="seconds")
     if latest:
         config.last_update_version_seen = latest
+        result["latest_version"] = latest
+        result["latest_url"] = latest_url
         if _parse_version_tuple(latest) > _parse_version_tuple(__version__):
             logger.info(f"New version detected: current={__version__}, latest={latest}")
+            result["has_update"] = True
+            result["should_notify"] = latest != previous_seen
     try:
         save_config(config)
     except Exception as exc:
         logger.debug(f"Persisting update-check metadata failed: {exc}")
+    return result
 
 
 def _write_crash_report(exc_type, exc_value, exc_tb) -> Path:
@@ -282,7 +341,7 @@ def main() -> int:
 
         state = {"config": config, "window": window}
         _install_global_exception_hooks(lambda: state.get("window").config)
-        _auto_check_latest_version(window.config)
+        update_result = _auto_check_latest_version(window.config)
 
         # Restore window geometry if available
         if config.window_geometry:
@@ -290,6 +349,26 @@ def main() -> int:
 
         # Show window
         window.show()
+        if update_result.get("should_notify"):
+            latest_version = str(update_result.get("latest_version", "")).strip()
+            is_zh = str(getattr(window.config, "language", "zh")) == "zh"
+            InfoBar.info(
+                title="发现新版本" if is_zh else "Update Available",
+                content=(
+                    f"当前版本 {__version__}，最新版本 {latest_version}。"
+                    "可在设置页“版本更新”查看发布页。"
+                    if is_zh
+                    else (
+                        f"Current version {__version__}, latest {latest_version}. "
+                        "Open releases from Settings > Version Update."
+                    )
+                ),
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=7000,
+                parent=window,
+            )
         logger.info("Application started successfully")
 
         # Run event loop

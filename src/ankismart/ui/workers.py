@@ -687,15 +687,78 @@ class BatchConvertWorker(QThread):
         proxy_url = (
             str(getattr(self._config, "proxy_url", "")).strip() if proxy_mode == "manual" else ""
         )
+        ocr_mode = str(getattr(self._config, "ocr_mode", "local")).strip().lower()
+        ocr_cloud_provider = str(getattr(self._config, "ocr_cloud_provider", "")).strip().lower()
+        # MinerU cloud OCR defaults to direct connection (no manual proxy by default).
+        if ocr_mode == "cloud" and ocr_cloud_provider == "mineru":
+            proxy_url = ""
 
         return converter_class(
             ocr_correction_fn=self._resolve_ocr_correction_fn(),
-            ocr_mode=str(getattr(self._config, "ocr_mode", "local")),
-            ocr_cloud_provider=str(getattr(self._config, "ocr_cloud_provider", "")).strip(),
+            ocr_mode=ocr_mode,
+            ocr_cloud_provider=ocr_cloud_provider,
             ocr_cloud_endpoint=str(getattr(self._config, "ocr_cloud_endpoint", "")).strip(),
             ocr_cloud_api_key=str(getattr(self._config, "ocr_cloud_api_key", "")).strip(),
             proxy_url=proxy_url,
         )
+
+    @staticmethod
+    def _is_cloud_stage_message(message: str) -> bool:
+        text = str(message or "").strip().lower()
+        return text.startswith("云端 ocr:") or text.startswith("cloud ocr:")
+
+    @staticmethod
+    def _looks_like_page_message(message: str) -> bool:
+        text = str(message or "").strip()
+        if not text:
+            return False
+        return bool(
+            re.search(
+                r"(第\s*\d+(?:\s*/\s*\d+)?\s*页|page\s*\d+(?:\s*/\s*\d+)?)",
+                text,
+                re.IGNORECASE,
+            )
+        )
+
+    @classmethod
+    def _should_emit_page_progress(
+        cls, current_page: object, total_pages: object, message: str | None = None
+    ) -> bool:
+        try:
+            current = int(current_page)
+            total = int(total_pages)
+        except (TypeError, ValueError):
+            return False
+
+        if total <= 0 or current <= 0 or current > total:
+            return False
+
+        if message is None:
+            return True
+
+        text = str(message).strip()
+        if not text:
+            return False
+        if cls._is_cloud_stage_message(text):
+            return False
+        return cls._looks_like_page_message(text)
+
+    def _forward_progress_callback(self, file_name: str, *args) -> None:
+        if len(args) == 3:
+            current_page, total_pages, message = args
+            if self._should_emit_page_progress(current_page, total_pages, str(message)):
+                self.page_progress.emit(file_name, int(current_page), int(total_pages))
+            self.ocr_progress.emit(str(message))
+            return
+
+        if len(args) == 1:
+            self.ocr_progress.emit(str(args[0]))
+            return
+
+        if len(args) >= 2:
+            current_page, total_pages = args[:2]
+            if self._should_emit_page_progress(current_page, total_pages):
+                self.page_progress.emit(file_name, int(current_page), int(total_pages))
 
     def _merge_and_convert_images(self, image_files: list[Path]) -> MarkdownResult | None:
         """Merge multiple images into one PDF and convert via OCR."""
@@ -749,19 +812,7 @@ class BatchConvertWorker(QThread):
                 converter = self._build_converter()
 
                 def progress_callback(*args):
-                    if len(args) == 3:
-                        current_page, total_pages, message = args
-                        self.page_progress.emit("图片合集", int(current_page), int(total_pages))
-                        self.ocr_progress.emit(str(message))
-                        return
-
-                    if len(args) == 1:
-                        self.ocr_progress.emit(str(args[0]))
-                        return
-
-                    if len(args) >= 2:
-                        current_page, total_pages = args[:2]
-                        self.page_progress.emit("图片合集", int(current_page), int(total_pages))
+                    self._forward_progress_callback("图片合集", *args)
 
                 result = converter.convert(temp_pdf_path, progress_callback=progress_callback)
 
@@ -805,19 +856,7 @@ class BatchConvertWorker(QThread):
 
                 # Create progress callback that emits page progress
                 def progress_callback(*args):
-                    if len(args) == 3:
-                        current_page, total_pages, message = args
-                        self.page_progress.emit(file_path.name, int(current_page), int(total_pages))
-                        self.ocr_progress.emit(str(message))
-                        return
-
-                    if len(args) == 1:
-                        self.ocr_progress.emit(str(args[0]))
-                        return
-
-                    if len(args) >= 2:
-                        current_page, total_pages = args[:2]
-                        self.page_progress.emit(file_path.name, int(current_page), int(total_pages))
+                    self._forward_progress_callback(file_path.name, *args)
 
                 return converter.convert(file_path, progress_callback=progress_callback)
             except Exception as exc:

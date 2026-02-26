@@ -89,6 +89,55 @@ def test_ocr_cloud_limit_card_visibility_follows_mode(_qapp) -> None:
     assert page._ocr_cloud_limit_card.isHidden() is False
 
 
+def test_ocr_cloud_api_key_input_is_wide_enough_for_long_tokens(_qapp) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    assert page._ocr_cloud_api_key_edit.minimumWidth() >= 460
+
+
+def test_ocr_cloud_mode_collapses_group_gap_to_cache(_qapp) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+    page.resize(1200, 900)
+    page.show()
+
+    local_cards = (
+        page._ocr_cuda_auto_card,
+        page._ocr_model_tier_card,
+        page._ocr_source_card,
+        page._ocr_cuda_detect_card,
+    )
+    cloud_cards = (
+        page._ocr_cloud_provider_card,
+        page._ocr_cloud_endpoint_card,
+        page._ocr_cloud_api_key_card,
+        page._ocr_cloud_limit_card,
+    )
+
+    for index in range(page._ocr_mode_combo.count()):
+        if page._ocr_mode_combo.itemData(index) == "local":
+            page._ocr_mode_combo.setCurrentIndex(index)
+            break
+    _qapp.processEvents()
+    for card in local_cards:
+        assert card.maximumHeight() > 0
+    for card in cloud_cards:
+        assert card.maximumHeight() == 0
+
+    for index in range(page._ocr_mode_combo.count()):
+        if page._ocr_mode_combo.itemData(index) == "cloud":
+            page._ocr_mode_combo.setCurrentIndex(index)
+            break
+    _qapp.processEvents()
+
+    for card in local_cards:
+        assert card.maximumHeight() == 0
+    for card in cloud_cards:
+        assert card.maximumHeight() > 0
+    assert page._cache_group.y() - (page._ocr_group.y() + page._ocr_group.height()) <= 12
+
+
 def test_save_config_persists_ocr_settings(_qapp, monkeypatch) -> None:
     main, _ = make_main()
     page = SettingsPage(main)

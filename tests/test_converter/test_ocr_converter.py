@@ -934,6 +934,126 @@ class TestCloudMode:
         paths = [call.kwargs["path"] for call in request_fn.call_args_list]
         assert paths == ["file-urls/batch", "extract-results/batch/batch-001"]
 
+    def test_request_cloud_json_retries_ssl_eof_then_succeeds(self) -> None:
+        import ssl
+
+        import ankismart.converter.ocr_converter as mod
+
+        client = MagicMock()
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"code": 0, "data": {"batch_id": "batch-001"}}
+        client.request.side_effect = [
+            ssl.SSLEOFError(8, "EOF occurred in violation of protocol"),
+            response,
+        ]
+
+        with patch("ankismart.converter.ocr_converter.time.sleep") as sleep_fn:
+            payload, url = mod._request_cloud_json(
+                client,
+                method="POST",
+                endpoint="https://mineru.net",
+                path="file-urls/batch",
+                api_key="token",
+                trace_id="trace-retry-ssl",
+                context="create upload url",
+                payload={"files": [{"name": "demo.pdf", "data_id": "abc"}]},
+                timeout=20.0,
+            )
+
+        assert payload["code"] == 0
+        assert url.endswith("/file-urls/batch")
+        assert client.request.call_count == 2
+        sleep_fn.assert_called_once()
+
+    def test_cloud_poll_progress_uses_extract_progress_pages(self, tmp_path: Path) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        f = tmp_path / "cloud-progress.pdf"
+        f.write_bytes(b"fake")
+        data_id = "abcdef123456"
+        transport = MagicMock()
+        client = MagicMock()
+        transport.__enter__.return_value = client
+        transport.__exit__.return_value = None
+        progress_events: list[tuple[object, ...]] = []
+
+        with patch(
+            "ankismart.converter.ocr_converter.uuid.uuid4",
+            return_value=SimpleNamespace(hex=f"{data_id}7890"),
+        ):
+            with patch("ankismart.converter.ocr_converter.httpx.Client", return_value=transport):
+                with patch("ankismart.converter.ocr_converter._upload_cloud_file"):
+                    with patch(
+                        "ankismart.converter.ocr_converter._pdf.count_pdf_pages",
+                        return_value=120,
+                    ):
+                        with patch("ankismart.converter.ocr_converter.time.sleep"):
+                            with patch(
+                                "ankismart.converter.ocr_converter._request_cloud_json",
+                                side_effect=[
+                                    (
+                                        {
+                                            "code": 0,
+                                            "data": {
+                                                "file_urls": [{"url": "https://upload.example.com/file"}],
+                                                "batch_id": "batch-001",
+                                            },
+                                        },
+                                        "https://mineru.net/api/v4/file-urls/batch",
+                                    ),
+                                    (
+                                        {
+                                            "code": 0,
+                                            "data": {
+                                                "extract_result": [
+                                                    {
+                                                        "data_id": data_id,
+                                                        "state": "running",
+                                                        "extract_progress": {
+                                                            "total_pages": 120,
+                                                            "extracted_pages": 17,
+                                                        },
+                                                    }
+                                                ]
+                                            },
+                                        },
+                                        "https://mineru.net/api/v4/extract-results/batch/batch-001",
+                                    ),
+                                    (
+                                        {
+                                            "code": 0,
+                                            "data": {
+                                                "extract_result": [
+                                                    {
+                                                        "data_id": data_id,
+                                                        "state": "done",
+                                                        "md_content": "cloud-md",
+                                                        "extract_progress": {
+                                                            "total_pages": 120,
+                                                            "extracted_pages": 120,
+                                                        },
+                                                    }
+                                                ]
+                                            },
+                                        },
+                                        "https://mineru.net/api/v4/extract-results/batch/batch-001",
+                                    ),
+                                ],
+                            ):
+                                result = mod._convert_via_cloud(
+                                    file_path=f,
+                                    source_format="pdf",
+                                    trace_id="trace-cloud-progress",
+                                    cloud_provider="mineru",
+                                    cloud_endpoint="https://mineru.net",
+                                    cloud_api_key="token",
+                                    progress_callback=lambda *args: progress_events.append(args),
+                                )
+
+        assert result.content == "cloud-md"
+        assert (17, 120, "正在识别第 17/120 页") in progress_events
+
     def test_cloud_rejects_files_larger_than_200mb(self, tmp_path: Path) -> None:
         import ankismart.converter.ocr_converter as mod
 
@@ -1068,10 +1188,76 @@ class TestCloudMode:
         assert exc_info.value.code == ErrorCode.E_CONFIG_INVALID
         assert "disallowed network" in str(exc_info.value).lower()
 
-    def test_cloud_requires_markdown_content_or_url(self, tmp_path: Path) -> None:
+    def test_cloud_can_fallback_to_zip_markdown_url(self, tmp_path: Path) -> None:
         import ankismart.converter.ocr_converter as mod
 
         f = tmp_path / "zip-only.pdf"
+        f.write_bytes(b"fake")
+        data_id = "abcdef123456"
+        transport = MagicMock()
+        client = MagicMock()
+        transport.__enter__.return_value = client
+        transport.__exit__.return_value = None
+
+        with patch(
+            "ankismart.converter.ocr_converter.uuid.uuid4",
+            return_value=SimpleNamespace(hex=f"{data_id}7890"),
+        ):
+            with patch("ankismart.converter.ocr_converter.httpx.Client", return_value=transport):
+                with patch("ankismart.converter.ocr_converter._upload_cloud_file"):
+                    with patch(
+                        "ankismart.converter.ocr_converter._download_cloud_markdown_from_zip_url",
+                        return_value="# from zip",
+                    ):
+                        with patch(
+                            "ankismart.converter.ocr_converter._pdf.count_pdf_pages",
+                            return_value=1,
+                        ):
+                            with patch(
+                                "ankismart.converter.ocr_converter._request_cloud_json",
+                                side_effect=[
+                                    (
+                                        {
+                                            "code": 0,
+                                            "data": {
+                                                "file_urls": [{"url": "https://upload.example.com/file"}],
+                                                "batch_id": "batch-001",
+                                            },
+                                        },
+                                        "https://mineru.net/api/v4/file-urls/batch",
+                                    ),
+                                    (
+                                        {
+                                            "code": 0,
+                                            "data": {
+                                                "extract_result": [
+                                                    {
+                                                        "data_id": data_id,
+                                                        "state": "done",
+                                                        "zip_url": "https://files.example.com/result.zip",
+                                                    }
+                                                ]
+                                            },
+                                        },
+                                        "https://mineru.net/api/v4/extract-results/batch/batch-001",
+                                    ),
+                                ],
+                            ):
+                                result = mod._convert_via_cloud(
+                                    file_path=f,
+                                    source_format="pdf",
+                                    trace_id="trace-cloud-zip-fallback",
+                                    cloud_provider="mineru",
+                                    cloud_endpoint="https://mineru.net",
+                                    cloud_api_key="token",
+                                )
+
+        assert result.content == "# from zip"
+
+    def test_cloud_requires_markdown_content_or_any_downloadable_url(self, tmp_path: Path) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        f = tmp_path / "missing-md.pdf"
         f.write_bytes(b"fake")
         data_id = "abcdef123456"
         transport = MagicMock()
@@ -1107,27 +1293,93 @@ class TestCloudMode:
                                         "code": 0,
                                         "data": {
                                             "extract_result": [
-                                                {
-                                                    "data_id": data_id,
-                                                    "state": "done",
-                                                    "zip_url": "https://files.example.com/result.zip",
-                                                }
-                                            ]
+                                                    {
+                                                        "data_id": data_id,
+                                                        "state": "done",
+                                                    }
+                                                ]
+                                            },
                                         },
-                                    },
-                                    "https://mineru.net/api/v4/extract-results/batch/batch-001",
-                                ),
-                            ],
-                        ):
-                            with pytest.raises(ConvertError) as exc_info:
-                                mod._convert_via_cloud(
-                                    file_path=f,
-                                    source_format="pdf",
-                                    trace_id="trace-cloud-no-md",
-                                    cloud_provider="mineru",
-                                    cloud_endpoint="https://mineru.net",
-                                    cloud_api_key="token",
-                                )
+                                        "https://mineru.net/api/v4/extract-results/batch/batch-001",
+                                    ),
+                                ],
+                            ):
+                                with pytest.raises(ConvertError) as exc_info:
+                                    mod._convert_via_cloud(
+                                        file_path=f,
+                                        source_format="pdf",
+                                        trace_id="trace-cloud-missing-md",
+                                        cloud_provider="mineru",
+                                        cloud_endpoint="https://mineru.net",
+                                        cloud_api_key="token",
+                                    )
 
         assert exc_info.value.code == ErrorCode.E_OCR_FAILED
-        assert "markdown content or markdown url" in str(exc_info.value).lower()
+        assert "downloadable markdown result url" in str(exc_info.value).lower()
+
+    def test_cloud_connectivity_includes_token_header_for_mineru_pro(self) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        headers = mod._build_cloud_headers("abc-token")
+        assert headers["Authorization"] == "Bearer abc-token"
+        assert headers["token"] == "abc-token"
+        assert headers["X-MinerU-User-Token"] == "abc-token"
+
+    def test_cloud_connectivity_requires_batch_id_and_upload_url(self) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        transport = MagicMock()
+        client = MagicMock()
+        transport.__enter__.return_value = client
+        transport.__exit__.return_value = None
+
+        with patch("ankismart.converter.ocr_converter.httpx.Client", return_value=transport):
+            with patch(
+                "ankismart.converter.ocr_converter._request_cloud_json",
+                return_value=({"code": 0, "data": {}}, "https://mineru.net/api/v4/file-urls/batch"),
+            ):
+                ok, detail = mod.test_cloud_connectivity(
+                    cloud_provider="mineru",
+                    cloud_endpoint="https://mineru.net",
+                    cloud_api_key="token",
+                )
+
+        assert ok is False
+        detail_lower = detail.lower()
+        assert "batch_id" in detail_lower
+        assert "upload_url" in detail_lower
+
+    def test_cloud_connectivity_validates_upload_url_and_payload(self) -> None:
+        import ankismart.converter.ocr_converter as mod
+
+        transport = MagicMock()
+        client = MagicMock()
+        transport.__enter__.return_value = client
+        transport.__exit__.return_value = None
+
+        with patch("ankismart.converter.ocr_converter.httpx.Client", return_value=transport):
+            with patch(
+                "ankismart.converter.ocr_converter._request_cloud_json",
+                return_value=(
+                    {
+                        "code": 0,
+                        "data": {
+                            "batch_id": "batch-001",
+                            "file_urls": [{"url": "https://1.1.1.1/u/abc"}],
+                        },
+                    },
+                    "https://mineru.net/api/v4/file-urls/batch",
+                ),
+            ) as request_fn:
+                ok, detail = mod.test_cloud_connectivity(
+                    cloud_provider="mineru",
+                    cloud_endpoint="https://mineru.net",
+                    cloud_api_key="token",
+                )
+
+        assert ok is True
+        assert detail == ""
+        assert request_fn.call_count == 1
+        kwargs = request_fn.call_args.kwargs
+        assert kwargs["path"] == "file-urls/batch"
+        assert kwargs["payload"]["files"][0]["name"] == "connectivity-check.pdf"

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import gc
+import io
 import ipaddress
 import json
 import os
 import re
 import socket
+import ssl
 import threading
 import time
 import uuid
+import zipfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -69,6 +72,8 @@ _OCR_CLOUD_MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024
 _OCR_CLOUD_MAX_PDF_PAGES = 600
 _OCR_CLOUD_MAX_MARKDOWN_BYTES = 20 * 1024 * 1024
 _OCR_CLOUD_MAX_REDIRECTS = 3
+_OCR_CLOUD_MAX_REQUEST_RETRIES = 3
+_OCR_CLOUD_RETRY_BACKOFF_SECONDS = 1.0
 
 
 def _normalize_marker_candidate(line: str) -> str:
@@ -147,8 +152,41 @@ def _build_cloud_headers(api_key: str) -> dict[str, str]:
     token = api_key.strip()
     return {
         "Authorization": f"Bearer {token}",
+        # Official MinerU Pro docs also require `token` header in addition to Authorization.
+        "token": token,
         "X-MinerU-User-Token": token,
     }
+
+
+def _is_cloud_retryable_error(exc: Exception) -> bool:
+    if isinstance(exc, ssl.SSLError):
+        text = str(exc).upper()
+        if "CERTIFICATE_VERIFY_FAILED" in text:
+            return False
+        return True
+    return isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.ReadError,
+            httpx.WriteError,
+            httpx.ReadTimeout,
+            httpx.WriteTimeout,
+            httpx.ConnectTimeout,
+            httpx.PoolTimeout,
+            httpx.RemoteProtocolError,
+            httpx.ProxyError,
+        ),
+    )
+
+
+def _is_cloud_retryable_status(status_code: int) -> bool:
+    return status_code in {408, 425, 429, 500, 502, 503, 504}
+
+
+def _sleep_cloud_retry(attempt: int) -> None:
+    backoff = _OCR_CLOUD_RETRY_BACKOFF_SECONDS * max(1, attempt + 1)
+    time.sleep(min(backoff, 5.0))
 
 
 def _raise_cloud_http_error(
@@ -198,51 +236,66 @@ def _request_cloud_json(
 ) -> tuple[dict[str, object], str]:
     request_headers = _build_cloud_headers(api_key)
     request_path = path.lstrip("/")
-    last_http_error: httpx.HTTPError | None = None
+    last_error: Exception | None = None
+    retry_attempts = max(
+        1,
+        _get_env_int(
+            "ANKISMART_OCR_CLOUD_REQUEST_RETRIES",
+            _OCR_CLOUD_MAX_REQUEST_RETRIES,
+            min_value=1,
+        ),
+    )
 
     for base in _candidate_cloud_api_bases(endpoint):
         url = f"{base}/{request_path}"
-        try:
-            response = client.request(
-                method=method.upper(),
-                url=url,
-                headers=request_headers,
-                json=payload,
-                timeout=timeout,
-            )
-        except httpx.HTTPError as exc:
-            last_http_error = exc
-            continue
+        for attempt in range(retry_attempts):
+            try:
+                response = client.request(
+                    method=method.upper(),
+                    url=url,
+                    headers=request_headers,
+                    json=payload,
+                    timeout=timeout,
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                if _is_cloud_retryable_error(exc) and (attempt + 1) < retry_attempts:
+                    _sleep_cloud_retry(attempt)
+                    continue
+                break
 
-        if response.status_code in {404, 405}:
-            continue
-        if response.status_code >= 400:
-            _raise_cloud_http_error(response=response, trace_id=trace_id, context=context)
+            if response.status_code in {404, 405}:
+                break
+            if _is_cloud_retryable_status(response.status_code) and (attempt + 1) < retry_attempts:
+                _sleep_cloud_retry(attempt)
+                continue
+            if response.status_code >= 400:
+                _raise_cloud_http_error(response=response, trace_id=trace_id, context=context)
 
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise ConvertError(
-                f"Cloud OCR returned invalid JSON during {context}",
-                code=ErrorCode.E_OCR_FAILED,
-                trace_id=trace_id,
-            ) from exc
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise ConvertError(
+                    f"Cloud OCR returned invalid JSON during {context}",
+                    code=ErrorCode.E_OCR_FAILED,
+                    trace_id=trace_id,
+                ) from exc
 
-        if not isinstance(data, dict):
-            raise ConvertError(
-                f"Cloud OCR returned invalid payload type during {context}: "
-                f"{type(data).__name__}",
-                code=ErrorCode.E_OCR_FAILED,
-                trace_id=trace_id,
-            )
-        return data, url
+            if not isinstance(data, dict):
+                raise ConvertError(
+                    f"Cloud OCR returned invalid payload type during {context}: "
+                    f"{type(data).__name__}",
+                    code=ErrorCode.E_OCR_FAILED,
+                    trace_id=trace_id,
+                )
+            return data, url
 
-    if last_http_error is not None:
+    if last_error is not None:
         raise ConvertError(
-            f"Cloud OCR request failed during {context}: {last_http_error}",
+            f"Cloud OCR request failed during {context}: {last_error}",
             code=ErrorCode.E_OCR_FAILED,
             trace_id=trace_id,
-        ) from last_http_error
+        ) from last_error
 
     raise ConvertError(
         f"Cloud OCR endpoint not found during {context}. Please check endpoint configuration.",
@@ -300,17 +353,50 @@ def _upload_cloud_file(
     trace_id: str,
 ) -> None:
     try:
-        with file_path.open("rb") as fp:
-            response = client.put(upload_url, content=fp.read(), timeout=120)
-    except httpx.HTTPError as exc:
+        payload = file_path.read_bytes()
+    except OSError as exc:
         raise ConvertError(
-            f"Cloud OCR file upload failed: {exc}",
+            f"Cloud OCR file upload failed: cannot read file bytes: {exc}",
             code=ErrorCode.E_OCR_FAILED,
             trace_id=trace_id,
         ) from exc
+    retry_attempts = max(
+        1,
+        _get_env_int(
+            "ANKISMART_OCR_CLOUD_REQUEST_RETRIES",
+            _OCR_CLOUD_MAX_REQUEST_RETRIES,
+            min_value=1,
+        ),
+    )
+    last_error: Exception | None = None
 
-    if response.status_code >= 400:
-        _raise_cloud_http_error(response=response, trace_id=trace_id, context="file upload")
+    for attempt in range(retry_attempts):
+        try:
+            response = client.put(upload_url, content=payload, timeout=120)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if _is_cloud_retryable_error(exc) and (attempt + 1) < retry_attempts:
+                _sleep_cloud_retry(attempt)
+                continue
+            raise ConvertError(
+                f"Cloud OCR file upload failed: {exc}",
+                code=ErrorCode.E_OCR_FAILED,
+                trace_id=trace_id,
+            ) from exc
+
+        if _is_cloud_retryable_status(response.status_code) and (attempt + 1) < retry_attempts:
+            _sleep_cloud_retry(attempt)
+            continue
+
+        if response.status_code >= 400:
+            _raise_cloud_http_error(response=response, trace_id=trace_id, context="file upload")
+        return
+
+    raise ConvertError(
+        f"Cloud OCR file upload failed after retries: {last_error or 'unknown error'}",
+        code=ErrorCode.E_OCR_FAILED,
+        trace_id=trace_id,
+    )
 
 
 def _find_first_string_value(payload: object, keys: tuple[str, ...]) -> str | None:
@@ -458,6 +544,106 @@ def _download_cloud_text_with_limit(
     )
 
 
+def _download_cloud_bytes_with_limit(
+    client: httpx.Client,
+    *,
+    url: str,
+    trace_id: str,
+    context: str,
+    max_bytes: int = _OCR_CLOUD_MAX_FILE_SIZE_BYTES,
+) -> bytes:
+    current_url = _validate_cloud_result_url(url, trace_id=trace_id, context=context)
+
+    for _ in range(_OCR_CLOUD_MAX_REDIRECTS + 1):
+        with client.stream("GET", current_url, timeout=120, follow_redirects=False) as response:
+            if 300 <= response.status_code < 400:
+                redirect_target = response.headers.get("location", "").strip()
+                if not redirect_target:
+                    raise ConvertError(
+                        f"Cloud OCR redirect missing location during {context}",
+                        code=ErrorCode.E_OCR_FAILED,
+                        trace_id=trace_id,
+                    )
+                current_url = _validate_cloud_result_url(
+                    urljoin(current_url, redirect_target),
+                    trace_id=trace_id,
+                    context=context,
+                )
+                continue
+
+            if response.status_code >= 400:
+                _raise_cloud_http_error(response=response, trace_id=trace_id, context=context)
+
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in response.iter_bytes():
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ConvertError(
+                        f"Cloud OCR result exceeds {max_bytes} bytes during {context}",
+                        code=ErrorCode.E_OCR_FAILED,
+                        trace_id=trace_id,
+                    )
+                chunks.append(chunk)
+            return b"".join(chunks)
+
+    raise ConvertError(
+        f"Cloud OCR too many redirects during {context}",
+        code=ErrorCode.E_OCR_FAILED,
+        trace_id=trace_id,
+    )
+
+
+def _download_cloud_markdown_from_zip_url(
+    client: httpx.Client,
+    *,
+    url: str,
+    trace_id: str,
+    context: str,
+) -> str:
+    archive_blob = _download_cloud_bytes_with_limit(
+        client,
+        url=url,
+        trace_id=trace_id,
+        context=context,
+    )
+    try:
+        with zipfile.ZipFile(io.BytesIO(archive_blob)) as archive:
+            markdown_candidates: list[str] = []
+            for name in archive.namelist():
+                lowered = name.lower()
+                if lowered.endswith(".md") and not lowered.endswith("/"):
+                    markdown_candidates.append(name)
+            markdown_candidates.sort(key=lambda item: (item.count("/"), len(item), item))
+
+            for entry_name in markdown_candidates:
+                with archive.open(entry_name, "r") as fp:
+                    raw = fp.read(_OCR_CLOUD_MAX_MARKDOWN_BYTES + 1)
+                if len(raw) > _OCR_CLOUD_MAX_MARKDOWN_BYTES:
+                    raise ConvertError(
+                        "Cloud OCR markdown entry in zip exceeds size limit",
+                        code=ErrorCode.E_OCR_FAILED,
+                        trace_id=trace_id,
+                    )
+                text = raw.decode("utf-8", errors="ignore").strip()
+                if text:
+                    return text
+    except zipfile.BadZipFile as exc:
+        raise ConvertError(
+            f"Cloud OCR returned invalid zip archive during {context}",
+            code=ErrorCode.E_OCR_FAILED,
+            trace_id=trace_id,
+        ) from exc
+
+    raise ConvertError(
+        "Cloud OCR zip result does not contain markdown content",
+        code=ErrorCode.E_OCR_FAILED,
+        trace_id=trace_id,
+    )
+
+
 def _resolve_cloud_result_entry(data: dict[str, object], data_id: str) -> dict[str, object]:
     result_items = data.get("extract_result")
     if not isinstance(result_items, list):
@@ -486,6 +672,30 @@ def _normalize_state(state: str | None) -> str:
     if value == "success":
         return "done"
     return value
+
+
+def _extract_cloud_page_progress(
+    result_entry: dict[str, object], result_data: dict[str, object]
+) -> tuple[int, int] | None:
+    progress_candidates: list[dict[str, object]] = []
+    for payload in (result_entry, result_data):
+        progress = payload.get("extract_progress")
+        if isinstance(progress, dict):
+            progress_candidates.append(progress)
+
+    for progress in progress_candidates:
+        raw_current = progress.get("extracted_pages", progress.get("extractedPages"))
+        raw_total = progress.get("total_pages", progress.get("totalPages"))
+        try:
+            current = int(raw_current)
+            total = int(raw_total)
+        except (TypeError, ValueError):
+            continue
+        if total <= 0:
+            continue
+        current = max(0, min(current, total))
+        return current, total
+    return None
 
 
 def _emit_cloud_progress(progress_callback, step: int, total: int, message: str) -> None:
@@ -632,6 +842,7 @@ def _convert_via_cloud(
             _emit_cloud_progress(progress_callback, 2, 3, "云端 OCR: 等待解析结果...")
             start = time.monotonic()
             result_entry: dict[str, object] = {}
+            last_cloud_page_progress: tuple[int, int] | None = None
             while True:
                 if (time.monotonic() - start) >= timeout_seconds:
                     raise ConvertError(
@@ -654,6 +865,17 @@ def _convert_via_cloud(
                     result_response, trace_id, context="poll extract result"
                 )
                 result_entry = _resolve_cloud_result_entry(result_data, data_id)
+                cloud_page_progress = _extract_cloud_page_progress(result_entry, result_data)
+                if cloud_page_progress and cloud_page_progress != last_cloud_page_progress:
+                    current_page, total_pages = cloud_page_progress
+                    if current_page > 0:
+                        _emit_cloud_progress(
+                            progress_callback,
+                            current_page,
+                            total_pages,
+                            f"正在识别第 {current_page}/{total_pages} 页",
+                        )
+                    last_cloud_page_progress = cloud_page_progress
                 state = _normalize_state(str(result_entry.get("state", "")))
                 if state in {"done", "finished"}:
                     break
@@ -675,8 +897,15 @@ def _convert_via_cloud(
                 result_entry,
                 ("full_md_url", "md_url", "markdown_url"),
             ) or _find_first_string_value(result_data, ("full_md_url", "md_url", "markdown_url"))
+            zip_url = _find_first_string_value(
+                result_entry,
+                ("full_zip_url", "zip_url", "archive_url"),
+            ) or _find_first_string_value(result_data, ("full_zip_url", "zip_url", "archive_url"))
             markdown_content = _find_first_string_value(
                 result_entry,
+                ("md_content", "markdown", "content"),
+            ) or _find_first_string_value(
+                result_data,
                 ("md_content", "markdown", "content"),
             )
 
@@ -688,9 +917,17 @@ def _convert_via_cloud(
                     context="download markdown result",
                 )
 
+            if not markdown_content and zip_url:
+                markdown_content = _download_cloud_markdown_from_zip_url(
+                    client,
+                    url=zip_url,
+                    trace_id=trace_id,
+                    context="download zip markdown result",
+                )
+
             if not markdown_content:
                 raise ConvertError(
-                    "Cloud OCR returned no markdown content or markdown URL",
+                    "Cloud OCR returned no markdown content or downloadable markdown result URL",
                     code=ErrorCode.E_OCR_FAILED,
                     trace_id=trace_id,
                 )
@@ -749,7 +986,26 @@ def test_cloud_connectivity(
                 payload=payload,
                 timeout=20.0,
             )
-            _extract_response_data(response, "", context="cloud connectivity check")
+            data = _extract_response_data(response, "", context="cloud connectivity check")
+            batch_id = _find_first_string_value(data, ("batch_id", "batchId")) or ""
+            upload_url = _extract_upload_url(data)
+            missing: list[str] = []
+            if not batch_id:
+                missing.append("batch_id")
+            if not upload_url:
+                missing.append("upload_url")
+            if missing:
+                raise ConvertError(
+                    "Cloud OCR connectivity response missing required field(s): "
+                    f"{', '.join(missing)}",
+                    code=ErrorCode.E_OCR_FAILED,
+                    trace_id="",
+                )
+            _validate_cloud_result_url(
+                upload_url,
+                trace_id="",
+                context="cloud connectivity check",
+            )
             return True, ""
     except ConvertError as exc:
         return False, str(exc)
