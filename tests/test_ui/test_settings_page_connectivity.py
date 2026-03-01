@@ -451,7 +451,9 @@ def test_check_for_updates_failure_updates_metadata_and_warns(_qapp, monkeypatch
     assert infobar_calls[0][0][0] == "warning"
 
 
-def test_check_for_updates_detects_new_release_and_opens_page(_qapp, monkeypatch) -> None:
+def test_check_for_updates_detects_new_release_and_shows_clickable_infobar(
+    _qapp, monkeypatch
+) -> None:
     main, _ = make_main()
     page = SettingsPage(main)
 
@@ -502,10 +504,11 @@ def test_check_for_updates_detects_new_release_and_opens_page(_qapp, monkeypatch
             )
 
     monkeypatch.setattr("ankismart.ui.settings_page.httpx.Client", _Client)
+    update_calls: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        QMessageBox,
-        "question",
-        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+        page,
+        "_show_update_available_info_bar",
+        lambda version, url: update_calls.append((version, url)),
     )
     opened: list[str] = []
     monkeypatch.setattr(
@@ -519,7 +522,10 @@ def test_check_for_updates_detects_new_release_and_opens_page(_qapp, monkeypatch
     assert applied["persist"] is True
     assert applied["changed_fields"] == {"last_update_check_at", "last_update_version_seen"}
     assert main.config.last_update_version_seen == "9.9.9"
-    assert opened and opened[0].endswith("/v9.9.9")
+    assert update_calls == [
+        ("9.9.9", "https://github.com/lllll081926i/Ankismart/releases/tag/v9.9.9")
+    ]
+    assert not opened
     assert isinstance(_Client.request_headers, dict)
     assert "User-Agent" in _Client.request_headers
     assert "X-GitHub-Api-Version" in _Client.request_headers
@@ -560,12 +566,12 @@ def test_check_for_updates_falls_back_to_tags_api(_qapp, monkeypatch) -> None:
             return _Response(200, [{"name": "v1.2.3"}])
 
     monkeypatch.setattr("ankismart.ui.settings_page.httpx.Client", _Client)
+    update_calls: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        QMessageBox,
-        "question",
-        lambda *args, **kwargs: QMessageBox.StandardButton.No,
+        page,
+        "_show_update_available_info_bar",
+        lambda version, url: update_calls.append((version, url)),
     )
-    monkeypatch.setattr("ankismart.ui.settings_page.QDesktopServices.openUrl", lambda *_args: None)
     infobar_calls = []
     monkeypatch.setattr(
         page, "_show_info_bar", lambda *args, **kwargs: infobar_calls.append((args, kwargs))
@@ -575,6 +581,38 @@ def test_check_for_updates_falls_back_to_tags_api(_qapp, monkeypatch) -> None:
 
     # Should not emit warning in fallback-success path.
     assert not any(call[0][0] == "warning" for call in infobar_calls)
+    assert update_calls
+
+
+def test_show_update_available_info_bar_can_open_release_page(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    class _InfoBarStub:
+        def __init__(self) -> None:
+            self.widgets = []
+
+        def addWidget(self, widget, stretch=0):  # noqa: N802
+            self.widgets.append(widget)
+
+    info_bar_stub = _InfoBarStub()
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.InfoBar.info",
+        lambda *args, **kwargs: info_bar_stub,
+    )
+
+    opened: list[str] = []
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.QDesktopServices.openUrl",
+        lambda url: opened.append(url.toString() if isinstance(url, QUrl) else str(url)),
+    )
+    latest_url = "https://github.com/lllll081926i/Ankismart/releases/tag/v9.9.9"
+
+    page._show_update_available_info_bar("9.9.9", latest_url)
+
+    assert info_bar_stub.widgets
+    info_bar_stub.widgets[0].click()
+    assert opened == [latest_url]
 
 
 def test_backup_current_config_reports_success(_qapp, monkeypatch) -> None:

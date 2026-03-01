@@ -377,6 +377,28 @@ class SettingsPage(ScrollArea):
             parent=self,
         )
 
+    def _show_update_available_info_bar(self, latest_version: str, latest_url: str) -> None:
+        """Show clickable update tip so user can open release page directly."""
+        is_zh = self._main.config.language == "zh"
+        info_bar = InfoBar.info(
+            title="发现新版本" if is_zh else "Update Available",
+            content=(
+                f"当前版本 {__version__}，最新版本 {latest_version}"
+                if is_zh
+                else f"Current version {__version__}, latest {latest_version}"
+            ),
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=8000,
+            parent=self,
+        )
+        open_button = PushButton("打开发布页" if is_zh else "Open Release Page", self)
+        open_button.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(latest_url))
+        )
+        info_bar.addWidget(open_button)
+
     def _apply_background_style(self) -> None:
         """Apply theme-aware background color to settings page."""
         bg_color = get_page_background_color(dark=isDarkTheme())
@@ -1833,22 +1855,7 @@ class SettingsPage(ScrollArea):
         current_tuple = self._parse_version_tuple(__version__)
         latest_tuple = self._parse_version_tuple(latest_version)
         if latest_tuple > current_tuple:
-            reply = QMessageBox.question(
-                self,
-                "发现新版本" if is_zh else "Update Available",
-                (
-                    f"当前版本 {__version__}，最新版本 {latest_version}。\n是否打开发布页面？"
-                    if is_zh
-                    else (
-                        f"Current version {__version__}, latest {latest_version}.\n"
-                        "Open release page now?"
-                    )
-                ),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                QDesktopServices.openUrl(QUrl(latest_url))
+            self._show_update_available_info_bar(latest_version, latest_url)
             return
 
         self._show_info_bar(
