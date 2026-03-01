@@ -8,6 +8,10 @@ from PyQt6.QtGui import QFont, QScreen
 from PyQt6.QtWidgets import QApplication
 from qfluentwidgets import BodyLabel, isDarkTheme
 
+from ankismart.core.logging import get_logger
+
+logger = get_logger("ui.styles")
+
 # Color constants
 COLOR_SUCCESS = "#10b981"  # Green
 COLOR_ERROR = "#ef4444"  # Red
@@ -164,8 +168,14 @@ def apply_compact_combo_metrics(
                     getattr(combo, "_ankismart_combo_item_height", target_popup_item_height)
                 )
                 menu.setItemHeight(item_height)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "Failed to apply compact combo menu item height",
+                    extra={
+                        "event": "ui.styles.combo_menu_item_height_failed",
+                        "error_detail": str(exc),
+                    },
+                )
             return menu
 
         setattr(combo, "_createComboMenu", _create_compact_menu)

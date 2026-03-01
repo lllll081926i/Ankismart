@@ -6,10 +6,6 @@ import pytest
 from PyQt6.QtWidgets import QApplication
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
-from ankismart.ui import settings_page as settings_page_module
-
-ProviderListItemWidget = getattr(settings_page_module, "ProviderListItemWidget", None)
-ProviderListWidget = getattr(settings_page_module, "ProviderListWidget", None)
 
 
 @pytest.fixture(scope="session")
@@ -37,4 +33,3 @@ def make_main(config: AppConfig | None = None):
         set_connection_status=lambda connected: status_calls.append(connected),
     )
     return main, status_calls
-

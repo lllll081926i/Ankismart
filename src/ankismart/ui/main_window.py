@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QIcon
 from PyQt6.QtWidgets import QApplication
 from qfluentwidgets import (
@@ -19,14 +20,10 @@ from qfluentwidgets import (
 )
 
 from ankismart.core.config import AppConfig, load_config, save_config
+from ankismart.core.logging import get_logger
 
-from .card_preview_page import CardPreviewPage
 from .i18n import set_language, t
 from .import_page import ImportPage
-from .performance_page import PerformancePage
-from .preview_page import PreviewPage
-from .result_page import ResultPage
-from .settings_page import SettingsPage
 from .shortcuts import ShortcutKeys, create_shortcut
 from .styles import (
     DARK_PAGE_BACKGROUND_HEX,
@@ -41,6 +38,15 @@ from .styles import (
     get_stylesheet,
     scale_px,
 )
+
+if TYPE_CHECKING:
+    from .card_preview_page import CardPreviewPage
+    from .performance_page import PerformancePage
+    from .preview_page import PreviewPage
+    from .result_page import ResultPage
+    from .settings_page import SettingsPage
+
+logger = get_logger("ui.main_window")
 
 
 class MainWindow(FluentWindow):
@@ -66,19 +72,22 @@ class MainWindow(FluentWindow):
         # Apply initial theme before creating pages
         self._apply_theme(apply_stylesheet=True)
 
-        # Initialize pages
-        self.import_page = ImportPage(self)
-        self.preview_page = PreviewPage(self)
-        self.card_preview_page = CardPreviewPage(self)
-        self.result_page = ResultPage(self)
-        self.performance_page = PerformancePage(self)
-        self.settings_page = SettingsPage(self)
-        self._import_page = self.import_page
-        self._preview_page = self.preview_page
-        self._card_preview_page = self.card_preview_page
-        self._result_page = self.result_page
-        self._performance_page = self.performance_page
-        self._settings_page = self.settings_page
+        # Build only import page on first paint; other pages are lazy/deferred.
+        self._import_page = ImportPage(self)
+        self._preview_page: PreviewPage | None = None
+        self._card_preview_page: CardPreviewPage | None = None
+        self._result_page: ResultPage | None = None
+        self._performance_page: PerformancePage | None = None
+        self._settings_page: SettingsPage | None = None
+        self._nav_routes_added: set[str] = set()
+        self._deferred_page_queue: list[str] = [
+            "preview",
+            "card_preview",
+            "result",
+            "performance",
+            "settings",
+        ]
+        self._deferred_bootstrap_started = False
 
         self._init_window()
         self._init_navigation()
@@ -208,37 +217,7 @@ NavigationPanel[transparent=true] {{
             labels["import"],
             NavigationItemPosition.TOP
         )
-
-        self.addSubInterface(
-            self.preview_page,
-            FluentIcon.VIEW,
-            labels["preview"],
-            NavigationItemPosition.TOP
-        )
-
-        self.addSubInterface(
-            self.card_preview_page,
-            FluentIcon.BOOK_SHELF,
-            labels.get(
-                "card_preview",
-                "卡片预览" if self.config.language == "zh" else "Card Preview",
-            ),
-            NavigationItemPosition.TOP
-        )
-
-        self.addSubInterface(
-            self.result_page,
-            FluentIcon.COMPLETED,
-            labels["result"],
-            NavigationItemPosition.TOP
-        )
-
-        self.addSubInterface(
-            self.performance_page,
-            FluentIcon.SPEED_HIGH,
-            labels["performance"],
-            NavigationItemPosition.TOP
-        )
+        self._nav_routes_added.add(self.import_page.objectName())
 
         self._theme_nav_button = NavigationToolButton(self._get_theme_button_icon())
         self.navigationInterface.addWidget(
@@ -258,13 +237,128 @@ NavigationPanel[transparent=true] {{
             tooltip="GitHub",
         )
 
-        self.addSubInterface(
-            self.settings_page,
-            FluentIcon.SETTING,
-            labels["settings"],
-            NavigationItemPosition.BOTTOM
-        )
         self._update_theme_button_tooltip()
+
+    def bootstrap_secondary_pages(self) -> None:
+        """Build non-import pages incrementally after first frame is shown."""
+        if self._deferred_bootstrap_started:
+            return
+        self._deferred_bootstrap_started = True
+        QTimer.singleShot(0, self._bootstrap_next_page)
+
+    def _bootstrap_next_page(self) -> None:
+        if not self._deferred_page_queue:
+            return
+        page_key = self._deferred_page_queue.pop(0)
+        self._ensure_page(page_key, add_to_navigation=True)
+        if self._deferred_page_queue:
+            QTimer.singleShot(0, self._bootstrap_next_page)
+
+    def _create_page(self, page_key: str):
+        if page_key == "preview":
+            from .preview_page import PreviewPage
+
+            return PreviewPage(self)
+        if page_key == "card_preview":
+            from .card_preview_page import CardPreviewPage
+
+            return CardPreviewPage(self)
+        if page_key == "result":
+            from .result_page import ResultPage
+
+            return ResultPage(self)
+        if page_key == "performance":
+            from .performance_page import PerformancePage
+
+            return PerformancePage(self)
+        if page_key == "settings":
+            from .settings_page import SettingsPage
+
+            return SettingsPage(self)
+        raise KeyError(f"Unsupported page key: {page_key}")
+
+    def _ensure_navigation_item(self, page_key: str, page) -> None:
+        route = page.objectName()
+        if route in self._nav_routes_added:
+            return
+
+        labels = self._get_navigation_labels()
+        if page_key == "preview":
+            self.addSubInterface(
+                page,
+                FluentIcon.VIEW,
+                labels["preview"],
+                NavigationItemPosition.TOP,
+            )
+        elif page_key == "card_preview":
+            self.addSubInterface(
+                page,
+                FluentIcon.BOOK_SHELF,
+                labels.get(
+                    "card_preview",
+                    "卡片预览" if self.config.language == "zh" else "Card Preview",
+                ),
+                NavigationItemPosition.TOP,
+            )
+        elif page_key == "result":
+            self.addSubInterface(
+                page,
+                FluentIcon.COMPLETED,
+                labels["result"],
+                NavigationItemPosition.TOP,
+            )
+        elif page_key == "performance":
+            self.addSubInterface(
+                page,
+                FluentIcon.SPEED_HIGH,
+                labels["performance"],
+                NavigationItemPosition.TOP,
+            )
+        elif page_key == "settings":
+            self.addSubInterface(
+                page,
+                FluentIcon.SETTING,
+                labels["settings"],
+                NavigationItemPosition.BOTTOM,
+            )
+        else:
+            raise KeyError(f"Unsupported page key: {page_key}")
+        self._nav_routes_added.add(route)
+
+    def _ensure_page(self, page_key: str, *, add_to_navigation: bool = True):
+        if page_key == "import":
+            return self.import_page
+
+        attr_map = {
+            "preview": "_preview_page",
+            "card_preview": "_card_preview_page",
+            "result": "_result_page",
+            "performance": "_performance_page",
+            "settings": "_settings_page",
+        }
+        attr = attr_map.get(page_key)
+        if attr is None:
+            raise KeyError(f"Unsupported page key: {page_key}")
+
+        page = getattr(self, attr)
+        if page is None:
+            page = self._create_page(page_key)
+            setattr(self, attr, page)
+        if add_to_navigation:
+            self._ensure_navigation_item(page_key, page)
+        return page
+
+    def _iter_initialized_pages(self):
+        for page in (
+            self._import_page,
+            self._preview_page,
+            self._card_preview_page,
+            self._result_page,
+            self._performance_page,
+            self._settings_page,
+        ):
+            if page is not None:
+                yield page
 
     def _get_theme_button_tooltip(self) -> str:
         """Get localized tooltip text for sidebar theme mode button."""
@@ -383,18 +477,10 @@ NavigationPanel[transparent=true] {{
         self._apply_global_stylesheet()
 
         # Notify all pages to update their custom styles
-        if hasattr(self.preview_page, 'update_theme'):
-            self.preview_page.update_theme()
-        if hasattr(self.import_page, 'update_theme'):
-            self.import_page.update_theme()
-        if hasattr(self.result_page, 'update_theme'):
-            self.result_page.update_theme()
-        if hasattr(self.performance_page, 'update_theme'):
-            self.performance_page.update_theme()
-        if hasattr(self.card_preview_page, 'update_theme'):
-            self.card_preview_page.update_theme()
-        if hasattr(self.settings_page, 'update_theme'):
-            self.settings_page.update_theme()
+        for page in self._iter_initialized_pages():
+            update_theme = getattr(page, "update_theme", None)
+            if callable(update_theme):
+                update_theme()
         self._update_theme_button_tooltip()
 
     def _get_navigation_labels(self) -> dict[str, str]:
@@ -425,18 +511,10 @@ NavigationPanel[transparent=true] {{
         self.language_changed.emit(language)
         self._refresh_navigation()
 
-        if hasattr(self.import_page, "retranslate_ui"):
-            self.import_page.retranslate_ui()
-        if hasattr(self.preview_page, "retranslate_ui"):
-            self.preview_page.retranslate_ui()
-        if hasattr(self.result_page, "retranslate_ui"):
-            self.result_page.retranslate_ui()
-        if hasattr(self.card_preview_page, "retranslate_ui"):
-            self.card_preview_page.retranslate_ui()
-        if hasattr(self.performance_page, "retranslate_ui"):
-            self.performance_page.retranslate_ui()
-        if hasattr(self.settings_page, "retranslate_ui"):
-            self.settings_page.retranslate_ui()
+        for page in self._iter_initialized_pages():
+            retranslate_ui = getattr(page, "retranslate_ui", None)
+            if callable(retranslate_ui):
+                retranslate_ui()
         self._update_theme_button_tooltip()
 
     def apply_runtime_config(
@@ -507,30 +585,37 @@ NavigationPanel[transparent=true] {{
 
         route_to_label = {
             self.import_page.objectName(): labels["import"],
-            self.preview_page.objectName(): labels["preview"],
-            self.card_preview_page.objectName(): labels["card_preview"],
-            self.result_page.objectName(): labels["result"],
-            self.performance_page.objectName(): labels["performance"],
-            self.settings_page.objectName(): labels["settings"],
         }
+        if self._preview_page is not None:
+            route_to_label[self._preview_page.objectName()] = labels["preview"]
+        if self._card_preview_page is not None:
+            route_to_label[self._card_preview_page.objectName()] = labels["card_preview"]
+        if self._result_page is not None:
+            route_to_label[self._result_page.objectName()] = labels["result"]
+        if self._performance_page is not None:
+            route_to_label[self._performance_page.objectName()] = labels["performance"]
+        if self._settings_page is not None:
+            route_to_label[self._settings_page.objectName()] = labels["settings"]
         for route_key, text in route_to_label.items():
             try:
                 set_item_text(route_key, text)
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "Skip updating navigation label",
+                    extra={
+                        "event": "ui.nav.label_update_failed",
+                        "route": route_key,
+                        "error_detail": str(exc),
+                    },
+                )
                 continue
 
     def _switch_page(self, index: int) -> None:
         """Switch page by index for backward compatibility."""
-        pages = [
-            self.import_page,
-            self.preview_page,
-            self.card_preview_page,
-            self.result_page,
-            self.performance_page,
-            self.settings_page,
-        ]
-        if 0 <= index < len(pages):
-            self.switchTo(pages[index])
+        page_keys = ["import", "preview", "card_preview", "result", "performance", "settings"]
+        if 0 <= index < len(page_keys):
+            page = self._ensure_page(page_keys[index], add_to_navigation=True)
+            self.switchTo(page)
 
     def switch_to_preview(self, pending_files_count: int = 0, total_expected: int = 0) -> None:
         """Switch to preview page and load batch result when available.
@@ -541,7 +626,11 @@ NavigationPanel[transparent=true] {{
         """
         preview_page = getattr(self, "_preview_page", None)
         if preview_page is None:
-            preview_page = getattr(self, "preview_page", None)
+            try:
+                preview_page = self.preview_page
+            except RuntimeError:
+                # Compatibility for tests that construct MainWindow via __new__.
+                preview_page = None
         batch_result = getattr(self, "_batch_result", None)
         if preview_page is not None and batch_result is not None:
             load_documents = getattr(preview_page, "load_documents", None)
@@ -567,15 +656,15 @@ NavigationPanel[transparent=true] {{
 
     def _shutdown_pages(self) -> None:
         """Close child pages first so their closeEvent hooks can stop workers safely."""
-        for attr in (
-            "import_page",
-            "preview_page",
-            "card_preview_page",
-            "result_page",
-            "performance_page",
-            "settings_page",
-        ):
-            page = getattr(self, attr, None)
+        page_map = {
+            "import_page": self._import_page,
+            "preview_page": self._preview_page,
+            "card_preview_page": self._card_preview_page,
+            "result_page": self._result_page,
+            "performance_page": self._performance_page,
+            "settings_page": self._settings_page,
+        }
+        for attr, page in page_map.items():
             if page is None:
                 continue
             close_page = getattr(page, "close", None)
@@ -583,8 +672,40 @@ NavigationPanel[transparent=true] {{
                 continue
             try:
                 close_page()
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "Skip closing page during shutdown",
+                    extra={
+                        "event": "ui.page.close_failed",
+                        "page_attr": attr,
+                        "error_detail": str(exc),
+                    },
+                )
                 continue
+
+    @property
+    def import_page(self) -> ImportPage:
+        return self._import_page
+
+    @property
+    def preview_page(self) -> PreviewPage:
+        return self._ensure_page("preview", add_to_navigation=True)
+
+    @property
+    def card_preview_page(self) -> CardPreviewPage:
+        return self._ensure_page("card_preview", add_to_navigation=True)
+
+    @property
+    def result_page(self) -> ResultPage:
+        return self._ensure_page("result", add_to_navigation=True)
+
+    @property
+    def performance_page(self) -> PerformancePage:
+        return self._ensure_page("performance", add_to_navigation=True)
+
+    @property
+    def settings_page(self) -> SettingsPage:
+        return self._ensure_page("settings", add_to_navigation=True)
 
     @property
     def cards(self):

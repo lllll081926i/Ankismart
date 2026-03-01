@@ -124,6 +124,43 @@ class TestJsonFormatter:
             assert excluded not in parsed
 
 
+class TestConsoleFormatter:
+    def _make_record(
+        self, msg: str = "hello", level: int = logging.INFO, *, exc_info=None
+    ) -> logging.LogRecord:
+        return logging.LogRecord(
+            name="ankismart.test.console",
+            level=level,
+            pathname="console.py",
+            lineno=42,
+            msg=msg,
+            args=(),
+            exc_info=exc_info,
+            func="render_line",
+        )
+
+    def test_warning_line_contains_source_location(self):
+        fmt = logging_module.ConsoleFormatter()
+        record = self._make_record("warn", level=logging.WARNING)
+        text = fmt.format(record)
+        assert "@render_line:42" in text
+
+    def test_exception_summary_is_included(self):
+        fmt = logging_module.ConsoleFormatter()
+        try:
+            raise RuntimeError("broken")
+        except RuntimeError:
+            import sys
+
+            record = self._make_record(
+                "failed",
+                level=logging.ERROR,
+                exc_info=sys.exc_info(),
+            )
+        text = fmt.format(record)
+        assert "exc=RuntimeError: broken" in text
+
+
 class TestSetupLogging:
     def test_sets_level_and_adds_handlers(self):
         with (

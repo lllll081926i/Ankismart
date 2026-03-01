@@ -124,6 +124,8 @@ class ConsoleFormatter(logging.Formatter):
         line = f"[{ts}] {record.levelname:<7} {module} [{trace_short}]"
         if event:
             line = f"{line} {event}"
+        if record.levelno >= logging.WARNING:
+            line = f"{line} @{record.funcName}:{record.lineno}"
 
         line = f"{line}: {record.getMessage()}"
 
@@ -133,6 +135,10 @@ class ConsoleFormatter(logging.Formatter):
             if len(keys) > 4:
                 preview = f"{preview}, ..."
             line = f"{line} | {preview}"
+
+        if record.exc_info and record.exc_info[1] is not None:
+            exc = record.exc_info[1]
+            line = f"{line} | exc={exc.__class__.__name__}: {exc}"
 
         return line
 

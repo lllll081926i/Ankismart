@@ -828,8 +828,15 @@ class BatchConvertWorker(QThread):
                 try:
                     if temp_pdf_path.exists():
                         os.unlink(temp_pdf_path)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(
+                        "Failed to clean up temporary merged PDF",
+                        extra={
+                            "event": "worker.batch_convert.temp_pdf_cleanup_failed",
+                            "path": str(temp_pdf_path),
+                            "error_detail": str(exc),
+                        },
+                    )
 
         except Exception as exc:
             message = f"图片合集: {exc}"

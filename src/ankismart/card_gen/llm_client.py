@@ -123,9 +123,20 @@ class LLMClient:
     def __del__(self) -> None:
         try:
             self.close()
-        except Exception:
+        except Exception as exc:
             # Never propagate cleanup errors from GC finalizer.
-            pass
+            log = globals().get("logger")
+            if log is not None:
+                try:
+                    log.debug(
+                        "Skip LLM client finalizer cleanup error",
+                        extra={
+                            "event": "llm.client.finalizer.close_failed",
+                            "error_detail": str(exc),
+                        },
+                    )
+                except Exception:
+                    return
 
     def validate_connection(self) -> bool:
         """Test if the configured model endpoint is reachable via chat completion."""

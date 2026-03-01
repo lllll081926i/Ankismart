@@ -1,119 +1,75 @@
 from __future__ import annotations
 
-import pytest
-from PyQt6.QtWidgets import QWidget
-from qfluentwidgets import BodyLabel, PrimaryPushButton, PushButton, ScrollArea
+from qfluentwidgets import PrimaryPushButton, PushButton
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.ui.settings_page import SettingsPage
 
-from .settings_page_test_utils import (
-    ProviderListItemWidget,
-    ProviderListWidget,
-    make_main,
-)
+from .settings_page_test_utils import make_main
 
 pytest_plugins = ["tests.test_ui.settings_page_test_utils"]
 
 
-@pytest.mark.skipif(ProviderListWidget is None, reason="legacy provider list widget removed")
-def test_provider_list_panel_uses_theme_neutral_style(_qapp) -> None:
-    panel = ProviderListWidget()
-    assert panel.objectName() == "providerListPanel"
-    assert "QWidget#providerListPanel" in panel.styleSheet()
-    assert "background-color: transparent" in panel.styleSheet()
-    assert "#FFFFFF" not in panel.styleSheet()
+def _build_settings_page_with_providers(
+    _qapp,
+    providers: list[LLMProviderConfig],
+    *,
+    active_provider_id: str,
+) -> SettingsPage:
+    cfg = AppConfig(llm_providers=providers, active_provider_id=active_provider_id)
+    main, _ = make_main(cfg)
+    page = SettingsPage(main)
+    page.resize(1200, 900)
+    page.show()
+    _qapp.processEvents()
+    return page
 
 
-@pytest.mark.skipif(ProviderListItemWidget is None, reason="legacy provider list widget removed")
-def test_provider_list_item_has_detailed_provider_fields(_qapp) -> None:
-    widget = ProviderListItemWidget(
+def test_provider_table_uses_theme_neutral_style(_qapp) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    style = page._provider_table.styleSheet()
+    assert "QTableWidget" in style
+    assert "border: 1px solid" in style
+    assert "#FFFFFF" not in style
+
+
+def test_provider_table_displays_provider_fields(_qapp) -> None:
+    providers = [
         LLMProviderConfig(
             id="p1",
             name="Vendor-X",
             model="model-a",
             base_url="https://example.com/v1",
             rpm_limit=120,
-        ),
-        is_active=True,
-        can_delete=True,
-    )
+        )
+    ]
+    page = _build_settings_page_with_providers(_qapp, providers, active_provider_id="p1")
 
-    model_label = widget.findChild(BodyLabel, "providerModelLabel")
-    url_label = widget.findChild(BodyLabel, "providerUrlLabel")
-    rpm_label = widget.findChild(BodyLabel, "providerRpmLabel")
-
-    assert model_label is not None
-    assert model_label.text() == "模型：model-a"
-    assert url_label is not None
-    assert "地址：https://example.com/v1" in url_label.text()
-    assert rpm_label is not None
-    assert rpm_label.text() == "RPM：120"
+    assert page._provider_table.rowCount() == 1
+    assert page._provider_table.item(0, 0).text() == "Vendor-X"
+    assert page._provider_table.item(0, 1).text() == "model-a"
+    assert page._provider_table.item(0, 2).text() == "https://example.com/v1"
+    assert page._provider_table.item(0, 3).text() == "120"
 
 
-@pytest.mark.skipif(ProviderListWidget is None, reason="legacy provider list widget removed")
-def test_provider_list_height_auto_adjust(_qapp) -> None:
-    panel = ProviderListWidget()
-    providers = [LLMProviderConfig(id=f"p{i}", name=f"P{i}") for i in range(5)]
+def test_provider_table_height_stays_fixed_for_multi_providers(_qapp) -> None:
+    providers2 = [LLMProviderConfig(id=f"p{i}", name=f"P{i}") for i in range(2)]
+    providers5 = [LLMProviderConfig(id=f"x{i}", name=f"X{i}") for i in range(5)]
 
-    panel.update_providers(providers[:2], "p1")
-    assert panel.height() == 146
+    page2 = _build_settings_page_with_providers(_qapp, providers2, active_provider_id="p0")
+    page5 = _build_settings_page_with_providers(_qapp, providers5, active_provider_id="x0")
 
-    panel.update_providers(providers, "p1")
-    assert panel.height() == 290
-
-
-@pytest.mark.skipif(ProviderListWidget is None, reason="legacy provider list widget removed")
-def test_provider_list_wheel_forwards_to_parent_scroll_area(_qapp) -> None:
-    class _ScrollSpy(ScrollArea):
-        def __init__(self):
-            super().__init__()
-            self.called = 0
-
-        def wheelEvent(self, event):
-            self.called += 1
-
-    spy = _ScrollSpy()
-    container = QWidget(spy)
-    panel = ProviderListWidget(container)
-    panel.update_providers([LLMProviderConfig(id="p1", name="OpenAI")], "p1")
-
-    class _Event:
-        pass
-
-    panel.wheelEvent(_Event())
-    assert spy.called == 1
+    assert page2._provider_table.height() == page5._provider_table.height()
+    assert page5._provider_table.rowCount() == 5
 
 
-@pytest.mark.skipif(ProviderListWidget is None, reason="legacy provider list widget removed")
-def test_provider_list_event_filter_forwards_at_scroll_edge(_qapp, monkeypatch) -> None:
-    panel = ProviderListWidget()
-    panel.update_providers([LLMProviderConfig(id=f"p{i}", name=f"P{i}") for i in range(6)], "p1")
+def test_provider_table_uses_internal_scroll_when_rows_overflow(_qapp) -> None:
+    providers = [LLMProviderConfig(id=f"p{i}", name=f"P{i}") for i in range(6)]
+    page = _build_settings_page_with_providers(_qapp, providers, active_provider_id="p0")
 
-    class _ParentSpy:
-        def __init__(self):
-            self.called = 0
-
-        def wheelEvent(self, _event):
-            self.called += 1
-
-    parent = _ParentSpy()
-    monkeypatch.setattr(panel, "_forward_wheel_to_parent", parent.wheelEvent)
-
-    bar = panel._list_widget.verticalScrollBar()
-    bar.setValue(bar.minimum())
-
-    class _Wheel:
-        def angleDelta(self):
-            class _Delta:
-                def y(self):
-                    return 120
-
-            return _Delta()
-
-    assert panel._should_forward_from_list(_Wheel()) is True
-    panel._forward_wheel_to_parent(_Wheel())
-    assert parent.called == 1
+    assert page._provider_table.verticalScrollBar().maximum() > 0
 
 
 def test_proxy_manual_layout_places_input_left_of_mode_combo(_qapp) -> None:

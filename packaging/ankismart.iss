@@ -1,7 +1,7 @@
 ; Ankismart installer script (Inno Setup 6)
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.2"
+  #define MyAppVersion "0.1.4"
 #endif
 
 #ifndef ProjectRoot
@@ -41,6 +41,7 @@ WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
+UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl"
@@ -60,10 +61,13 @@ Name: "{app}\data"
 Name: "{app}\logs"
 Name: "{app}\cache"
 
+[Tasks]
+Name: "desktopicon"; Description: "{cm:CreateDesktopShortcutOnFinish}"; Flags: unchecked
+
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('{autodesktop}\{#MyAppName}.lnk'); $s.TargetPath='{app}\{#MyAppExeName}'; $s.WorkingDirectory='{app}'; $s.IconLocation='{app}\{#MyAppExeName},0'; $s.Save()"""; Description: "{cm:CreateDesktopShortcutOnFinish}"; Flags: runhidden postinstall skipifsilent

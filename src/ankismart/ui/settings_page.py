@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import re
 import uuid
 from datetime import datetime
@@ -93,6 +94,10 @@ _GITHUB_RELEASES_WEB_URL = "https://github.com/lllll081926i/Ankismart/releases"
 
 
 _OCR_CONVERTER_MODULE = None
+_CACHE_STATS_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1,
+    thread_name_prefix="settings-cache-stats",
+)
 
 
 class OCRRuntimeUnavailableError(RuntimeError):
@@ -249,6 +254,8 @@ class SettingsPage(ScrollArea):
         self._provider_test_worker = None
         self._anki_test_worker = None
         self._ocr_cloud_test_worker = None
+        self._cache_stats_seq = 0
+        self._cache_stats_future: concurrent.futures.Future | None = None
         self._ocr_card_height_bounds: dict[int, tuple[int, int]] = {}
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setSingleShot(True)
@@ -1079,7 +1086,7 @@ class SettingsPage(ScrollArea):
         self._split_threshold_spinbox.setValue(config.split_threshold)
 
         # Cache statistics
-        self._refresh_cache_stats()
+        self._refresh_cache_stats_deferred()
 
         # Log level
         log_level_map = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3}
@@ -1566,9 +1573,51 @@ class SettingsPage(ScrollArea):
     def _refresh_cache_stats(self) -> None:
         """Refresh cache statistics display."""
         from ankismart.converter.cache import get_cache_stats
-        from ankismart.ui.i18n import t
 
         stats = get_cache_stats()
+        self._apply_cache_stats(stats)
+
+    def _refresh_cache_stats_deferred(self) -> None:
+        """Refresh cache statistics in a background thread to avoid UI stalls."""
+        self._cache_stats_seq += 1
+        seq = self._cache_stats_seq
+        is_zh = self._main.config.language == "zh"
+        pending_text = "统计中..." if is_zh else "Loading..."
+        self._cache_size_card.setContent(pending_text)
+        self._cache_count_card.setContent(pending_text)
+        self._cache_stats_future = _CACHE_STATS_EXECUTOR.submit(self._compute_cache_stats)
+        QTimer.singleShot(10, lambda token=seq: self._poll_cache_stats_future(token))
+
+    @staticmethod
+    def _compute_cache_stats() -> dict[str, float | int]:
+        from ankismart.converter.cache import get_cache_stats
+
+        return get_cache_stats()
+
+    def _poll_cache_stats_future(self, token: int) -> None:
+        if token != self._cache_stats_seq:
+            return
+        future = self._cache_stats_future
+        if future is None:
+            return
+        if not future.done():
+            QTimer.singleShot(30, lambda token=token: self._poll_cache_stats_future(token))
+            return
+
+        self._cache_stats_future = None
+        is_zh = self._main.config.language == "zh"
+        try:
+            stats = future.result()
+        except Exception:
+            failed_text = "统计失败" if is_zh else "Failed to load"
+            self._cache_size_card.setContent(failed_text)
+            self._cache_count_card.setContent(failed_text)
+            return
+        self._apply_cache_stats(stats)
+
+    def _apply_cache_stats(self, stats: dict[str, float | int]) -> None:
+        from ankismart.ui.i18n import t
+
         size_mb = stats["size_mb"]
         count = stats["count"]
 

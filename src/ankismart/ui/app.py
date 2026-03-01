@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import sys
+import threading
 import traceback
 from datetime import date, datetime
 from pathlib import Path
@@ -18,7 +19,7 @@ from pathlib import Path
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "1")
 
 import httpx
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from qfluentwidgets import InfoBar, InfoBarPosition, Theme, isDarkTheme, setTheme, setThemeColor
@@ -34,6 +35,10 @@ logger = get_logger("app")
 _GITHUB_RELEASES_API_URL = "https://api.github.com/repos/lllll081926i/Ankismart/releases/latest"
 _GITHUB_TAGS_API_URL = "https://api.github.com/repos/lllll081926i/Ankismart/tags?per_page=1"
 _GITHUB_RELEASES_WEB_URL = "https://github.com/lllll081926i/Ankismart/releases"
+
+
+class _StartupUpdateCheckBridge(QObject):
+    finished = pyqtSignal(dict)
 
 
 def _get_icon_path() -> Path:
@@ -293,6 +298,68 @@ def _install_global_exception_hooks(config_getter) -> None:
         logger.debug("threading.excepthook is unavailable")
 
 
+def _notify_update_if_needed(window: MainWindow, update_result: dict[str, object]) -> None:
+    if not update_result.get("should_notify"):
+        return
+    latest_version = str(update_result.get("latest_version", "")).strip()
+    is_zh = str(getattr(window.config, "language", "zh")) == "zh"
+    InfoBar.info(
+        title="发现新版本" if is_zh else "Update Available",
+        content=(
+            f"当前版本 {__version__}，最新版本 {latest_version}。"
+            "可在设置页“版本更新”查看发布页。"
+            if is_zh
+            else (
+                f"Current version {__version__}, latest {latest_version}. "
+                "Open releases from Settings > Version Update."
+            )
+        ),
+        orient=Qt.Orientation.Horizontal,
+        isClosable=True,
+        position=InfoBarPosition.TOP,
+        duration=7000,
+        parent=window,
+    )
+
+
+def _start_post_show_tasks(window: MainWindow) -> None:
+    """Start non-critical tasks only after first frame is rendered."""
+    window.bootstrap_secondary_pages()
+
+    bridge = _StartupUpdateCheckBridge(window)
+    setattr(window, "_startup_update_check_bridge", bridge)
+
+    def _on_finished(result: dict[str, object]) -> None:
+        try:
+            _notify_update_if_needed(window, result)
+        except Exception as exc:
+            logger.debug(f"Failed to render update infobar: {exc}")
+        finally:
+            setattr(window, "_startup_update_check_bridge", None)
+            bridge.deleteLater()
+
+    bridge.finished.connect(_on_finished)
+
+    def _worker() -> None:
+        try:
+            result = _auto_check_latest_version(window.config)
+        except Exception as exc:
+            logger.debug(f"Async startup update check failed: {exc}")
+            result = {
+                "checked": False,
+                "has_update": False,
+                "should_notify": False,
+                "latest_version": "",
+                "latest_url": _GITHUB_RELEASES_WEB_URL,
+            }
+        try:
+            bridge.finished.emit(result)
+        except Exception as exc:
+            logger.debug(f"Failed to publish update-check result: {exc}")
+
+    threading.Thread(target=_worker, name="startup-update-check", daemon=True).start()
+
+
 def main() -> int:
     """Main application entry point.
 
@@ -341,7 +408,6 @@ def main() -> int:
 
         state = {"config": config, "window": window}
         _install_global_exception_hooks(lambda: state.get("window").config)
-        update_result = _auto_check_latest_version(window.config)
 
         # Restore window geometry if available
         if config.window_geometry:
@@ -349,26 +415,7 @@ def main() -> int:
 
         # Show window
         window.show()
-        if update_result.get("should_notify"):
-            latest_version = str(update_result.get("latest_version", "")).strip()
-            is_zh = str(getattr(window.config, "language", "zh")) == "zh"
-            InfoBar.info(
-                title="发现新版本" if is_zh else "Update Available",
-                content=(
-                    f"当前版本 {__version__}，最新版本 {latest_version}。"
-                    "可在设置页“版本更新”查看发布页。"
-                    if is_zh
-                    else (
-                        f"Current version {__version__}, latest {latest_version}. "
-                        "Open releases from Settings > Version Update."
-                    )
-                ),
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=7000,
-                parent=window,
-            )
+        QTimer.singleShot(0, lambda: _start_post_show_tasks(window))
         logger.info("Application started successfully")
 
         # Run event loop
