@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtWidgets import QApplication
 
 from ankismart.core.models import CardDraft, CardPushStatus, PushResult
@@ -56,6 +57,7 @@ class _ThreadLikeWorker:
         self._running = running
         self.wait_calls: list[int] = []
         self.cancel_called = False
+        self.terminate_called = False
         self.deleted = False
 
     def isRunning(self) -> bool:  # noqa: N802
@@ -66,6 +68,9 @@ class _ThreadLikeWorker:
 
     def cancel(self) -> None:
         self.cancel_called = True
+
+    def terminate(self) -> None:
+        self.terminate_called = True
 
     def deleteLater(self) -> None:  # noqa: N802
         self.deleted = True
@@ -165,6 +170,26 @@ def test_cleanup_push_worker_releases_finished_worker(_qapp) -> None:
 
     assert page._worker is None
     assert worker.deleted is True
+
+
+def test_close_event_does_not_force_terminate_running_worker(_qapp, monkeypatch) -> None:
+    page = ResultPage(_FakeMainWindow())
+    worker = _ThreadLikeWorker(running=True)
+    page._worker = worker
+
+    warning_calls: list[str] = []
+    monkeypatch.setattr(
+        "ankismart.ui.result_page.logger.warning",
+        lambda msg: warning_calls.append(msg),
+    )
+
+    page.closeEvent(QCloseEvent())
+
+    assert worker.cancel_called is True
+    assert worker.wait_calls == [200]
+    assert worker.terminate_called is False
+    assert page._worker is worker
+    assert len(warning_calls) == 1
 
 
 def test_retry_failed_returns_when_worker_running(_qapp, monkeypatch) -> None:

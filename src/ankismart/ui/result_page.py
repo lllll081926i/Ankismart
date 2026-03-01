@@ -1194,13 +1194,13 @@ class ResultPage(QWidget):
             worker.deleteLater()
 
     def closeEvent(self, event):  # noqa: N802
-        """Stop push worker quickly during application shutdown."""
-        if self._worker and self._worker.isRunning():
-            if hasattr(self._worker, "cancel"):
-                self._worker.cancel()
-            self._worker.terminate()
-            self._worker.wait(100)
+        """Request cooperative worker cancellation during application shutdown."""
         self._cleanup_push_worker()
+        if self._worker and self._worker.isRunning():
+            logger.warning(
+                "Push worker is still running during close event; "
+                "skip force terminate to avoid inconsistent shutdown state"
+            )
         super().closeEvent(event)
 
     def update_theme(self):
