@@ -257,8 +257,6 @@ class SettingsPage(ScrollArea):
         self._cache_stats_seq = 0
         self._cache_stats_future: concurrent.futures.Future | None = None
         self._ocr_card_height_bounds: dict[int, tuple[int, int]] = {}
-        self._section_targets: dict[str, QWidget] = {}
-        self._section_anchor_buttons: dict[str, PushButton] = {}
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setSingleShot(True)
         self._autosave_timer.setInterval(400)
@@ -414,7 +412,6 @@ class SettingsPage(ScrollArea):
         """Apply theme-aware styles for non-Fluent labels in settings page."""
         self._apply_background_style()
         self._apply_provider_table_style()
-        self._apply_overview_styles()
         if hasattr(self, "_ocr_model_recommend_label"):
             self._ocr_model_recommend_label.setStyleSheet("")
         if hasattr(self, "_provider_list_widget") and self._provider_list_widget:
@@ -436,204 +433,10 @@ class SettingsPage(ScrollArea):
             "}"
         )
 
-    def _build_page_overview(self) -> QWidget:
-        card = QWidget(self.scrollWidget)
-        card.setObjectName("settingsOverviewCard")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(20, 18, 20, 18)
-        layout.setSpacing(12)
-
-        self._overview_title_label = BodyLabel(card)
-        self._overview_desc_label = BodyLabel(card)
-        self._overview_status_label = BodyLabel(card)
-        self._overview_desc_label.setWordWrap(True)
-        self._overview_status_label.setWordWrap(True)
-        layout.addWidget(self._overview_title_label)
-        layout.addWidget(self._overview_desc_label)
-        layout.addWidget(self._overview_status_label)
-
-        summary_row = QHBoxLayout()
-        summary_row.setContentsMargins(0, 4, 0, 0)
-        summary_row.setSpacing(12)
-        (
-            self._overview_provider_box,
-            self._overview_provider_value,
-        ) = self._create_overview_metric(card, "LLM")
-        (
-            self._overview_anki_box,
-            self._overview_anki_value,
-        ) = self._create_overview_metric(card, "Anki")
-        (
-            self._overview_ocr_box,
-            self._overview_ocr_value,
-        ) = self._create_overview_metric(card, "OCR")
-        (
-            self._overview_proxy_box,
-            self._overview_proxy_value,
-        ) = self._create_overview_metric(card, "Proxy")
-        for box in (
-            self._overview_provider_box,
-            self._overview_anki_box,
-            self._overview_ocr_box,
-            self._overview_proxy_box,
-        ):
-            summary_row.addWidget(box, 1)
-        layout.addLayout(summary_row)
-        return card
-
-    def _create_overview_metric(self, parent: QWidget, title: str) -> tuple[QWidget, BodyLabel]:
-        box = QWidget(parent)
-        box.setObjectName("settingsOverviewMetric")
-        layout = QVBoxLayout(box)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(4)
-        title_label = BodyLabel(title, box)
-        value_label = BodyLabel("-", box)
-        title_label.setProperty("role", "metric-title")
-        value_label.setProperty("role", "metric-value")
-        value_label.setWordWrap(True)
-        layout.addWidget(title_label)
-        layout.addWidget(value_label)
-        return box, value_label
-
-    def _build_anchor_bar(self) -> QWidget:
-        bar = QWidget(self.scrollWidget)
-        bar.setObjectName("settingsAnchorBar")
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(16, 10, 16, 10)
-        layout.setSpacing(8)
-        self._section_anchor_buttons = {}
-        for key, label in self._section_anchor_specs():
-            button = PushButton(label, bar)
-            button.setObjectName(f"settingsAnchorButton_{key}")
-            button.clicked.connect(
-                lambda _checked=False, target=key: self._scroll_to_section(target)
-            )
-            self._section_anchor_buttons[key] = button
-            layout.addWidget(button)
-        layout.addStretch(1)
-        return bar
-
-    def _section_anchor_specs(self) -> list[tuple[str, str]]:
-        is_zh = self._main.config.language == "zh"
-        return [
-            ("llm", "LLM"),
-            ("anki", "Anki"),
-            ("ocr", "OCR"),
-            ("network", "网络与语言" if is_zh else "Network & Language"),
-            ("cache", "缓存与实验" if is_zh else "Cache & Experimental"),
-            ("maintenance", "关于与维护" if is_zh else "Maintenance"),
-        ]
-
-    def _scroll_to_section(self, section_key: str) -> None:
-        target = self._section_targets.get(section_key)
-        if target is None:
-            return
-        self.ensureWidgetVisible(target, 0, 24)
-
-    def _refresh_page_overview(self) -> None:
-        is_zh = self._main.config.language == "zh"
-        config = self._main.config
-        provider = config.active_provider
-        provider_text = provider.name.strip() if provider and provider.name.strip() else (
-            "未配置" if is_zh else "Not configured"
-        )
-        anki_text = config.anki_connect_url.strip() or ("未配置" if is_zh else "Not configured")
-        ocr_mode = getattr(config, "ocr_mode", "local")
-        ocr_text = (
-            "云 OCR（MinerU）"
-            if ocr_mode == "cloud" and is_zh
-            else "Cloud OCR"
-            if ocr_mode == "cloud"
-            else "本地模型"
-            if is_zh
-            else "Local Model"
-        )
-        proxy_mode = getattr(config, "proxy_mode", "system")
-        proxy_text_map = {
-            "system": "系统代理" if is_zh else "System",
-            "manual": "手动代理" if is_zh else "Manual",
-            "none": "不使用代理" if is_zh else "Disabled",
-        }
-        proxy_text = proxy_text_map.get(proxy_mode, proxy_text_map["system"])
-
-        blockers: list[str] = []
-        if provider is None:
-            blockers.append("LLM")
-        if not str(config.anki_connect_url).strip():
-            blockers.append("Anki")
-        if ocr_mode == "cloud" and (
-            not str(getattr(config, "ocr_cloud_endpoint", "")).strip()
-            or not str(getattr(config, "ocr_cloud_api_key", "")).strip()
-        ):
-            blockers.append("OCR")
-
-        self._overview_title_label.setText("设置" if is_zh else "Settings")
-        self._overview_desc_label.setText(
-            "统一管理模型、Anki、OCR、代理与维护操作。"
-            if is_zh
-            else "Manage models, Anki, OCR, network and maintenance actions."
-        )
-        if blockers:
-            pending_text = ", ".join(blockers)
-            self._overview_status_label.setText(
-                f"仍有关键配置待确认：{pending_text}"
-                if is_zh
-                else f"Configuration still needs attention: {pending_text}"
-            )
-        else:
-            self._overview_status_label.setText(
-                "关键配置已就绪，可直接继续使用。"
-                if is_zh
-                else "Core configuration is ready."
-            )
-
-        self._overview_provider_value.setText(provider_text)
-        self._overview_anki_value.setText(anki_text)
-        self._overview_ocr_value.setText(ocr_text)
-        self._overview_proxy_value.setText(proxy_text)
-
-    def _apply_overview_styles(self) -> None:
-        palette = get_list_widget_palette(dark=isDarkTheme())
-        if hasattr(self, "_overview_card"):
-            self._overview_card.setStyleSheet(
-                "QWidget#settingsOverviewCard {"
-                f"background-color: {palette.background};"
-                f"border: 1px solid {palette.border};"
-                "border-radius: 12px;"
-                "}"
-                "QWidget#settingsOverviewMetric {"
-                f"background-color: {palette.hover};"
-                f"border: 1px solid {palette.border};"
-                "border-radius: 10px;"
-                "}"
-            )
-        for label_name, size, weight in (
-            ("_overview_title_label", 24, 700),
-            ("_overview_desc_label", 13, 400),
-            ("_overview_status_label", 12, 500),
-        ):
-            label = getattr(self, label_name, None)
-            if label is not None:
-                label.setStyleSheet(f"font-size: {size}px; font-weight: {weight};")
-        if hasattr(self, "_anchor_bar"):
-            self._anchor_bar.setStyleSheet(
-                "QWidget#settingsAnchorBar {"
-                f"background-color: {palette.background};"
-                f"border: 1px solid {palette.border};"
-                "border-radius: 10px;"
-                "}"
-            )
-
     def _init_layout(self):
         """Initialize layout and add all setting cards."""
         self.expandLayout.setSpacing(SPACING_MEDIUM)
         self.expandLayout.setContentsMargins(36, 10, 36, 0)
-
-        self._overview_card = self._build_page_overview()
-        self.expandLayout.addWidget(self._overview_card)
-        self._anchor_bar = self._build_anchor_bar()
-        self.expandLayout.addWidget(self._anchor_bar)
 
         # ── LLM Configuration Group ──
         self._llm_group = SettingCardGroup("LLM 配置", self.scrollWidget)
@@ -649,7 +452,6 @@ class SettingsPage(ScrollArea):
         self._llm_group.addSettingCard(self._provider_mgmt_card)
 
         self.expandLayout.addWidget(self._llm_group)
-        self._section_targets["llm"] = self._llm_group
 
         # Provider table (standalone widget below the group, reduced spacing)
         self._provider_table = QTableWidget(self.scrollWidget)
@@ -840,7 +642,6 @@ class SettingsPage(ScrollArea):
         self._anki_group.addSettingCard(self._test_connection_card)
 
         self.expandLayout.addWidget(self._anki_group)
-        self._section_targets["anki"] = self._anki_group
 
         # ── Network & Language Group ──
         self._network_group = SettingCardGroup("网络与语言", self.scrollWidget)
@@ -1101,9 +902,7 @@ class SettingsPage(ScrollArea):
         self._ocr_group.addSettingCard(self._ocr_cuda_detect_card)
 
         self.expandLayout.addWidget(self._ocr_group)
-        self._section_targets["ocr"] = self._ocr_group
         self.expandLayout.addWidget(self._network_group)
-        self._section_targets["network"] = self._network_group
 
         # ── Cache Management Group ──
         self._cache_group = SettingCardGroup("缓存管理", self.scrollWidget)
@@ -1129,7 +928,6 @@ class SettingsPage(ScrollArea):
         self._cache_group.addSettingCard(self._cache_count_card)
 
         self.expandLayout.addWidget(self._cache_group)
-        self._section_targets["cache"] = self._cache_group
 
         # ── Experimental Features Group ──
         self._experimental_group = SettingCardGroup("实验性功能", self.scrollWidget)
@@ -1246,7 +1044,6 @@ class SettingsPage(ScrollArea):
 
         # Keep "Other Settings" at the very bottom.
         self.expandLayout.addWidget(self._other_group)
-        self._section_targets["maintenance"] = self._other_group
 
     def _load_config(self) -> None:
         """Load configuration from main window."""
@@ -1321,7 +1118,6 @@ class SettingsPage(ScrollArea):
         # Log level
         log_level_map = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3}
         self._log_level_combobox.setCurrentIndex(log_level_map.get(config.log_level, 1))
-        self._refresh_page_overview()
 
     def _update_provider_list(self) -> None:
         """Update provider table display."""
@@ -1664,7 +1460,6 @@ class SettingsPage(ScrollArea):
                 self._active_provider_id = provider.id
 
         self._update_provider_list()
-        self._refresh_page_overview()
         self._save_config_silent(show_feedback=False)
 
     def _delete_provider(self, provider: LLMProviderConfig) -> None:
@@ -1691,7 +1486,6 @@ class SettingsPage(ScrollArea):
         """Set a provider as active."""
         self._active_provider_id = provider.id
         self._update_provider_list()
-        self._refresh_page_overview()
         self._save_config_silent(show_feedback=False)
 
     def _test_provider_connection(self, provider: LLMProviderConfig) -> None:
@@ -2255,7 +2049,6 @@ class SettingsPage(ScrollArea):
             else:
                 self._main.config = config
                 save_config(config)
-            self._refresh_page_overview()
 
             # Configure OCR runtime only when OCR settings are changed.
             if should_reset_ocr_runtime and getattr(config, "ocr_mode", "local") == "local":
@@ -2309,7 +2102,6 @@ class SettingsPage(ScrollArea):
                 self._main.config = default_config
                 save_config(default_config)
             self._load_config()
-            self._refresh_page_overview()
             QMessageBox.information(self, "重置完成", "设置已恢复为默认值")
 
     def _export_logs(self) -> None:
@@ -2446,11 +2238,6 @@ class SettingsPage(ScrollArea):
                 if is_zh
                 else f"Save all configuration changes ({save_shortcut})"
             )
-        for key, label in self._section_anchor_specs():
-            button = self._section_anchor_buttons.get(key)
-            if button is not None:
-                button.setText(label)
-        self._refresh_page_overview()
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""

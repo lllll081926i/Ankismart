@@ -119,20 +119,12 @@ def test_other_group_stays_at_bottom(_qapp) -> None:
     assert page._other_group.y() > max_other_y
 
 
-def test_settings_page_exposes_overview_and_anchor_bar(_qapp) -> None:
+def test_settings_page_does_not_render_overview_or_anchor_bar(_qapp) -> None:
     main, _ = make_main()
     page = SettingsPage(main)
 
-    assert page._overview_card is not None
-    assert page._anchor_bar is not None
-    assert list(page._section_anchor_buttons) == [
-        "llm",
-        "anki",
-        "ocr",
-        "network",
-        "cache",
-        "maintenance",
-    ]
+    assert not hasattr(page, "_overview_card")
+    assert not hasattr(page, "_anchor_bar")
 
 
 def test_scroll_step_is_tuned_for_faster_following(_qapp) -> None:

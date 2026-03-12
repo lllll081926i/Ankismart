@@ -278,7 +278,7 @@ def test_save_config_persists_adaptive_concurrency_and_update_flags(_qapp, monke
     assert captured["cfg"].auto_check_updates is False
 
 
-def test_overview_reflects_current_config_summary(_qapp) -> None:
+def test_settings_page_uses_llm_group_as_top_content(_qapp) -> None:
     provider = LLMProviderConfig(
         id="p1",
         name="OpenAI",
@@ -296,10 +296,9 @@ def test_overview_reflects_current_config_summary(_qapp) -> None:
     )
     main, _ = make_main(cfg)
     page = SettingsPage(main)
+    page.resize(1200, 900)
+    page.show()
+    _qapp.processEvents()
 
-    assert "OpenAI" in page._overview_provider_value.text()
-    assert "127.0.0.1:8765" in page._overview_anki_value.text()
-    assert ("云" in page._overview_ocr_value.text()) or ("Cloud" in page._overview_ocr_value.text())
-    assert ("手动" in page._overview_proxy_value.text()) or (
-        "Manual" in page._overview_proxy_value.text()
-    )
+    assert page._llm_group.y() < page._provider_table.y()
+    assert page._llm_group.y() < page._anki_group.y()
