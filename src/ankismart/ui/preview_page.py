@@ -1209,13 +1209,6 @@ class PreviewPage(ProgressMixin, QWidget):
                 "duration_seconds": round(elapsed, 2),
             },
         )
-        record_operation_metric(
-            self._main.config,
-            event="generate",
-            duration_seconds=elapsed,
-            success=status != "failed",
-            error_code="partial" if status == "partial" else "",
-        )
         save_config(self._main.config)
         self._refresh_generation_hint()
 
@@ -1302,13 +1295,6 @@ class PreviewPage(ProgressMixin, QWidget):
             status="failed",
             summary=f"生成失败: {error}",
             payload={"duration_seconds": round(elapsed, 2)},
-        )
-        record_operation_metric(
-            self._main.config,
-            event="generate",
-            duration_seconds=elapsed,
-            success=False,
-            error_code="failed",
         )
         save_config(self._main.config)
         self._refresh_generation_hint()

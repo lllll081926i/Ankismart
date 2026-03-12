@@ -4,6 +4,7 @@ import sys
 from unittest.mock import MagicMock
 
 from PyQt6.QtWidgets import QApplication
+from pytest import mark
 
 from ankismart.core.models import (
     BatchConvertResult,
@@ -262,6 +263,51 @@ class TestPreviewPageFlow:
 
         assert "最近生成 15.0 秒" in page._performance_hint_label.text()
         assert "P50 12.0 秒" in page._performance_hint_label.text()
+
+    @mark.parametrize(
+        ("callback_name", "args"),
+        [
+            ("_on_generation_finished", ([MagicMock()],)),
+            ("_on_generation_error", ("boom",)),
+        ],
+    )
+    def test_generation_callbacks_do_not_record_metric_again(
+        self, monkeypatch, callback_name: str, args: tuple[object, ...]
+    ):
+        main = _make_main_window()
+        main.config.language = "zh"
+        page = PreviewPage(main)
+        page._generation_start_ts = 0.0
+
+        metric_calls = {"count": 0}
+        monkeypatch.setattr("ankismart.ui.preview_page.append_task_history", lambda *a, **k: None)
+        monkeypatch.setattr(
+            "ankismart.ui.preview_page.record_operation_metric",
+            lambda *a, **k: metric_calls.__setitem__("count", metric_calls["count"] + 1),
+        )
+        monkeypatch.setattr("ankismart.ui.preview_page.save_config", lambda cfg: None)
+        monkeypatch.setattr(
+            "ankismart.ui.preview_page.build_error_display",
+            lambda error, language: {"title": "失败", "content": error},
+        )
+        monkeypatch.setattr(
+            "ankismart.ui.preview_page.InfoBar",
+            type(
+                "_InfoBarStub",
+                (),
+                {
+                    "warning": staticmethod(lambda *a, **k: None),
+                    "success": staticmethod(lambda *a, **k: None),
+                    "info": staticmethod(lambda *a, **k: None),
+                    "error": staticmethod(lambda *a, **k: None),
+                },
+            ),
+        )
+        monkeypatch.setattr(PreviewPage, "_count_low_quality_cards", lambda self, cards: 0)
+
+        getattr(page, callback_name)(*args)
+
+        assert metric_calls["count"] == 0
 
 
 class TestPreviewPageWorkerCleanup:

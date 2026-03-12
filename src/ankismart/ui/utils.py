@@ -116,7 +116,7 @@ def format_operation_hint(config: AppConfig, *, event: str, language: str) -> st
     history_event_map = {
         "convert": "batch_convert",
         "generate": "batch_generate",
-        "push": "push_anki",
+        "push": "batch_push",
         "export": "export_apkg",
     }
     title_map = {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.ui import import_page
@@ -372,5 +373,142 @@ def test_build_startup_precheck_summary_counts_pending_items() -> None:
         ],
     )
 
-    assert "2" in summary
+    assert "1" in summary
     assert ("预检" in summary) or ("preflight" in summary.lower())
+
+
+def test_start_generate_cards_delegates_to_convert_without_auto_generate_flag(monkeypatch):
+    page = make_page()
+    page._file_paths = [Path("a.md")]
+    calls = {"count": 0}
+
+    monkeypatch.setattr(
+        ImportPage,
+        "_start_convert",
+        lambda self: calls.__setitem__("count", calls["count"] + 1),
+    )
+
+    ImportPage._start_generate_cards(page)
+
+    assert calls["count"] == 1
+    assert "_auto_generate_after_convert" not in page.__dict__
+
+
+def test_get_start_convert_text_matches_manual_conversion_flow() -> None:
+    assert ImportPage._get_start_convert_text("zh") == "开始转换"
+    assert ImportPage._get_start_convert_text("en") == "Start Conversion"
+
+
+def test_on_batch_convert_done_does_not_record_metric_again(monkeypatch) -> None:
+    page = make_page()
+    page._file_paths = [Path("a.md")]
+    page._convert_start_ts = 0.0
+    page._main._switched_to_preview = False
+
+    metric_calls = {"count": 0}
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.append_task_history",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.record_operation_metric",
+        lambda *args, **kwargs: metric_calls.__setitem__("count", metric_calls["count"] + 1),
+    )
+    monkeypatch.setattr("ankismart.ui.import_page.save_config", lambda cfg: None)
+    monkeypatch.setattr("ankismart.ui.import_page.register_cloud_ocr_usage", lambda *args: None)
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.InfoBar",
+        type(
+            "_InfoBarStub",
+            (),
+            {
+                "warning": staticmethod(lambda *args, **kwargs: None),
+                "success": staticmethod(lambda *args, **kwargs: None),
+                "info": staticmethod(lambda *args, **kwargs: None),
+                "error": staticmethod(lambda *args, **kwargs: None),
+            },
+        ),
+    )
+
+    ImportPage._on_batch_convert_done(
+        page,
+        SimpleNamespace(documents=[object()], errors=[], warnings=[]),
+    )
+
+    assert metric_calls["count"] == 0
+    assert page._main._switched_to_preview is True
+
+
+def test_on_batch_convert_done_records_metric_when_all_files_failed(monkeypatch) -> None:
+    page = make_page()
+    page._file_paths = [Path("a.md")]
+    page._convert_start_ts = 0.0
+
+    metric_calls = {"count": 0}
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.append_task_history",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.record_operation_metric",
+        lambda *args, **kwargs: metric_calls.__setitem__("count", metric_calls["count"] + 1),
+    )
+    monkeypatch.setattr("ankismart.ui.import_page.save_config", lambda cfg: None)
+    monkeypatch.setattr("ankismart.ui.import_page.register_cloud_ocr_usage", lambda *args: None)
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.InfoBar",
+        type(
+            "_InfoBarStub",
+            (),
+            {
+                "warning": staticmethod(lambda *args, **kwargs: None),
+                "success": staticmethod(lambda *args, **kwargs: None),
+                "info": staticmethod(lambda *args, **kwargs: None),
+                "error": staticmethod(lambda *args, **kwargs: None),
+            },
+        ),
+    )
+
+    ImportPage._on_batch_convert_done(
+        page,
+        SimpleNamespace(documents=[], errors=["a.md: boom"], warnings=[]),
+    )
+
+    assert metric_calls["count"] == 1
+
+
+def test_on_convert_error_does_not_record_metric_again(monkeypatch) -> None:
+    page = make_page()
+    page._convert_start_ts = 0.0
+
+    metric_calls = {"count": 0}
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.append_task_history",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.record_operation_metric",
+        lambda *args, **kwargs: metric_calls.__setitem__("count", metric_calls["count"] + 1),
+    )
+    monkeypatch.setattr("ankismart.ui.import_page.save_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.build_error_display",
+        lambda error, language: {"title": "失败", "content": error},
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.InfoBar",
+        type(
+            "_InfoBarStub",
+            (),
+            {
+                "warning": staticmethod(lambda *args, **kwargs: None),
+                "success": staticmethod(lambda *args, **kwargs: None),
+                "info": staticmethod(lambda *args, **kwargs: None),
+                "error": staticmethod(lambda *args, **kwargs: None),
+            },
+        ),
+    )
+
+    ImportPage._on_convert_error(page, "boom")
+
+    assert metric_calls["count"] == 0

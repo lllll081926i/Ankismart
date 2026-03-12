@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ankismart.core.config import AppConfig
+from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.ui.import_page import _STRATEGY_TEMPLATE_LIBRARY, ImportPage
 from ankismart.ui.utils import format_operation_hint
 from ankismart.ui.workflows import (
@@ -276,10 +276,35 @@ def test_build_startup_precheck_report_marks_missing_provider() -> None:
         get_missing_ocr_models=lambda **_: [],
     )
 
-    assert report.summary == "首次使用预检：还有 2 项待确认。"
+    assert report.summary == "首次使用预检：还有 1 项待确认。"
     assert report.items[0].key == "llm"
     assert report.items[0].status == "warning"
     assert "未配置 LLM 提供商" in report.items[0].detail
+
+
+def test_build_startup_precheck_report_does_not_count_info_items_as_pending() -> None:
+    config = AppConfig(
+        language="zh",
+        llm_providers=[
+            LLMProviderConfig(
+                id="p1",
+                name="OpenAI",
+                api_key="test-key",
+                base_url="https://api.openai.com/v1",
+                model="gpt-4o",
+            )
+        ],
+        active_provider_id="p1",
+        anki_connect_url="http://127.0.0.1:8765",
+    )
+
+    report = build_startup_precheck_report(
+        config,
+        get_missing_ocr_models=lambda **_: [],
+    )
+
+    assert report.summary == "首次使用预检已通过，可以直接开始导入。"
+    assert [item.status for item in report.items] == ["success", "info", "success"]
 
 
 def test_validate_convert_request_rejects_missing_api_key_for_non_ollama() -> None:
@@ -350,6 +375,24 @@ def test_format_operation_hint_includes_last_and_median() -> None:
 
     assert "最近转换 14.0 秒" in text
     assert "P50 10.0 秒" in text
+
+
+def test_format_operation_hint_reads_batch_push_history() -> None:
+    config = AppConfig(language="zh")
+    config.ops_push_durations = [4.0, 8.0, 12.0]
+    config.task_history = [
+        {
+            "event": "batch_push",
+            "status": "success",
+            "summary": "推送成功 12 张，失败 0 张",
+            "payload": {"duration_seconds": 12.0},
+        }
+    ]
+
+    text = format_operation_hint(config, event="push", language="zh")
+
+    assert "最近推送 12.0 秒" in text
+    assert "P50 8.0 秒" in text
 
 
 def test_import_page_refresh_conversion_hint_uses_metrics() -> None:

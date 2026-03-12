@@ -555,7 +555,6 @@ class ImportPage(ProgressMixin, QWidget):
         self._ocr_download_worker: OCRModelDownloadWorker | None = None
         self._state_tooltip: StateToolTip | None = None
         self._model_check_in_progress = False
-        self._auto_generate_after_convert = False  # Flag for auto card generation
         self._last_ocr_progress_message: str = ""
         self._last_ocr_page_status_message: str = ""
         self._last_convert_ocr_message: str = ""
@@ -831,7 +830,7 @@ class ImportPage(ProgressMixin, QWidget):
                 for item in items
             ),
         )
-        pending_count = sum(1 for item in report.items if item.status != "success")
+        pending_count = sum(1 for item in report.items if item.status == "warning")
         if pending_count == 0:
             return (
                 "首次使用预检已通过，可以直接开始导入。"
@@ -843,6 +842,10 @@ class ImportPage(ProgressMixin, QWidget):
             if self._main.config.language == "zh"
             else f"Preflight: {pending_count} items still need attention."
         )
+
+    @staticmethod
+    def _get_start_convert_text(language: str) -> str:
+        return "开始转换" if language == "zh" else "Start Conversion"
 
     def _create_config_group(self) -> QWidget:
         """Create configuration area with custom title bar."""
@@ -865,14 +868,16 @@ class ImportPage(ProgressMixin, QWidget):
         title_bar_layout.addWidget(title_label)
         title_bar_layout.addStretch()
 
-        self._btn_generate_cards = PrimaryPushButton("开始生成卡片" if is_zh else "Generate Cards")
+        self._btn_generate_cards = PrimaryPushButton(
+            self._get_start_convert_text(self._main.config.language)
+        )
         self._btn_generate_cards.setIcon(FluentIcon.SEND)
         self._btn_generate_cards.setFixedHeight(32)
         self._btn_generate_cards.setMinimumWidth(140)
         self._btn_generate_cards.clicked.connect(self._start_generate_cards)
         title_bar_layout.addWidget(self._btn_generate_cards)
 
-        # Keep compatibility with existing generation flow handlers.
+        # Keep compatibility with existing conversion flow handlers.
         self._btn_convert = self._btn_generate_cards
 
         container_layout.addWidget(title_bar)
@@ -1170,7 +1175,7 @@ class ImportPage(ProgressMixin, QWidget):
         is_zh = self._main.config.language == "zh"
 
         # Add shortcut hints to button tooltips
-        start_text = "开始生成" if is_zh else "Start Generation"
+        start_text = self._get_start_convert_text(self._main.config.language)
         start_shortcut = get_shortcut_text(
             ShortcutKeys.START_GENERATION, self._main.config.language
         )
@@ -1735,7 +1740,7 @@ class ImportPage(ProgressMixin, QWidget):
         return True
 
     def _start_generate_cards(self):
-        """Start the full card generation workflow: convert files then generate cards."""
+        """Start document conversion from the configuration panel."""
         # First check if we have files
         if not self._file_paths:
             InfoBar.warning(
@@ -1751,14 +1756,10 @@ class ImportPage(ProgressMixin, QWidget):
             )
             return
 
-        # Set flag to auto-generate cards after conversion
-        self._auto_generate_after_convert = True
-
-        # Start conversion
         self._start_convert()
 
     def _start_convert(self):
-        """Start batch conversion and generation."""
+        """Start batch conversion."""
         is_zh = self._main.config.language == "zh"
 
         # Validation: Target card count
@@ -2363,13 +2364,14 @@ class ImportPage(ProgressMixin, QWidget):
                 "cloud_pages": cloud_pages,
             },
         )
-        record_operation_metric(
-            self._main.config,
-            event="convert",
-            duration_seconds=elapsed,
-            success=status != "failed",
-            error_code="partial" if status == "partial" else "",
-        )
+        if not result.documents:
+            record_operation_metric(
+                self._main.config,
+                event="convert",
+                duration_seconds=elapsed,
+                success=False,
+                error_code="failed",
+            )
         save_config(self._main.config)
         self._refresh_conversion_hint()
 
@@ -2413,7 +2415,6 @@ class ImportPage(ProgressMixin, QWidget):
                 if self._main.config.language == "zh"
                 else "No files converted successfully"
             )
-            self._auto_generate_after_convert = False
             return
 
         # Store result and switch to preview page
@@ -2443,13 +2444,6 @@ class ImportPage(ProgressMixin, QWidget):
             status="failed",
             summary=f"转换失败: {error}",
             payload={"duration_seconds": round(elapsed, 2)},
-        )
-        record_operation_metric(
-            self._main.config,
-            event="convert",
-            duration_seconds=elapsed,
-            success=False,
-            error_code="failed",
         )
         save_config(self._main.config)
         self._refresh_conversion_hint()
@@ -2862,7 +2856,7 @@ class ImportPage(ProgressMixin, QWidget):
         is_zh = self._main.config.language == "zh"
 
         # Update button text and tooltips
-        start_text = "开始生成" if is_zh else "Start Generation"
+        start_text = self._get_start_convert_text(self._main.config.language)
         start_shortcut = get_shortcut_text(
             ShortcutKeys.START_GENERATION, self._main.config.language
         )

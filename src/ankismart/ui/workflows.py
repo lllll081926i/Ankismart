@@ -220,7 +220,7 @@ def build_startup_precheck_report(
 
 
 def _build_precheck_summary(is_zh: bool, items: list[StartupPrecheckItem]) -> str:
-    pending_count = sum(1 for item in items if item.status != "success")
+    pending_count = sum(1 for item in items if item.status == "warning")
     if pending_count == 0:
         return (
             "首次使用预检已通过，可以直接开始导入。"
