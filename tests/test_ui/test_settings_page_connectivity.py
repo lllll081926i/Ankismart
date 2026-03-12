@@ -7,7 +7,7 @@ from PyQt6.QtCore import QUrl
 from PyQt6.QtWidgets import QMessageBox
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
-from ankismart.ui.error_handler import ErrorCategory, ErrorHandler
+from ankismart.ui.error_handler import ErrorCategory, ErrorHandler, build_error_display
 from ankismart.ui.settings_page import SettingsPage, configure_ocr_runtime
 
 from .settings_page_test_utils import make_main
@@ -405,6 +405,20 @@ def test_error_handler_maps_cloud_ocr_page_limit_code() -> None:
 
     assert info.category == ErrorCategory.FILE_FORMAT
     assert "600" in info.message
+
+
+def test_build_error_display_adds_user_friendly_suggestion() -> None:
+    display = build_error_display("[E_LLM_AUTH_ERROR] invalid api key", language="zh")
+
+    assert display["title"] == "认证失败"
+    assert "建议：" in display["content"]
+
+
+def test_build_error_display_keeps_unknown_error_detail() -> None:
+    display = build_error_display("export failed badly", language="en")
+
+    assert display["title"] == "Unknown Error"
+    assert "export failed badly" in display["content"]
 
 
 def test_check_for_updates_failure_updates_metadata_and_warns(_qapp, monkeypatch) -> None:

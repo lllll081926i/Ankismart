@@ -627,3 +627,36 @@ class ErrorHandler:
             logger.error(log_message, exc_info=True)
         else:
             logger.error(f"{log_message} | Details: {error}")
+
+
+def build_error_display(error: Exception | str, language: str = "zh") -> dict[str, str]:
+    """Build a user-facing error title/content pair for InfoBar or labels."""
+    handler = ErrorHandler(language=language)
+    info = handler.classify_error(error)
+    raw = str(error).strip()
+
+    detail = raw
+    if raw.startswith("[") and "]" in raw:
+        _code_token, _sep, remainder = raw.partition("]")
+        detail = remainder.strip()
+
+    content = info.message.strip()
+    normalized_detail = detail.strip()
+    if normalized_detail:
+        normalized_content = content.lower()
+        if normalized_detail.lower() not in normalized_content:
+            content = f"{content} ({normalized_detail})"
+
+    first_suggestion = ""
+    if info.suggestion:
+        first_suggestion = info.suggestion.splitlines()[0].strip().lstrip("•").strip()
+    if first_suggestion:
+        prefix = "建议：" if language == "zh" else "Next:"
+        content = f"{content}\n{prefix}{first_suggestion}"
+
+    return {
+        "title": info.title,
+        "content": content,
+        "category": info.category.value,
+        "level": info.level.value,
+    }

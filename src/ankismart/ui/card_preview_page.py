@@ -41,6 +41,7 @@ from qfluentwidgets import (
 from ankismart.core.config import append_task_history, record_operation_metric, save_config
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft
+from ankismart.ui.error_handler import build_error_display
 from ankismart.ui.styles import (
     MARGIN_SMALL,
     MARGIN_STANDARD,
@@ -1370,13 +1371,14 @@ class CardPreviewPage(QWidget):
         """Handle push error."""
         self._cleanup_push_worker()
         is_zh = self._main.config.language == "zh"
+        error_display = build_error_display(error, self._main.config.language)
         elapsed = max(0.0, time.monotonic() - self._push_start_ts) if self._push_start_ts else 0.0
         self._progress_bar.hide()
         self._set_action_buttons_enabled(True)
         self._count_label.setText("推送失败" if is_zh else "Push failed")
         InfoBar.error(
-            title="错误" if is_zh else "Error",
-            content=error,
+            title=error_display["title"],
+            content=error_display["content"],
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -1561,6 +1563,7 @@ class CardPreviewPage(QWidget):
 
     def _on_export_error(self, error: str) -> None:
         is_zh = self._main.config.language == "zh"
+        error_display = build_error_display(error, self._main.config.language)
         elapsed = (
             max(0.0, time.monotonic() - self._export_start_ts) if self._export_start_ts else 0.0
         )
@@ -1570,8 +1573,8 @@ class CardPreviewPage(QWidget):
         self._count_label.setText("导出失败" if is_zh else "Export failed")
 
         InfoBar.error(
-            title="导出失败" if is_zh else "Export Failed",
-            content=error,
+            title=error_display["title"],
+            content=error_display["content"],
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,

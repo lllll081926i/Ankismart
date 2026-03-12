@@ -23,9 +23,10 @@ from qfluentwidgets import (
 from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.gateway import AnkiGateway
 from ankismart.core.config import append_task_history, save_config
-from ankismart.core.errors import ErrorCode, get_error_info
+from ankismart.core.errors import ErrorCode
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
+from ankismart.ui.error_handler import build_error_display
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
 from ankismart.ui.styles import (
     MARGIN_SMALL,
@@ -977,11 +978,12 @@ class PreviewPage(ProgressMixin, QWidget):
         self._update_ui_state()
         self._btn_preview.setEnabled(True)
         is_zh = self._main.config.language == "zh"
+        error_display = build_error_display(error, self._main.config.language)
         InfoBar.error(
-            title="错误" if is_zh else "Error",
-            content=f"生成样本卡片失败：{error}"
+            title=error_display["title"],
+            content=f"生成样本卡片失败：{error_display['content']}"
             if is_zh
-            else f"Failed to generate sample cards: {error}",
+            else f"Failed to generate sample cards: {error_display['content']}",
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -1247,16 +1249,9 @@ class PreviewPage(ProgressMixin, QWidget):
             if self._generation_start_ts
             else 0.0
         )
-        code, detail = self._parse_error_payload(error)
-        if code is not None:
-            error_info = get_error_info(code, self._main.config.language)
-            title = error_info["title"]
-            message = error_info["message"]
-            if detail:
-                message = f"{message} ({detail})"
-        else:
-            title = "错误" if is_zh else "Error"
-            message = error
+        error_display = build_error_display(error, self._main.config.language)
+        title = error_display["title"]
+        message = error_display["content"]
 
         self._finish_state_tooltip(
             False,
@@ -1431,6 +1426,7 @@ class PreviewPage(ProgressMixin, QWidget):
         """Handle push error."""
         self._cleanup_push_worker()
         is_zh = self._main.config.language == "zh"
+        error_display = build_error_display(error, self._main.config.language)
         self._finish_state_tooltip(
             False,
             "推送失败" if is_zh else "Push failed",
@@ -1440,8 +1436,8 @@ class PreviewPage(ProgressMixin, QWidget):
         self._btn_save.setEnabled(True)
         self._btn_preview.setEnabled(True)
         InfoBar.error(
-            title="错误" if is_zh else "Error",
-            content=error,
+            title=error_display["title"],
+            content=error_display["content"],
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,

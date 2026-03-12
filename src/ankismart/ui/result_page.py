@@ -40,6 +40,7 @@ from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.gateway import AnkiGateway
 from ankismart.core.models import CardDraft, CardPushStatus, PushResult
 from ankismart.ui.card_edit_widget import CardEditDialog
+from ankismart.ui.error_handler import build_error_display
 from ankismart.ui.i18n import t
 from ankismart.ui.styles import (
     MARGIN_SMALL,
@@ -775,13 +776,13 @@ class ResultPage(QWidget):
     def _on_retry_error(self, msg: str) -> None:
         """重试错误回调。"""
         self._cleanup_push_worker()
-        is_zh = getattr(self._main.config, "language", "zh") == "zh"
+        error_display = build_error_display(msg, getattr(self._main.config, "language", "zh"))
         self._btn_retry.setEnabled(True)
         self._btn_export_apkg.setEnabled(True)
 
         InfoBar.error(
-            title="重试错误" if is_zh else "Retry Error",
-            content=msg,
+            title=error_display["title"],
+            content=error_display["content"],
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -806,12 +807,12 @@ class ResultPage(QWidget):
 
     def _on_export_error(self, msg: str) -> None:
         """导出错误回调。"""
-        is_zh = getattr(self._main.config, "language", "zh") == "zh"
+        error_display = build_error_display(msg, getattr(self._main.config, "language", "zh"))
         self._btn_export_apkg.setEnabled(True)
 
         InfoBar.error(
-            title="导出错误" if is_zh else "Export Error",
-            content=msg,
+            title=error_display["title"],
+            content=error_display["content"],
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -1125,14 +1126,14 @@ class ResultPage(QWidget):
     def _on_repush_error(self, msg: str) -> None:
         """Callback when repush encounters an error."""
         self._cleanup_push_worker()
-        is_zh = getattr(self._main.config, "language", "zh") == "zh"
+        error_display = build_error_display(msg, getattr(self._main.config, "language", "zh"))
         self._btn_repush_all.setEnabled(True)
         self._btn_retry.setEnabled(True)
         self._btn_export_apkg.setEnabled(True)
 
         InfoBar.error(
-            title="推送错误" if is_zh else "Push Error",
-            content=msg,
+            title=error_display["title"],
+            content=error_display["content"],
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,

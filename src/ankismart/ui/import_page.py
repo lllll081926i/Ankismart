@@ -47,6 +47,7 @@ from qfluentwidgets import (
 from ankismart.core.config import append_task_history, register_cloud_ocr_usage, save_config
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
+from ankismart.ui.error_handler import build_error_display
 from ankismart.ui.i18n import get_text
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
 from ankismart.ui.styles import (
@@ -2561,14 +2562,15 @@ class ImportPage(ProgressMixin, QWidget):
             payload={"duration_seconds": round(elapsed, 2)},
         )
         save_config(self._main.config)
+        error_display = build_error_display(error, self._main.config.language)
         self._status_label.setText(
-            f"转换失败: {error}"
+            f"转换失败: {error_display['title']}"
             if self._main.config.language == "zh"
-            else f"Conversion failed: {error}"
+            else f"Conversion failed: {error_display['title']}"
         )
         InfoBar.error(
-            title="错误" if self._main.config.language == "zh" else "Error",
-            content=error,
+            title=error_display["title"],
+            content=error_display["content"],
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
