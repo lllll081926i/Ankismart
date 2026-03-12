@@ -55,7 +55,7 @@ uv run python -m ankismart.ui.app
 
 1. 在设置页先配置并测试 LLM 提供商。
 2. 配置并测试 AnkiConnect（URL/密钥/代理）。
-3. 导入文件前先确认 OCR 档位与下载源。
+3. 导入页右侧会显示“首次使用预检”，建议先处理黄色提示项。
 4. 首次处理 PDF/图片时按提示下载 OCR 模型。
 
 ## 2. AnkiConnect 配置与使用
@@ -133,7 +133,7 @@ uv run python packaging/build.py --clean --skip-installer
 安装依赖：
 
 ```bash
-uv sync
+uv sync --group dev
 ```
 
 运行应用：
@@ -142,10 +142,22 @@ uv sync
 uv run ankismart
 ```
 
-运行测试：
+运行非 E2E 测试：
 
 ```bash
-uv run pytest -q
+uv run pytest tests --ignore=tests/e2e -q --maxfail=1
+```
+
+运行 Fast E2E：
+
+```bash
+uv run pytest tests/e2e/scenarios -m "fast" -q --maxfail=1
+```
+
+运行 Gate-Real 冒烟：
+
+```bash
+uv run pytest tests/e2e/gate -m "p0 and gate_real" -q --maxfail=1
 ```
 
 只跑转换模块：

@@ -2,6 +2,14 @@
 
 本文档记录 Ankismart 项目的主要功能变更和版本历史。
 
+## [v0.1.4] - 2026-03-12
+
+### 变更
+
+- ✅ 导入页新增“首次使用预检”卡片，集中提示 LLM、AnkiConnect 和 OCR 的准备状态。
+- ✅ 对齐公开文档中的 GUI 技术栈描述，统一为 `PyQt6` / `pyqt6-fluent-widgets`。
+- ✅ 补充开发验证命令分层说明，区分非 E2E、Fast E2E 和 Gate-Real 冒烟。
+
 ## [v0.1.2] - 2026-02-26
 
 ### 变更
@@ -88,7 +96,7 @@
 
 #### 用户界面
 - ✅ 现代化 Fluent Design 界面
-  - 基于 PySide6 和 QFluentWidgets
+  - 基于 PyQt6 和 QFluentWidgets
   - 响应式布局
   - 流畅的动画效果
 - ✅ 多页面导航
@@ -145,7 +153,7 @@
 ### 技术栈
 
 - **Python**: 3.11+
-- **GUI 框架**: PySide6 6.6+
+- **GUI 框架**: PyQt6 6.10+
 - **UI 组件库**: pyside6-fluent-widgets 1.5+
 - **LLM 客户端**: openai 1.0+
 - **OCR 引擎**: paddleocr 2.7+, paddlepaddle 2.5+

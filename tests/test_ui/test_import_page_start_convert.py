@@ -324,3 +324,53 @@ def test_on_page_progress_shows_file_page_infobar_and_deduplicates(monkeypatch):
 
     assert len(infobar_calls["info"]) == 1
     assert infobar_calls["info"][0]["content"] == "讲义.pdf 3/12"
+
+
+def test_build_startup_precheck_items_reports_missing_provider_key(monkeypatch):
+    page = make_page()
+    page._main.config = AppConfig(
+        llm_providers=[LLMProviderConfig(id="p1", name="OpenAI", api_key="", model="gpt-4o")],
+        active_provider_id="p1",
+    )
+
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.get_missing_ocr_models",
+        lambda **kwargs: [],
+    )
+
+    items = ImportPage._build_startup_precheck_items(page)
+
+    assert items[0]["key"] == "llm"
+    assert items[0]["status"] == "warning"
+    assert "API Key" in items[0]["detail"]
+
+
+def test_build_startup_precheck_items_reports_missing_local_ocr_models(monkeypatch):
+    page = make_page()
+
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.get_missing_ocr_models",
+        lambda **kwargs: ["det", "rec"],
+    )
+
+    items = ImportPage._build_startup_precheck_items(page)
+
+    ocr_item = next(item for item in items if item["key"] == "ocr")
+    assert ocr_item["status"] == "warning"
+    assert "det, rec" in ocr_item["detail"]
+
+
+def test_build_startup_precheck_summary_counts_pending_items() -> None:
+    page = make_page()
+
+    summary = ImportPage._build_startup_precheck_summary(
+        page,
+        [
+            {"key": "llm", "status": "success", "title": "", "detail": ""},
+            {"key": "anki", "status": "info", "title": "", "detail": ""},
+            {"key": "ocr", "status": "warning", "title": "", "detail": ""},
+        ],
+    )
+
+    assert "2" in summary
+    assert ("预检" in summary) or ("preflight" in summary.lower())

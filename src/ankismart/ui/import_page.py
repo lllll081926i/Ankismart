@@ -546,6 +546,8 @@ class ImportPage(ProgressMixin, QWidget):
         self._last_ocr_page_status_message: str = ""
         self._last_convert_ocr_message: str = ""
         self._convert_start_ts: float = 0.0
+        self._startup_precheck_summary_label: BodyLabel | None = None
+        self._startup_precheck_status_labels: dict[str, BodyLabel] = {}
 
         # Lazy-loaded heavy dependencies
         self._converter = None
@@ -703,6 +705,9 @@ class ImportPage(ProgressMixin, QWidget):
         self.expand_layout.setContentsMargins(0, 0, 0, 0)
         self.expand_layout.setSpacing(SPACING_MEDIUM)
 
+        precheck_card = self._create_startup_precheck_card()
+        self.expand_layout.addWidget(precheck_card)
+
         # Configuration area (without LLM provider)
         config_group = self._create_config_group()
         self.expand_layout.addWidget(config_group)
@@ -718,6 +723,240 @@ class ImportPage(ProgressMixin, QWidget):
         self.expand_layout.addStretch(1)
 
         return scroll
+
+    def _create_startup_precheck_card(self) -> QWidget:
+        """Create a lightweight preflight card for first-run setup guidance."""
+        is_zh = self._main.config.language == "zh"
+
+        card = SimpleCardWidget()
+        card.setBorderRadius(8)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(
+            MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD
+        )
+        layout.setSpacing(SPACING_SMALL)
+
+        title_label = SubtitleLabel("首次使用预检" if is_zh else "First-Run Precheck")
+        layout.addWidget(title_label)
+
+        self._startup_precheck_summary_label = BodyLabel("")
+        self._startup_precheck_summary_label.setWordWrap(True)
+        layout.addWidget(self._startup_precheck_summary_label)
+
+        for key in ("llm", "anki", "ocr"):
+            label = BodyLabel("")
+            label.setWordWrap(True)
+            self._startup_precheck_status_labels[key] = label
+            layout.addWidget(label)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(SPACING_SMALL)
+
+        refresh_btn = PushButton("刷新检查" if is_zh else "Refresh")
+        refresh_btn.setIcon(FluentIcon.SYNC)
+        refresh_btn.clicked.connect(self._refresh_startup_precheck)
+        button_row.addWidget(refresh_btn)
+
+        settings_btn = PushButton("打开设置" if is_zh else "Open Settings")
+        settings_btn.setIcon(FluentIcon.SETTING)
+        settings_btn.clicked.connect(self._open_settings_from_precheck)
+        button_row.addWidget(settings_btn)
+        button_row.addStretch(1)
+
+        layout.addLayout(button_row)
+        self._refresh_startup_precheck()
+        return card
+
+    def _open_settings_from_precheck(self) -> None:
+        switch = getattr(self._main, "switch_to_settings", None)
+        if callable(switch):
+            switch()
+
+    def _refresh_startup_precheck(self) -> None:
+        items = self._build_startup_precheck_items()
+        summary = self._build_startup_precheck_summary(items)
+
+        if self._startup_precheck_summary_label is not None:
+            self._startup_precheck_summary_label.setText(summary)
+
+        for item in items:
+            label = self._startup_precheck_status_labels.get(str(item["key"]))
+            if label is not None:
+                label.setText(self._format_startup_precheck_item(item))
+
+    def _build_startup_precheck_items(self) -> list[dict[str, str]]:
+        is_zh = self._main.config.language == "zh"
+        config = self._main.config
+        items: list[dict[str, str]] = []
+
+        provider = config.active_provider
+        if provider is None:
+            items.append(
+                {
+                    "key": "llm",
+                    "status": "warning",
+                    "title": "LLM",
+                    "detail": "未配置 LLM 提供商，请先在设置页添加。"
+                    if is_zh
+                    else "No LLM provider configured. Add one in Settings.",
+                }
+            )
+        elif "Ollama" not in provider.name and not provider.api_key.strip():
+            items.append(
+                {
+                    "key": "llm",
+                    "status": "warning",
+                    "title": "LLM",
+                    "detail": f"{provider.name} 缺少 API Key。"
+                    if is_zh
+                    else f"{provider.name} is missing an API key.",
+                }
+            )
+        else:
+            model_text = provider.model.strip() or ("未设置模型" if is_zh else "model not set")
+            items.append(
+                {
+                    "key": "llm",
+                    "status": "success",
+                    "title": "LLM",
+                    "detail": f"{provider.name} / {model_text}",
+                }
+            )
+
+        anki_url = str(getattr(config, "anki_connect_url", "")).strip()
+        if not anki_url:
+            items.append(
+                {
+                    "key": "anki",
+                    "status": "warning",
+                    "title": "Anki",
+                    "detail": "未配置 AnkiConnect URL。"
+                    if is_zh
+                    else "AnkiConnect URL is not configured.",
+                }
+            )
+        else:
+            items.append(
+                {
+                    "key": "anki",
+                    "status": "info",
+                    "title": "Anki",
+                    "detail": f"{anki_url}；可在设置页执行连通性测试。"
+                    if is_zh
+                    else f"{anki_url}; run connectivity test in Settings.",
+                }
+            )
+
+        ocr_mode = str(getattr(config, "ocr_mode", "local")).strip().lower()
+        if ocr_mode == "cloud":
+            endpoint = str(getattr(config, "ocr_cloud_endpoint", "")).strip()
+            api_key = str(getattr(config, "ocr_cloud_api_key", "")).strip()
+            if not endpoint or not api_key:
+                detail = "云 OCR 配置不完整，请补全 Endpoint 和 API Key。"
+                if not is_zh:
+                    detail = "Cloud OCR config is incomplete. Fill endpoint and API key."
+                items.append(
+                    {
+                        "key": "ocr",
+                        "status": "warning",
+                        "title": "OCR",
+                        "detail": detail,
+                    }
+                )
+            else:
+                items.append(
+                    {
+                        "key": "ocr",
+                        "status": "info",
+                        "title": "OCR",
+                        "detail": f"云 OCR 已配置：{endpoint}"
+                        if is_zh
+                        else f"Cloud OCR configured: {endpoint}",
+                    }
+                )
+            return items
+
+        try:
+            missing_models = get_missing_ocr_models(
+                model_tier=str(getattr(config, "ocr_model_tier", "lite")),
+                model_source=str(getattr(config, "ocr_model_source", "official")),
+            )
+        except OCRRuntimeUnavailableError:
+            items.append(
+                {
+                    "key": "ocr",
+                    "status": "warning",
+                    "title": "OCR",
+                    "detail": "当前环境未包含本地 OCR 运行时。"
+                    if is_zh
+                    else "Local OCR runtime is not bundled in this environment.",
+                }
+            )
+            return items
+        except Exception as exc:
+            items.append(
+                {
+                    "key": "ocr",
+                    "status": "info",
+                    "title": "OCR",
+                    "detail": f"OCR 状态暂无法确认：{exc}"
+                    if is_zh
+                    else f"OCR status is temporarily unavailable: {exc}",
+                }
+            )
+            return items
+
+        if missing_models:
+            missing_text = ", ".join(missing_models)
+            items.append(
+                {
+                    "key": "ocr",
+                    "status": "warning",
+                    "title": "OCR",
+                    "detail": f"缺少本地 OCR 模型：{missing_text}"
+                    if is_zh
+                    else f"Missing local OCR models: {missing_text}",
+                }
+            )
+        else:
+            items.append(
+                {
+                    "key": "ocr",
+                    "status": "success",
+                    "title": "OCR",
+                    "detail": "本地 OCR 模型已就绪。"
+                    if is_zh
+                    else "Local OCR models are ready.",
+                }
+            )
+
+        return items
+
+    def _build_startup_precheck_summary(self, items: list[dict[str, str]]) -> str:
+        is_zh = self._main.config.language == "zh"
+        pending_count = sum(1 for item in items if item.get("status") != "success")
+        if pending_count == 0:
+            return (
+                "首次使用预检已通过，可以直接开始导入。"
+                if is_zh
+                else "Preflight passed. You can start importing now."
+            )
+        return (
+            f"首次使用预检：还有 {pending_count} 项待确认。"
+            if is_zh
+            else f"Preflight: {pending_count} items still need attention."
+        )
+
+    @staticmethod
+    def _format_startup_precheck_item(item: dict[str, str]) -> str:
+        status = str(item.get("status", "info"))
+        icon = {
+            "success": "OK",
+            "warning": "!",
+            "info": "...",
+        }.get(status, "-")
+        return f"[{icon}] {item.get('title', '')}: {item.get('detail', '')}"
 
     def _create_config_group(self) -> QWidget:
         """Create configuration area with custom title bar."""
@@ -2754,6 +2993,9 @@ class ImportPage(ProgressMixin, QWidget):
             if not restored and self._strategy_template_combo.count() > 0:
                 self._strategy_template_combo.setCurrentIndex(0)
             self._strategy_template_combo.blockSignals(False)
+
+        if self._startup_precheck_summary_label is not None:
+            self._refresh_startup_precheck()
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""

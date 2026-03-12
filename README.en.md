@@ -55,7 +55,7 @@ uv run python -m ankismart.ui.app
 
 1. Configure and test an LLM provider in Settings.
 2. Configure and test AnkiConnect (URL/key/proxy).
-3. Confirm OCR tier and download source before import.
+3. Check the “First-Run Precheck” panel on the import page and resolve highlighted items first.
 4. Download OCR models when prompted on first PDF/image conversion.
 
 ## 2. AnkiConnect Configuration and Usage
@@ -133,7 +133,7 @@ uv run python packaging/build.py --clean --skip-installer
 Install dependencies:
 
 ```bash
-uv sync
+uv sync --group dev
 ```
 
 Run app:
@@ -142,10 +142,22 @@ Run app:
 uv run ankismart
 ```
 
-Run tests:
+Run non-E2E tests:
 
 ```bash
-uv run pytest -q
+uv run pytest tests --ignore=tests/e2e -q --maxfail=1
+```
+
+Run Fast E2E:
+
+```bash
+uv run pytest tests/e2e/scenarios -m "fast" -q --maxfail=1
+```
+
+Run Gate-Real smoke:
+
+```bash
+uv run pytest tests/e2e/gate -m "p0 and gate_real" -q --maxfail=1
 ```
 
 Run converter tests only:
@@ -204,4 +216,3 @@ docs/                  # docs and images
 - LLM: OpenAI-compatible API (multi-provider)
 
 - Anki integration: AnkiConnect + genanki
-

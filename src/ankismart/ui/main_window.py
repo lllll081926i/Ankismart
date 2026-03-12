@@ -646,6 +646,10 @@ NavigationPanel[transparent=true] {{
         """Switch to result page."""
         self._switch_page(3)
 
+    def switch_to_settings(self) -> None:
+        """Switch to settings page."""
+        self._switch_page(5)
+
     def switch_to_results(self) -> None:
         """Compatibility alias for old callers."""
         self.switch_to_result()

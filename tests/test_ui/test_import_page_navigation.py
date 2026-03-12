@@ -142,6 +142,18 @@ def test_switch_to_result_targets_result_page() -> None:
     assert switched_to["index"] == 3
 
 
+def test_switch_to_settings_targets_settings_page() -> None:
+    from ankismart.ui.main_window import MainWindow
+
+    window = MainWindow.__new__(MainWindow)
+    switched_to = {}
+    window._switch_page = lambda index: switched_to.setdefault("index", index)
+
+    MainWindow.switch_to_settings(window)
+
+    assert switched_to["index"] == 5
+
+
 def test_batch_convert_done_shows_errors(monkeypatch):
     page = make_page()
     warnings_shown = []

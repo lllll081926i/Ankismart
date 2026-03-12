@@ -271,7 +271,7 @@ sequenceDiagram
 - `styles.py` - 样式定义
 
 **技术栈**：
-- PySide6 - Qt 6 Python 绑定
+- PyQt6 - Qt 6 Python 绑定
 - QFluentWidgets - Fluent Design 风格组件库
 - QThread - 异步任务处理
 
@@ -360,8 +360,8 @@ graph LR
 
 | 库名 | 版本 | 用途 |
 |------|------|------|
-| PySide6 | ≥6.6 | Qt 6 GUI 框架 |
-| pyside6-fluent-widgets | ≥1.5 | Fluent Design 组件库 |
+| PyQt6 | 6.10.x | Qt 6 GUI 框架 |
+| pyqt6-fluent-widgets | 1.11.x | Fluent Design 组件库 |
 | openai | ≥1.0 | LLM API 客户端（兼容多提供商） |
 | paddleocr | ≥2.7 | OCR 文字识别 |
 | paddlepaddle | ≥2.5 | PaddleOCR 后端 |
