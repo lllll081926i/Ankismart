@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from qfluentwidgets import PrimaryPushButton, PushButton
+from qfluentwidgets import ExpandGroupSettingCard, PrimaryPushButton, PushButton
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.ui.settings_page import SettingsPage
@@ -25,17 +25,16 @@ def _build_settings_page_with_providers(
     return page
 
 
-def test_provider_table_uses_theme_neutral_style(_qapp) -> None:
+def test_provider_summary_panel_uses_theme_neutral_style(_qapp) -> None:
     main, _ = make_main()
     page = SettingsPage(main)
 
-    style = page._provider_table.styleSheet()
-    assert "QTableWidget" in style
+    style = page._provider_summary_panel.styleSheet()
     assert "border: 1px solid" in style
     assert "#FFFFFF" not in style
 
 
-def test_provider_table_displays_provider_fields(_qapp) -> None:
+def test_provider_summary_displays_active_provider_fields(_qapp) -> None:
     providers = [
         LLMProviderConfig(
             id="p1",
@@ -47,29 +46,37 @@ def test_provider_table_displays_provider_fields(_qapp) -> None:
     ]
     page = _build_settings_page_with_providers(_qapp, providers, active_provider_id="p1")
 
-    assert page._provider_table.rowCount() == 1
-    assert page._provider_table.item(0, 0).text() == "Vendor-X"
-    assert page._provider_table.item(0, 1).text() == "model-a"
-    assert page._provider_table.item(0, 2).text() == "https://example.com/v1"
-    assert page._provider_table.item(0, 3).text() == "120"
+    assert page._provider_summary_name_label.text() == "Vendor-X"
+    assert "model-a" in page._provider_summary_meta_label.text()
+    assert "https://example.com/v1" in page._provider_summary_meta_label.text()
+    assert "120" in page._provider_summary_meta_label.text()
 
 
-def test_provider_table_height_stays_fixed_for_multi_providers(_qapp) -> None:
-    providers2 = [LLMProviderConfig(id=f"p{i}", name=f"P{i}") for i in range(2)]
-    providers5 = [LLMProviderConfig(id=f"x{i}", name=f"X{i}") for i in range(5)]
+def test_provider_list_card_renders_one_group_per_provider(_qapp) -> None:
+    providers = [
+        LLMProviderConfig(id="p1", name="Vendor-X", model="model-a", base_url="https://a.example/v1"),
+        LLMProviderConfig(id="p2", name="Vendor-Y", model="model-b", base_url="https://b.example/v1"),
+    ]
+    page = _build_settings_page_with_providers(_qapp, providers, active_provider_id="p1")
 
-    page2 = _build_settings_page_with_providers(_qapp, providers2, active_provider_id="p0")
-    page5 = _build_settings_page_with_providers(_qapp, providers5, active_provider_id="x0")
+    assert isinstance(page._provider_list_card, ExpandGroupSettingCard)
+    assert list(page._provider_group_widgets) == ["p1", "p2"]
+    assert len(page._provider_list_card.widgets) == 2
 
-    assert page2._provider_table.height() == page5._provider_table.height()
-    assert page5._provider_table.rowCount() == 5
+    first_group = page._provider_group_widgets["p1"]
+    assert first_group.titleLabel.text() == "Vendor-X"
+    assert "model-a" in first_group.contentLabel.text()
+    assert "https://a.example/v1" in first_group.contentLabel.text()
 
 
-def test_provider_table_uses_internal_scroll_when_rows_overflow(_qapp) -> None:
-    providers = [LLMProviderConfig(id=f"p{i}", name=f"P{i}") for i in range(6)]
-    page = _build_settings_page_with_providers(_qapp, providers, active_provider_id="p0")
+def test_provider_summary_uses_first_provider_when_active_id_missing(_qapp) -> None:
+    providers = [
+        LLMProviderConfig(id="p1", name="Fallback-A", model="model-a"),
+        LLMProviderConfig(id="p2", name="Fallback-B", model="model-b"),
+    ]
+    page = _build_settings_page_with_providers(_qapp, providers, active_provider_id="missing")
 
-    assert page._provider_table.verticalScrollBar().maximum() > 0
+    assert page._provider_summary_name_label.text() == "Fallback-A"
 
 
 def test_proxy_manual_layout_places_input_left_of_mode_combo(_qapp) -> None:
@@ -135,19 +142,19 @@ def test_scroll_step_is_tuned_for_faster_following(_qapp) -> None:
     assert page.verticalScrollBar().pageStep() == 360
 
 
-def test_provider_table_border_switches_with_theme(_qapp, monkeypatch) -> None:
+def test_provider_summary_border_switches_with_theme(_qapp, monkeypatch) -> None:
     main, _ = make_main()
     page = SettingsPage(main)
 
-    assert "rgba(0, 0, 0, 0.08)" in page._provider_table.styleSheet()
+    assert "rgba(0, 0, 0, 0.08)" in page._provider_summary_panel.styleSheet()
 
     monkeypatch.setattr("ankismart.ui.settings_page.isDarkTheme", lambda: True)
     page.update_theme()
 
-    assert "rgba(255, 255, 255, 0.08)" in page._provider_table.styleSheet()
+    assert "rgba(255, 255, 255, 0.08)" in page._provider_summary_panel.styleSheet()
 
 
-def test_provider_table_activation_buttons_match_active_state(_qapp) -> None:
+def test_provider_group_action_buttons_match_active_state(_qapp) -> None:
     providers = [
         LLMProviderConfig(
             id="p1",
@@ -168,14 +175,8 @@ def test_provider_table_activation_buttons_match_active_state(_qapp) -> None:
     main, _ = make_main(cfg)
     page = SettingsPage(main)
 
-    assert page._provider_table.columnCount() == 5
-    assert page._provider_table.selectionMode() == page._provider_table.SelectionMode.NoSelection
-
-    active_widget = page._provider_table.cellWidget(0, 4)
-    inactive_widget = page._provider_table.cellWidget(1, 4)
-    assert active_widget is not None
-    assert inactive_widget is not None
-
+    active_widget = page._provider_action_widgets["p1"]
+    inactive_widget = page._provider_action_widgets["p2"]
     active_btn = active_widget.layout().itemAt(0).widget()
     inactive_btn = inactive_widget.layout().itemAt(0).widget()
 

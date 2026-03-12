@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 from qfluentwidgets import (
     BodyLabel,
     ComboBox,
+    ExpandGroupSettingCard,
     ExpandLayout,
     FluentIcon,
     InfoBar,
@@ -59,7 +60,6 @@ from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_t
 from ankismart.ui.styles import (
     MARGIN_STANDARD,
     SPACING_MEDIUM,
-    SPACING_SMALL,
     get_list_widget_palette,
     get_page_background_color,
 )
@@ -250,7 +250,9 @@ class SettingsPage(ScrollArea):
         self._main = main_window
         self._providers: list[LLMProviderConfig] = []
         self._active_provider_id: str = ""
-        self._provider_list_widget: QWidget | None = None
+        self._provider_group_widgets: dict[str, QWidget] = {}
+        self._provider_action_widgets: dict[str, QWidget] = {}
+        self._provider_detail_widgets: list[QWidget] = []
         self._provider_test_worker = None
         self._anki_test_worker = None
         self._ocr_cloud_test_worker = None
@@ -412,10 +414,9 @@ class SettingsPage(ScrollArea):
         """Apply theme-aware styles for non-Fluent labels in settings page."""
         self._apply_background_style()
         self._apply_provider_table_style()
+        self._apply_provider_card_styles()
         if hasattr(self, "_ocr_model_recommend_label"):
             self._ocr_model_recommend_label.setStyleSheet("")
-        if hasattr(self, "_provider_list_widget") and self._provider_list_widget:
-            self._provider_list_widget.update_theme()
 
     def _apply_provider_table_style(self) -> None:
         """Keep provider table border consistent with current light/dark theme."""
@@ -432,6 +433,74 @@ class SettingsPage(ScrollArea):
             "color: inherit;"
             "}"
         )
+
+    def _apply_provider_card_styles(self) -> None:
+        """Apply theme-aware styles to provider summary and detail panels."""
+        palette = get_list_widget_palette(dark=isDarkTheme())
+        panel_style = (
+            "QWidget#providerSummaryPanel, QWidget#providerDetailPanel {"
+            f"background-color: {palette.hover};"
+            f"border: 1px solid {palette.border};"
+            "border-radius: 10px;"
+            "}"
+        )
+
+        if hasattr(self, "_provider_summary_panel"):
+            self._provider_summary_panel.setStyleSheet(panel_style)
+
+        for widget in getattr(self, "_provider_detail_widgets", []):
+            widget.setStyleSheet(panel_style)
+
+        for label_name, size, weight in (
+            ("_provider_summary_status_label", 12, 500),
+            ("_provider_summary_name_label", 14, 700),
+            ("_provider_summary_meta_label", 12, 400),
+        ):
+            label = getattr(self, label_name, None)
+            if label is not None:
+                label.setStyleSheet(f"font-size: {size}px; font-weight: {weight};")
+
+    def _build_provider_summary_card(self) -> SettingCard:
+        is_zh = self._main.config.language == "zh"
+        card = SettingCard(
+            FluentIcon.ROBOT,
+            "当前提供商" if is_zh else "Active Provider",
+            "当前用于生成卡片的模型配置"
+            if is_zh
+            else "The provider currently used for card generation",
+            self.scrollWidget,
+        )
+        self._provider_summary_panel = QWidget(card)
+        self._provider_summary_panel.setObjectName("providerSummaryPanel")
+        summary_layout = QVBoxLayout(self._provider_summary_panel)
+        summary_layout.setContentsMargins(12, 10, 12, 10)
+        summary_layout.setSpacing(2)
+
+        self._provider_summary_status_label = BodyLabel(self._provider_summary_panel)
+        self._provider_summary_name_label = BodyLabel(self._provider_summary_panel)
+        self._provider_summary_meta_label = BodyLabel(self._provider_summary_panel)
+        self._provider_summary_meta_label.setWordWrap(True)
+
+        summary_layout.addWidget(self._provider_summary_status_label)
+        summary_layout.addWidget(self._provider_summary_name_label)
+        summary_layout.addWidget(self._provider_summary_meta_label)
+
+        card.hBoxLayout.addWidget(self._provider_summary_panel, 1, Qt.AlignmentFlag.AlignRight)
+        card.hBoxLayout.addSpacing(16)
+        return card
+
+    def _build_provider_list_card(self) -> ExpandGroupSettingCard:
+        is_zh = self._main.config.language == "zh"
+        card = ExpandGroupSettingCard(
+            FluentIcon.ROBOT,
+            "提供商列表" if is_zh else "Providers",
+            "展开查看并管理所有 LLM 提供商"
+            if is_zh
+            else "Expand to manage all LLM providers",
+            self.scrollWidget,
+        )
+        card.setExpand(False)
+        return card
 
     def _init_layout(self):
         """Initialize layout and add all setting cards."""
@@ -451,9 +520,16 @@ class SettingsPage(ScrollArea):
         self._provider_mgmt_card.clicked.connect(self._add_provider)
         self._llm_group.addSettingCard(self._provider_mgmt_card)
 
+        self._provider_summary_card = self._build_provider_summary_card()
+        self._llm_group.addSettingCard(self._provider_summary_card)
+
+        self._provider_list_card = self._build_provider_list_card()
+        self._llm_group.addSettingCard(self._provider_list_card)
+
         self.expandLayout.addWidget(self._llm_group)
 
-        # Provider table (standalone widget below the group, reduced spacing)
+        # Keep the legacy provider table hidden for compatibility with older tests
+        # while the visible UI uses summary + expandable cards.
         self._provider_table = QTableWidget(self.scrollWidget)
         self._apply_provider_table_style()
         self._provider_table.setWordWrap(False)
@@ -481,11 +557,7 @@ class SettingsPage(ScrollArea):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-
-        # Reduce top margin for table
-        self.expandLayout.setSpacing(8)  # Reduce spacing between widgets
-        self.expandLayout.addWidget(self._provider_table)
-        self.expandLayout.setSpacing(SPACING_SMALL)  # Restore normal spacing for rest
+        self._provider_table.hide()
 
         # Temperature
         self._temperature_card = SettingCard(
@@ -1120,69 +1192,231 @@ class SettingsPage(ScrollArea):
         self._log_level_combobox.setCurrentIndex(log_level_map.get(config.log_level, 1))
 
     def _update_provider_list(self) -> None:
-        """Update provider table display."""
+        """Update provider summary, expandable list, and hidden compatibility table."""
+        if self._providers and not any(p.id == self._active_provider_id for p in self._providers):
+            self._active_provider_id = self._providers[0].id
+        elif not self._providers:
+            self._active_provider_id = ""
+
+        self._update_provider_summary_card()
+        self._update_provider_expand_card()
+        self._update_provider_table()
+        self._apply_provider_card_styles()
+
+    def _update_provider_summary_card(self) -> None:
+        is_zh = self._main.config.language == "zh"
+        provider = self._current_provider()
+        if provider is None:
+            self._provider_summary_status_label.setText("未配置提供商" if is_zh else "No provider")
+            self._provider_summary_name_label.setText(
+                "请先添加 LLM 提供商" if is_zh else "Add a provider"
+            )
+            self._provider_summary_meta_label.setText(
+                "设置名称、模型和 Endpoint 后即可开始使用。"
+                if is_zh
+                else "Configure name, model and endpoint to continue."
+            )
+            return
+
+        self._provider_summary_status_label.setText("当前生效" if is_zh else "Active")
+        self._provider_summary_name_label.setText(provider.name.strip() or "未命名提供商")
+        self._provider_summary_meta_label.setText(
+            "\n".join(
+                [
+                    self._provider_model_text(provider),
+                    self._provider_url_text(provider, is_zh),
+                    self._provider_rpm_text(provider, is_zh),
+                ]
+            )
+        )
+
+    def _update_provider_expand_card(self) -> None:
+        is_zh = self._main.config.language == "zh"
+        self._provider_group_widgets = {}
+        self._provider_action_widgets = {}
+        self._provider_detail_widgets = []
+
+        for group in list(self._provider_list_card.widgets):
+            self._provider_list_card.removeGroupWidget(group)
+
+        self._provider_list_card.card.contentLabel.setText(
+            (
+                f"已配置 {len(self._providers)} 个提供商，展开后可激活、测试、编辑或删除。"
+                if is_zh
+                else (
+                    f"{len(self._providers)} providers configured. "
+                    "Expand to activate, test, edit, or delete."
+                )
+            )
+            if self._providers
+            else (
+                "暂无提供商配置，点击上方按钮添加。"
+                if is_zh
+                else "No providers configured yet. Add one above."
+            )
+        )
+
+        can_delete = len(self._providers) > 1
+        for provider in self._providers:
+            is_active = provider.id == self._active_provider_id
+            detail_widget = QWidget(self._provider_list_card)
+            detail_widget.setObjectName("providerDetailPanel")
+            detail_layout = QVBoxLayout(detail_widget)
+            detail_layout.setContentsMargins(12, 10, 12, 10)
+            detail_layout.setSpacing(8)
+
+            credential_label = BodyLabel(
+                (
+                    f"API Key：{self._mask_provider_secret(provider.api_key)}"
+                    if is_zh
+                    else f"API Key: {self._mask_provider_secret(provider.api_key)}"
+                ),
+                detail_widget,
+            )
+            credential_label.setWordWrap(True)
+            detail_layout.addWidget(credential_label)
+
+            rpm_label = BodyLabel(self._provider_rpm_text(provider, is_zh), detail_widget)
+            rpm_label.setWordWrap(True)
+            detail_layout.addWidget(rpm_label)
+
+            action_widget = self._build_provider_action_widget(
+                provider,
+                is_active=is_active,
+                can_delete=can_delete,
+                parent=detail_widget,
+            )
+            detail_layout.addWidget(action_widget)
+
+            group_widget = self._provider_list_card.addGroup(
+                FluentIcon.ACCEPT_MEDIUM if is_active else FluentIcon.ROBOT,
+                provider.name.strip() or ("未命名提供商" if is_zh else "Unnamed provider"),
+                " · ".join(
+                    [
+                        self._provider_model_text(provider),
+                        self._provider_url_text(provider, is_zh),
+                    ]
+                ),
+                detail_widget,
+            )
+            self._provider_group_widgets[provider.id] = group_widget
+            self._provider_action_widgets[provider.id] = action_widget
+            self._provider_detail_widgets.append(detail_widget)
+
+    def _update_provider_table(self) -> None:
         self._provider_table.setRowCount(len(self._providers))
 
         can_delete = len(self._providers) > 1
-
+        is_zh = self._main.config.language == "zh"
         for row, provider in enumerate(self._providers):
             is_active = provider.id == self._active_provider_id
-
-            # Column 0: Name
-            name_item = QTableWidgetItem(provider.name)
-            self._provider_table.setItem(row, 0, name_item)
-
-            # Column 1: Model
-            model_text = provider.model.strip() if provider.model else "未设置"
-            model_item = QTableWidgetItem(model_text)
-            self._provider_table.setItem(row, 1, model_item)
-
-            # Column 2: Base URL
-            url_text = provider.base_url.strip() if provider.base_url else "未设置"
-            url_item = QTableWidgetItem(url_text)
-            self._provider_table.setItem(row, 2, url_item)
-
-            # Column 3: RPM
-            rpm_text = str(provider.rpm_limit) if provider.rpm_limit > 0 else "无限制"
-            rpm_item = QTableWidgetItem(rpm_text)
+            self._provider_table.setItem(
+                row,
+                0,
+                QTableWidgetItem(provider.name.strip() or "未命名提供商"),
+            )
+            self._provider_table.setItem(
+                row,
+                1,
+                QTableWidgetItem(self._provider_model_text(provider)),
+            )
+            self._provider_table.setItem(
+                row,
+                2,
+                QTableWidgetItem(self._provider_url_text(provider, is_zh)),
+            )
+            rpm_item = QTableWidgetItem(
+                str(provider.rpm_limit) if provider.rpm_limit > 0 else "无限制"
+            )
             rpm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self._provider_table.setItem(row, 3, rpm_item)
+            self._provider_table.setCellWidget(
+                row,
+                4,
+                self._build_provider_action_widget(
+                    provider,
+                    is_active=is_active,
+                    can_delete=can_delete,
+                    parent=self._provider_table,
+                ),
+            )
 
-            # Column 4: Action buttons
-            action_widget = QWidget()
-            action_layout = QHBoxLayout(action_widget)
-            action_layout.setContentsMargins(2, 2, 2, 2)
-            action_layout.setSpacing(2)
+    def _build_provider_action_widget(
+        self,
+        provider: LLMProviderConfig,
+        *,
+        is_active: bool,
+        can_delete: bool,
+        parent: QWidget,
+    ) -> QWidget:
+        action_widget = QWidget(parent)
+        action_layout = QHBoxLayout(action_widget)
+        action_layout.setContentsMargins(2, 2, 2, 2)
+        action_layout.setSpacing(4)
 
-            # Active state button: active=primary(强调色), inactive=flat(no color).
-            if is_active:
-                activate_btn = PrimaryPushButton("当前")
-                activate_btn.setFixedSize(64, 28)
-            else:
-                activate_btn = PushButton("激活")
-                activate_btn.setFixedSize(64, 28)
-                activate_btn.clicked.connect(lambda checked, p=provider: self._activate_provider(p))
-            action_layout.addWidget(activate_btn)
+        if is_active:
+            activate_btn = PrimaryPushButton("当前", action_widget)
+            activate_btn.setFixedSize(64, 28)
+        else:
+            activate_btn = PushButton("激活", action_widget)
+            activate_btn.setFixedSize(64, 28)
+            activate_btn.clicked.connect(
+                lambda checked=False, p=provider: self._activate_provider(p)
+            )
+        action_layout.addWidget(activate_btn)
 
-            # Edit button
-            edit_btn = PushButton("编辑")
-            edit_btn.setFixedSize(52, 28)
-            edit_btn.clicked.connect(lambda checked, p=provider: self._edit_provider(p))
-            action_layout.addWidget(edit_btn)
+        edit_btn = PushButton("编辑", action_widget)
+        edit_btn.setFixedSize(52, 28)
+        edit_btn.clicked.connect(lambda checked=False, p=provider: self._edit_provider(p))
+        action_layout.addWidget(edit_btn)
 
-            # Test button
-            test_btn = PushButton("测试")
-            test_btn.setFixedSize(52, 28)
-            test_btn.clicked.connect(lambda checked, p=provider: self._test_provider_connection(p))
-            action_layout.addWidget(test_btn)
+        test_btn = PushButton("测试", action_widget)
+        test_btn.setFixedSize(52, 28)
+        test_btn.clicked.connect(
+            lambda checked=False, p=provider: self._test_provider_connection(p)
+        )
+        action_layout.addWidget(test_btn)
 
-            # Delete button
-            delete_btn = PushButton("删除")
-            delete_btn.setFixedSize(52, 28)
-            delete_btn.setEnabled(can_delete)
-            delete_btn.clicked.connect(lambda checked, p=provider: self._delete_provider(p))
-            action_layout.addWidget(delete_btn)
-            self._provider_table.setCellWidget(row, 4, action_widget)
+        delete_btn = PushButton("删除", action_widget)
+        delete_btn.setFixedSize(52, 28)
+        delete_btn.setEnabled(can_delete)
+        delete_btn.clicked.connect(lambda checked=False, p=provider: self._delete_provider(p))
+        action_layout.addWidget(delete_btn)
+        action_layout.addStretch(1)
+        return action_widget
+
+    def _current_provider(self) -> LLMProviderConfig | None:
+        for provider in self._providers:
+            if provider.id == self._active_provider_id:
+                return provider
+        if self._providers:
+            return self._providers[0]
+        return None
+
+    @staticmethod
+    def _provider_model_text(provider: LLMProviderConfig) -> str:
+        model = str(provider.model or "").strip()
+        return model if model else "未设置模型"
+
+    @staticmethod
+    def _provider_url_text(provider: LLMProviderConfig, is_zh: bool) -> str:
+        base_url = str(provider.base_url or "").strip()
+        return base_url if base_url else ("未设置地址" if is_zh else "No endpoint")
+
+    @staticmethod
+    def _provider_rpm_text(provider: LLMProviderConfig, is_zh: bool) -> str:
+        if provider.rpm_limit > 0:
+            return f"RPM：{provider.rpm_limit}" if is_zh else f"RPM: {provider.rpm_limit}"
+        return "RPM：无限制" if is_zh else "RPM: Unlimited"
+
+    @staticmethod
+    def _mask_provider_secret(secret: str) -> str:
+        value = str(secret).strip()
+        if not value:
+            return "未设置"
+        if len(value) <= 8:
+            return "*" * len(value)
+        return f"{value[:4]}***{value[-4:]}"
 
     @staticmethod
     def _set_combo_current_data(combo: ComboBox, target_value: str) -> None:
@@ -2242,5 +2476,3 @@ class SettingsPage(ScrollArea):
     def update_theme(self):
         """Update theme-dependent components when theme changes."""
         self._apply_theme_styles()
-        if self._provider_list_widget:
-            self._provider_list_widget.update_theme()

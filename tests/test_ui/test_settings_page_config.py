@@ -300,5 +300,5 @@ def test_settings_page_uses_llm_group_as_top_content(_qapp) -> None:
     page.show()
     _qapp.processEvents()
 
-    assert page._llm_group.y() < page._provider_table.y()
+    assert page._llm_group.y() <= page._provider_summary_card.y()
     assert page._llm_group.y() < page._anki_group.y()
