@@ -94,6 +94,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     needs: unit-integration
+    env:
+      PYTHONUTF8: "1"
 
     steps:
       - name: Checkout

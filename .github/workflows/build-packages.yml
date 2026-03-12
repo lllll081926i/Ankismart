@@ -19,6 +19,8 @@ jobs:
   build-windows-packages:
     runs-on: windows-latest
     timeout-minutes: 60
+    env:
+      PYTHONUTF8: "1"
 
     steps:
       - name: Checkout

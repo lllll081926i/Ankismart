@@ -55,8 +55,16 @@ UNUSED_DEPENDENCY_DIRS = {
 PADDLE_RELATED_KEYWORDS = ("paddle", "paddlex", "paddleocr", "cv2")
 
 
+def _console_safe_text(msg: str, *, encoding: str | None = None) -> str:
+    target_encoding = encoding or getattr(sys.stdout, "encoding", None) or "utf-8"
+    return str(msg).encode(target_encoding, errors="replace").decode(
+        target_encoding,
+        errors="replace",
+    )
+
+
 def _print(msg: str) -> None:
-    print(f"[build] {msg}")
+    print(_console_safe_text(f"[build] {msg}"))
 
 
 def run(cmd: list[str], description: str) -> None:

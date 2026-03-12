@@ -43,3 +43,11 @@ def test_smoke_test_release_checks_staged_and_portable_layout(tmp_path, monkeypa
     monkeypatch.setattr(build, "PORTABLE_ROOT", portable_dir.parent)
 
     build.smoke_test_release(version)
+
+
+def test_console_safe_text_replaces_unencodable_characters() -> None:
+    build = _load_build_module()
+
+    text = build._console_safe_text("[build] 版本: 0.1.6", encoding="cp1252")
+
+    assert text == "[build] ??: 0.1.6"
