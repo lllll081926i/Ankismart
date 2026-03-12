@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ankismart.core.config import AppConfig, LLMProviderConfig
+from ankismart.core.config import AppConfig
 from ankismart.ui.import_page import _STRATEGY_TEMPLATE_LIBRARY, ImportPage
 from ankismart.ui.utils import format_operation_hint
 from ankismart.ui.workflows import (
     ConvertWorkflowRequest,
-    build_startup_precheck_report,
     validate_convert_request,
 )
 
@@ -266,43 +265,6 @@ def test_cloud_ocr_message_progress_updates_status_text():
 
     ImportPage._on_ocr_progress(page, "云端 OCR: 上传文件中...")
     assert "云端 OCR: 上传文件中..." in page._status_label.text
-
-
-def test_build_startup_precheck_report_marks_missing_provider() -> None:
-    report = build_startup_precheck_report(
-        AppConfig(language="zh", llm_providers=[], active_provider_id=""),
-        get_missing_ocr_models=lambda **_: [],
-    )
-
-    assert report.summary == "首次使用预检：还有 1 项待确认。"
-    assert report.items[0].key == "llm"
-    assert report.items[0].status == "warning"
-    assert "未配置 LLM 提供商" in report.items[0].detail
-
-
-def test_build_startup_precheck_report_does_not_count_info_items_as_pending() -> None:
-    config = AppConfig(
-        language="zh",
-        llm_providers=[
-            LLMProviderConfig(
-                id="p1",
-                name="OpenAI",
-                api_key="test-key",
-                base_url="https://api.openai.com/v1",
-                model="gpt-4o",
-            )
-        ],
-        active_provider_id="p1",
-        anki_connect_url="http://127.0.0.1:8765",
-    )
-
-    report = build_startup_precheck_report(
-        config,
-        get_missing_ocr_models=lambda **_: [],
-    )
-
-    assert report.summary == "首次使用预检已通过，可以直接开始导入。"
-    assert [item.status for item in report.items] == ["success", "info", "success"]
 
 
 def test_validate_convert_request_rejects_missing_api_key_for_non_ollama() -> None:

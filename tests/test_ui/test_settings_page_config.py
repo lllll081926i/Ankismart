@@ -241,6 +241,37 @@ def test_save_config_prefers_runtime_apply_when_available(_qapp, monkeypatch) ->
     assert applied["config"].language == "en"
 
 
+def test_save_config_persists_non_llm_settings_without_providers(_qapp, monkeypatch) -> None:
+    cfg = AppConfig(llm_providers=[], active_provider_id="", anki_connect_url="http://127.0.0.1:8765")
+    main, _ = make_main(cfg)
+    page = SettingsPage(main)
+
+    captured: dict[str, AppConfig] = {}
+    warning_calls: list[tuple[tuple, dict]] = []
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c)
+    )
+    monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *args, **kwargs: warning_calls.append((args, kwargs))
+    )
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+
+    page._anki_url_edit.setText("http://example.com:8765")
+    page._language_combo.setCurrentIndex(1)
+    page._save_config()
+
+    assert "cfg" in captured
+    assert captured["cfg"].anki_connect_url == "http://example.com:8765"
+    assert captured["cfg"].language == "en"
+    assert warning_calls == []
+
+
 def test_parse_version_tuple_ignores_non_numeric_suffix(_qapp) -> None:
     main, _ = make_main()
     page = SettingsPage(main)

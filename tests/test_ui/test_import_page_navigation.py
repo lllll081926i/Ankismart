@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from PyQt6.QtWidgets import QApplication
 from qfluentwidgets import FluentIcon
 
 from ankismart.core.models import BatchConvertResult, ConvertedDocument, MarkdownResult
@@ -10,9 +11,12 @@ from ankismart.ui.import_page import ImportPage
 from .import_page_test_utils import (
     DummyListItem,
     DummyListWidget,
+    DummyMain,
     make_page,
     patch_infobar,
 )
+
+_APP = QApplication.instance() or QApplication([])
 
 
 class _ThreadLikeWorker:
@@ -152,6 +156,24 @@ def test_switch_to_settings_targets_settings_page() -> None:
     MainWindow.switch_to_settings(window)
 
     assert switched_to["index"] == 5
+
+
+def test_import_page_real_instance_does_not_render_startup_precheck() -> None:
+    page = ImportPage(DummyMain())
+
+    texts: list[str] = []
+    for widget in page.findChildren(object):
+        text = getattr(widget, "text", None)
+        if callable(text):
+            try:
+                value = text()
+            except TypeError:
+                continue
+            if isinstance(value, str) and value:
+                texts.append(value)
+
+    assert all("首次使用预检" not in text for text in texts)
+    assert all("First-Run Precheck" not in text for text in texts)
 
 
 def test_batch_convert_done_shows_errors(monkeypatch):

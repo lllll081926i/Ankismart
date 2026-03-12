@@ -11,15 +11,11 @@ import httpx
 from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
-    QAbstractItemView,
     QDialog,
     QFileDialog,
     QHBoxLayout,
-    QHeaderView,
     QMessageBox,
     QSizePolicy,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -166,9 +162,18 @@ class LLMProviderDialog(QDialog):
 
     saved = pyqtSignal(LLMProviderConfig)
 
-    def __init__(self, provider: LLMProviderConfig | None = None, parent=None) -> None:
+    def __init__(
+        self,
+        provider: LLMProviderConfig | None = None,
+        *,
+        language: str = "zh",
+        parent=None,
+    ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("LLM 提供商配置")
+        self._is_zh = language == "zh"
+        self.setWindowTitle(
+            "LLM 提供商配置" if self._is_zh else "LLM Provider Configuration"
+        )
         self.setMinimumWidth(500)
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
@@ -183,25 +188,35 @@ class LLMProviderDialog(QDialog):
 
         # Name
         self._name_edit = LineEdit()
-        self._name_edit.setPlaceholderText("提供商名称（例如：OpenAI）")
+        self._name_edit.setPlaceholderText(
+            "提供商名称（例如：OpenAI）"
+            if self._is_zh
+            else "Provider name (for example: OpenAI)"
+        )
         self._name_edit.setText(self._provider.name)
         layout.addWidget(self._name_edit)
 
         # Base URL
         self._base_url_edit = LineEdit()
-        self._base_url_edit.setPlaceholderText("基础 URL（例如：https://api.openai.com/v1）")
+        self._base_url_edit.setPlaceholderText(
+            "基础 URL（例如：https://api.openai.com/v1）"
+            if self._is_zh
+            else "Base URL (for example: https://api.openai.com/v1)"
+        )
         self._base_url_edit.setText(self._provider.base_url)
         layout.addWidget(self._base_url_edit)
 
         # API Key
         self._api_key_edit = PasswordLineEdit()
-        self._api_key_edit.setPlaceholderText("API 密钥")
+        self._api_key_edit.setPlaceholderText("API 密钥" if self._is_zh else "API key")
         self._api_key_edit.setText(self._provider.api_key)
         layout.addWidget(self._api_key_edit)
 
         # Model
         self._model_edit = LineEdit()
-        self._model_edit.setPlaceholderText("模型（例如：gpt-4o）")
+        self._model_edit.setPlaceholderText(
+            "模型（例如：gpt-4o）" if self._is_zh else "Model (for example: gpt-4o)"
+        )
         self._model_edit.setText(self._provider.model)
         layout.addWidget(self._model_edit)
 
@@ -210,7 +225,7 @@ class LLMProviderDialog(QDialog):
         self._rpm_spin = SpinBox()
         self._rpm_spin.setRange(0, 9999)
         self._rpm_spin.setValue(self._provider.rpm_limit)
-        self._rpm_spin.setPrefix("RPM 限制: ")
+        self._rpm_spin.setPrefix("RPM 限制: " if self._is_zh else "RPM Limit: ")
         rpm_layout.addWidget(self._rpm_spin)
         layout.addLayout(rpm_layout)
 
@@ -218,11 +233,11 @@ class LLMProviderDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
-        cancel_btn = PushButton("取消")
+        cancel_btn = PushButton("取消" if self._is_zh else "Cancel")
         cancel_btn.clicked.connect(self.close)
         btn_layout.addWidget(cancel_btn)
 
-        save_btn = PrimaryPushButton("保存")
+        save_btn = PrimaryPushButton("保存" if self._is_zh else "Save")
         save_btn.clicked.connect(self._save)
         btn_layout.addWidget(save_btn)
 
@@ -236,7 +251,13 @@ class LLMProviderDialog(QDialog):
         self._provider.rpm_limit = self._rpm_spin.value()
 
         if not self._provider.name:
-            QMessageBox.warning(self, "错误", "提供商名称为必填项")
+            QMessageBox.warning(
+                self,
+                "错误" if self._is_zh else "Error",
+                "提供商名称为必填项"
+                if self._is_zh
+                else "Provider name is required.",
+            )
             return
 
         self.saved.emit(self._provider)
@@ -414,26 +435,9 @@ class SettingsPage(ScrollArea):
     def _apply_theme_styles(self) -> None:
         """Apply theme-aware styles for non-Fluent labels in settings page."""
         self._apply_background_style()
-        self._apply_provider_table_style()
         self._apply_provider_card_styles()
         if hasattr(self, "_ocr_model_recommend_label"):
             self._ocr_model_recommend_label.setStyleSheet("")
-
-    def _apply_provider_table_style(self) -> None:
-        """Keep provider table border consistent with current light/dark theme."""
-        if not hasattr(self, "_provider_table"):
-            return
-        palette = get_list_widget_palette(dark=isDarkTheme())
-        self._provider_table.setStyleSheet(
-            "QTableWidget {"
-            f"border: 1px solid {palette.border};"
-            "border-radius: 8px;"
-            "}"
-            "QTableWidget::item:selected {"
-            "background: transparent;"
-            "color: inherit;"
-            "}"
-        )
 
     def _apply_provider_card_styles(self) -> None:
         """Apply theme-aware styles to provider summary and detail panels."""
@@ -461,14 +465,101 @@ class SettingsPage(ScrollArea):
             if label is not None:
                 label.setStyleSheet(f"font-size: {size}px; font-weight: {weight};")
 
-    def _build_provider_summary_card(self) -> SettingCard:
+    def _provider_text(self, key: str) -> str:
         is_zh = self._main.config.language == "zh"
+        texts = {
+            "mgmt_button": ("添加提供商", "Add Provider"),
+            "mgmt_title": ("LLM 提供商", "LLM Provider"),
+            "mgmt_desc": ("管理 LLM 服务提供商配置", "Manage LLM provider configurations"),
+            "summary_title": ("当前提供商", "Active Provider"),
+            "summary_desc": (
+                "当前用于生成卡片的模型配置",
+                "The provider currently used for card generation",
+            ),
+            "list_title": ("提供商列表", "Providers"),
+            "list_desc": ("展开查看并管理所有 LLM 提供商", "Expand to manage all LLM providers"),
+            "no_provider_status": ("未配置提供商", "No provider"),
+            "no_provider_name": ("请先添加 LLM 提供商", "Add a provider"),
+            "no_provider_desc": (
+                "设置名称、模型和 Endpoint 后即可开始使用。",
+                "Configure name, model and endpoint to continue.",
+            ),
+            "active_status": ("当前生效", "Active"),
+            "unnamed_provider": ("未命名提供商", "Unnamed provider"),
+            "no_model": ("未设置模型", "No model configured"),
+            "no_endpoint": ("未设置地址", "No endpoint"),
+            "rpm_unlimited": ("RPM：无限制", "RPM: Unlimited"),
+            "not_set": ("未设置", "Not set"),
+            "current": ("当前", "Current"),
+            "activate": ("激活", "Activate"),
+            "edit": ("编辑", "Edit"),
+            "test": ("测试", "Test"),
+            "delete": ("删除", "Delete"),
+            "delete_title": ("确认删除", "Confirm Delete"),
+            "delete_message": (
+                "确定要删除提供商 '{name}' 吗？",
+                "Delete provider '{name}'?",
+            ),
+            "delete_blocked_title": ("无法删除", "Cannot Delete"),
+            "delete_blocked_desc": (
+                "至少需要保留一个提供商配置",
+                "At least one provider configuration must remain.",
+            ),
+            "provider_testing_title": ("测试中", "Testing"),
+            "provider_testing_desc": (
+                "正在测试提供商「{name}」连通性...",
+                "Testing provider '{name}' connectivity...",
+            ),
+            "provider_test_ok_title": ("连接成功", "Connected"),
+            "provider_test_ok_desc": (
+                "提供商「{name}」连通正常",
+                "Provider '{name}' connectivity is OK.",
+            ),
+            "provider_test_fail_title": ("连接失败", "Connection Failed"),
+            "provider_test_fail_desc": (
+                "提供商「{name}」连接失败：{error}",
+                "Provider '{name}' connection failed: {error}",
+            ),
+            "provider_test_warn_desc": (
+                "提供商「{name}」未通过连通性测试",
+                "Provider '{name}' did not pass the connectivity test.",
+            ),
+            "api_key": ("API Key", "API Key"),
+        }
+        zh_text, en_text = texts[key]
+        return zh_text if is_zh else en_text
+
+    def _format_provider_text(self, key: str, **kwargs) -> str:
+        return self._provider_text(key).format(**kwargs)
+
+    def _refresh_provider_card_chrome(self) -> None:
+        self._provider_mgmt_card.button.setText(self._provider_text("mgmt_button"))
+        self._provider_mgmt_card.setTitle(self._provider_text("mgmt_title"))
+        self._provider_mgmt_card.setContent(self._provider_text("mgmt_desc"))
+        self._provider_summary_card.setTitle(self._provider_text("summary_title"))
+        self._provider_summary_card.setContent(self._provider_text("summary_desc"))
+
+    def _replace_provider_list_card(self) -> None:
+        old_card = getattr(self, "_provider_list_card", None)
+        index = -1
+        if old_card is not None:
+            index = self._llm_group.cardLayout.indexOf(old_card)
+            self._llm_group.cardLayout.removeWidget(old_card)
+            old_card.hide()
+            old_card.setParent(None)
+            old_card.deleteLater()
+
+        self._provider_list_card = self._build_provider_list_card()
+        if index >= 0:
+            self._llm_group.cardLayout.insertWidget(index, self._provider_list_card)
+        else:
+            self._llm_group.addSettingCard(self._provider_list_card)
+
+    def _build_provider_summary_card(self) -> SettingCard:
         card = SettingCard(
             FluentIcon.ROBOT,
-            "当前提供商" if is_zh else "Active Provider",
-            "当前用于生成卡片的模型配置"
-            if is_zh
-            else "The provider currently used for card generation",
+            self._provider_text("summary_title"),
+            self._provider_text("summary_desc"),
             self.scrollWidget,
         )
         self._provider_summary_panel = QWidget(card)
@@ -496,13 +587,10 @@ class SettingsPage(ScrollArea):
         return card
 
     def _build_provider_list_card(self) -> ExpandGroupSettingCard:
-        is_zh = self._main.config.language == "zh"
         card = ExpandGroupSettingCard(
             FluentIcon.ROBOT,
-            "提供商列表" if is_zh else "Providers",
-            "展开查看并管理所有 LLM 提供商"
-            if is_zh
-            else "Expand to manage all LLM providers",
+            self._provider_text("list_title"),
+            self._provider_text("list_desc"),
             self.scrollWidget,
         )
         card.setExpand(False)
@@ -518,10 +606,10 @@ class SettingsPage(ScrollArea):
 
         # Provider management card with add button
         self._provider_mgmt_card = PushSettingCard(
-            "添加提供商",
+            self._provider_text("mgmt_button"),
             FluentIcon.ADD,
-            "LLM 提供商",
-            "管理 LLM 服务提供商配置",
+            self._provider_text("mgmt_title"),
+            self._provider_text("mgmt_desc"),
         )
         self._provider_mgmt_card.clicked.connect(self._add_provider)
         self._llm_group.addSettingCard(self._provider_mgmt_card)
@@ -533,37 +621,6 @@ class SettingsPage(ScrollArea):
         self._llm_group.addSettingCard(self._provider_list_card)
 
         self.expandLayout.addWidget(self._llm_group)
-
-        # Keep the legacy provider table hidden for compatibility with older tests
-        # while the visible UI uses summary + expandable cards.
-        self._provider_table = QTableWidget(self.scrollWidget)
-        self._apply_provider_table_style()
-        self._provider_table.setWordWrap(False)
-        self._provider_table.setColumnCount(5)
-        self._provider_table.setHorizontalHeaderLabels(["名称", "模型", "地址", "RPM", "操作"])
-        self._provider_table.verticalHeader().hide()
-        self._provider_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._provider_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._provider_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        self._provider_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._provider_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        # Set fixed row height (36px per row)
-        self._provider_table.verticalHeader().setDefaultSectionSize(36)
-
-        # Set fixed height for 2 rows + header
-        header_height = self._provider_table.horizontalHeader().height()
-        self._provider_table.setFixedHeight(header_height + 36 * 2 + 2)  # 2 rows + border
-
-        # Use adaptive widths to avoid horizontal scrolling.
-        header = self._provider_table.horizontalHeader()
-        header.setMinimumSectionSize(56)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        self._provider_table.hide()
 
         # Temperature
         self._temperature_card = SettingCard(
@@ -1198,7 +1255,7 @@ class SettingsPage(ScrollArea):
         self._log_level_combobox.setCurrentIndex(log_level_map.get(config.log_level, 1))
 
     def _update_provider_list(self) -> None:
-        """Update provider summary, expandable list, and hidden compatibility table."""
+        """Update provider summary and expandable list."""
         if self._providers and not any(p.id == self._active_provider_id for p in self._providers):
             self._active_provider_id = self._providers[0].id
         elif not self._providers:
@@ -1206,61 +1263,37 @@ class SettingsPage(ScrollArea):
 
         self._update_provider_summary_card()
         self._update_provider_expand_card()
-        self._update_provider_table()
         self._apply_provider_card_styles()
 
     def _update_provider_summary_card(self) -> None:
-        is_zh = self._main.config.language == "zh"
         provider = self._current_provider()
         if provider is None:
-            self._provider_summary_status_label.setText("未配置提供商" if is_zh else "No provider")
-            self._provider_summary_name_label.setText(
-                "请先添加 LLM 提供商" if is_zh else "Add a provider"
-            )
-            self._provider_summary_meta_label.setText(
-                "设置名称、模型和 Endpoint 后即可开始使用。"
-                if is_zh
-                else "Configure name, model and endpoint to continue."
-            )
+            self._provider_summary_status_label.setText(self._provider_text("no_provider_status"))
+            self._provider_summary_name_label.setText(self._provider_text("no_provider_name"))
+            self._provider_summary_meta_label.setText(self._provider_text("no_provider_desc"))
             return
 
-        self._provider_summary_status_label.setText("当前生效" if is_zh else "Active")
-        self._provider_summary_name_label.setText(provider.name.strip() or "未命名提供商")
+        self._provider_summary_status_label.setText(self._provider_text("active_status"))
+        self._provider_summary_name_label.setText(
+            provider.name.strip() or self._provider_text("unnamed_provider")
+        )
         self._provider_summary_meta_label.setText(
             "\n".join(
                 [
                     self._provider_model_text(provider),
-                    self._provider_url_text(provider, is_zh),
-                    self._provider_rpm_text(provider, is_zh),
+                    self._provider_url_text(provider),
+                    self._provider_rpm_text(provider),
                 ]
             )
         )
 
     def _update_provider_expand_card(self) -> None:
-        is_zh = self._main.config.language == "zh"
         self._provider_group_widgets = {}
         self._provider_action_widgets = {}
         self._provider_detail_widgets = []
 
         for group in list(self._provider_list_card.widgets):
             self._provider_list_card.removeGroupWidget(group)
-
-        self._provider_list_card.card.contentLabel.setText(
-            (
-                f"已配置 {len(self._providers)} 个提供商，展开后可激活、测试、编辑或删除。"
-                if is_zh
-                else (
-                    f"{len(self._providers)} providers configured. "
-                    "Expand to activate, test, edit, or delete."
-                )
-            )
-            if self._providers
-            else (
-                "暂无提供商配置，点击上方按钮添加。"
-                if is_zh
-                else "No providers configured yet. Add one above."
-            )
-        )
 
         can_delete = len(self._providers) > 1
         for provider in self._providers:
@@ -1272,17 +1305,13 @@ class SettingsPage(ScrollArea):
             detail_layout.setSpacing(8)
 
             credential_label = BodyLabel(
-                (
-                    f"API Key：{self._mask_provider_secret(provider.api_key)}"
-                    if is_zh
-                    else f"API Key: {self._mask_provider_secret(provider.api_key)}"
-                ),
+                f"{self._provider_text('api_key')}: {self._mask_provider_secret(provider.api_key)}",
                 detail_widget,
             )
             credential_label.setWordWrap(True)
             detail_layout.addWidget(credential_label)
 
-            rpm_label = BodyLabel(self._provider_rpm_text(provider, is_zh), detail_widget)
+            rpm_label = BodyLabel(self._provider_rpm_text(provider), detail_widget)
             rpm_label.setWordWrap(True)
             detail_layout.addWidget(rpm_label)
 
@@ -1296,11 +1325,11 @@ class SettingsPage(ScrollArea):
 
             group_widget = self._provider_list_card.addGroup(
                 FluentIcon.ACCEPT_MEDIUM if is_active else FluentIcon.ROBOT,
-                provider.name.strip() or ("未命名提供商" if is_zh else "Unnamed provider"),
+                provider.name.strip() or self._provider_text("unnamed_provider"),
                 " · ".join(
                     [
                         self._provider_model_text(provider),
-                        self._provider_url_text(provider, is_zh),
+                        self._provider_url_text(provider),
                     ]
                 ),
                 detail_widget,
@@ -1308,44 +1337,6 @@ class SettingsPage(ScrollArea):
             self._provider_group_widgets[provider.id] = group_widget
             self._provider_action_widgets[provider.id] = action_widget
             self._provider_detail_widgets.append(detail_widget)
-
-    def _update_provider_table(self) -> None:
-        self._provider_table.setRowCount(len(self._providers))
-
-        can_delete = len(self._providers) > 1
-        is_zh = self._main.config.language == "zh"
-        for row, provider in enumerate(self._providers):
-            is_active = provider.id == self._active_provider_id
-            self._provider_table.setItem(
-                row,
-                0,
-                QTableWidgetItem(provider.name.strip() or "未命名提供商"),
-            )
-            self._provider_table.setItem(
-                row,
-                1,
-                QTableWidgetItem(self._provider_model_text(provider)),
-            )
-            self._provider_table.setItem(
-                row,
-                2,
-                QTableWidgetItem(self._provider_url_text(provider, is_zh)),
-            )
-            rpm_item = QTableWidgetItem(
-                str(provider.rpm_limit) if provider.rpm_limit > 0 else "无限制"
-            )
-            rpm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._provider_table.setItem(row, 3, rpm_item)
-            self._provider_table.setCellWidget(
-                row,
-                4,
-                self._build_provider_action_widget(
-                    provider,
-                    is_active=is_active,
-                    can_delete=can_delete,
-                    parent=self._provider_table,
-                ),
-            )
 
     def _build_provider_action_widget(
         self,
@@ -1361,29 +1352,29 @@ class SettingsPage(ScrollArea):
         action_layout.setSpacing(4)
 
         if is_active:
-            activate_btn = PrimaryPushButton("当前", action_widget)
+            activate_btn = PrimaryPushButton(self._provider_text("current"), action_widget)
             activate_btn.setFixedSize(64, 28)
         else:
-            activate_btn = PushButton("激活", action_widget)
+            activate_btn = PushButton(self._provider_text("activate"), action_widget)
             activate_btn.setFixedSize(64, 28)
             activate_btn.clicked.connect(
                 lambda checked=False, p=provider: self._activate_provider(p)
             )
         action_layout.addWidget(activate_btn)
 
-        edit_btn = PushButton("编辑", action_widget)
+        edit_btn = PushButton(self._provider_text("edit"), action_widget)
         edit_btn.setFixedSize(52, 28)
         edit_btn.clicked.connect(lambda checked=False, p=provider: self._edit_provider(p))
         action_layout.addWidget(edit_btn)
 
-        test_btn = PushButton("测试", action_widget)
+        test_btn = PushButton(self._provider_text("test"), action_widget)
         test_btn.setFixedSize(52, 28)
         test_btn.clicked.connect(
             lambda checked=False, p=provider: self._test_provider_connection(p)
         )
         action_layout.addWidget(test_btn)
 
-        delete_btn = PushButton("删除", action_widget)
+        delete_btn = PushButton(self._provider_text("delete"), action_widget)
         delete_btn.setFixedSize(52, 28)
         delete_btn.setEnabled(can_delete)
         delete_btn.clicked.connect(lambda checked=False, p=provider: self._delete_provider(p))
@@ -1399,27 +1390,27 @@ class SettingsPage(ScrollArea):
             return self._providers[0]
         return None
 
-    @staticmethod
-    def _provider_model_text(provider: LLMProviderConfig) -> str:
+    def _provider_model_text(self, provider: LLMProviderConfig) -> str:
         model = str(provider.model or "").strip()
-        return model if model else "未设置模型"
+        return model if model else self._provider_text("no_model")
 
-    @staticmethod
-    def _provider_url_text(provider: LLMProviderConfig, is_zh: bool) -> str:
+    def _provider_url_text(self, provider: LLMProviderConfig) -> str:
         base_url = str(provider.base_url or "").strip()
-        return base_url if base_url else ("未设置地址" if is_zh else "No endpoint")
+        return base_url if base_url else self._provider_text("no_endpoint")
 
-    @staticmethod
-    def _provider_rpm_text(provider: LLMProviderConfig, is_zh: bool) -> str:
+    def _provider_rpm_text(self, provider: LLMProviderConfig) -> str:
         if provider.rpm_limit > 0:
-            return f"RPM：{provider.rpm_limit}" if is_zh else f"RPM: {provider.rpm_limit}"
-        return "RPM：无限制" if is_zh else "RPM: Unlimited"
+            return (
+                f"RPM：{provider.rpm_limit}"
+                if self._main.config.language == "zh"
+                else f"RPM: {provider.rpm_limit}"
+            )
+        return self._provider_text("rpm_unlimited")
 
-    @staticmethod
-    def _mask_provider_secret(secret: str) -> str:
+    def _mask_provider_secret(self, secret: str) -> str:
         value = str(secret).strip()
         if not value:
-            return "未设置"
+            return self._provider_text("not_set")
         if len(value) <= 8:
             return "*" * len(value)
         return f"{value[:4]}***{value[-4:]}"
@@ -1675,13 +1666,17 @@ class SettingsPage(ScrollArea):
 
     def _add_provider(self) -> None:
         """Open dialog to add a new provider."""
-        dialog = LLMProviderDialog(parent=self)
+        dialog = LLMProviderDialog(language=self._main.config.language, parent=self)
         dialog.saved.connect(self._on_provider_saved)
         dialog.exec()
 
     def _edit_provider(self, provider: LLMProviderConfig) -> None:
         """Open dialog to edit a provider."""
-        dialog = LLMProviderDialog(provider, parent=self)
+        dialog = LLMProviderDialog(
+            provider,
+            language=self._main.config.language,
+            parent=self,
+        )
         dialog.saved.connect(self._on_provider_saved)
         dialog.exec()
 
@@ -1705,13 +1700,17 @@ class SettingsPage(ScrollArea):
     def _delete_provider(self, provider: LLMProviderConfig) -> None:
         """Delete a provider."""
         if len(self._providers) <= 1:
-            QMessageBox.warning(self, "无法删除", "至少需要保留一个提供商配置")
+            QMessageBox.warning(
+                self,
+                self._provider_text("delete_blocked_title"),
+                self._provider_text("delete_blocked_desc"),
+            )
             return
 
         reply = QMessageBox.question(
             self,
-            "确认删除",
-            f"确定要删除提供商 '{provider.name}' 吗？",
+            self._provider_text("delete_title"),
+            self._format_provider_text("delete_message", name=provider.name),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 
@@ -1735,8 +1734,8 @@ class SettingsPage(ScrollArea):
         self._cleanup_provider_test_worker()
         self._show_info_bar(
             "info",
-            "测试中",
-            f"正在测试提供商「{provider.name}」连通性...",
+            self._provider_text("provider_testing_title"),
+            self._format_provider_text("provider_testing_desc", name=provider.name),
             duration=1500,
         )
 
@@ -1761,7 +1760,10 @@ class SettingsPage(ScrollArea):
         """Handle provider connection test result."""
         if connected:
             self._show_info_bar(
-                "success", "连接成功", f"提供商「{provider_name}」连通正常", duration=3500
+                "success",
+                self._provider_text("provider_test_ok_title"),
+                self._format_provider_text("provider_test_ok_desc", name=provider_name),
+                duration=3500,
             )
             return
 
@@ -1775,14 +1777,21 @@ class SettingsPage(ScrollArea):
 
             self._show_info_bar(
                 "error",
-                "连接失败",
-                f"提供商「{provider_name}」连接失败：{error}",
+                self._provider_text("provider_test_fail_title"),
+                self._format_provider_text(
+                    "provider_test_fail_desc",
+                    name=provider_name,
+                    error=error,
+                ),
                 duration=5000,
             )
             return
 
         self._show_info_bar(
-            "warning", "连接失败", f"提供商「{provider_name}」未通过连通性测试", duration=4000
+            "warning",
+            self._provider_text("provider_test_fail_title"),
+            self._format_provider_text("provider_test_warn_desc", name=provider_name),
+            duration=4000,
         )
 
     @staticmethod
@@ -2178,17 +2187,6 @@ class SettingsPage(ScrollArea):
 
     def _save_config(self) -> None:
         """Save configuration."""
-        from ankismart.ui.i18n import t
-
-        # Validate active provider
-        if not self._providers:
-            QMessageBox.warning(
-                self,
-                t("settings.error", self._main.config.language),
-                t("settings.must_have_provider", self._main.config.language),
-            )
-            return
-
         if self._autosave_timer.isActive():
             self._autosave_timer.stop()
         self._save_config_silent(show_feedback=True)
@@ -2207,10 +2205,6 @@ class SettingsPage(ScrollArea):
 
     def _save_config_silent(self, *, show_feedback: bool = False) -> None:
         """Save configuration without showing success message (for auto-save)."""
-        # Validate active provider
-        if not self._providers:
-            return
-
         # Parse tags
         tags = [tag.strip() for tag in self._default_tags_edit.text().split(",") if tag.strip()]
         if not tags:
@@ -2478,6 +2472,9 @@ class SettingsPage(ScrollArea):
                 if is_zh
                 else f"Save all configuration changes ({save_shortcut})"
             )
+        self._refresh_provider_card_chrome()
+        self._replace_provider_list_card()
+        self._update_provider_list()
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""

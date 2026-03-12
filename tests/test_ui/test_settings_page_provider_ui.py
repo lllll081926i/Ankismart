@@ -44,6 +44,13 @@ def test_provider_summary_panel_prefers_compact_width(_qapp) -> None:
     assert page._provider_summary_panel.maximumWidth() == 280
 
 
+def test_settings_page_does_not_keep_legacy_provider_table(_qapp) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    assert not hasattr(page, "_provider_table")
+
+
 def test_provider_summary_displays_active_provider_fields(_qapp) -> None:
     providers = [
         LLMProviderConfig(
@@ -60,6 +67,36 @@ def test_provider_summary_displays_active_provider_fields(_qapp) -> None:
     assert "model-a" in page._provider_summary_meta_label.text()
     assert "https://example.com/v1" in page._provider_summary_meta_label.text()
     assert "120" in page._provider_summary_meta_label.text()
+
+
+def test_provider_ui_uses_english_copy_for_empty_fields(_qapp) -> None:
+    providers = [
+        LLMProviderConfig(
+            id="p1",
+            name="",
+            api_key="",
+            base_url="",
+            model="",
+        )
+    ]
+    cfg = AppConfig(language="en", llm_providers=providers, active_provider_id="p1")
+    main, _ = make_main(cfg)
+    page = SettingsPage(main)
+
+    assert page._provider_summary_status_label.text() == "Active"
+    assert page._provider_summary_name_label.text() == "Unnamed provider"
+    assert "No model configured" in page._provider_summary_meta_label.text()
+    assert "No endpoint" in page._provider_summary_meta_label.text()
+
+    group = page._provider_group_widgets["p1"]
+    assert group.titleLabel.text() == "Unnamed provider"
+    assert "No model configured" in group.contentLabel.text()
+
+    action_widget = page._provider_action_widgets["p1"]
+    assert action_widget.layout().itemAt(0).widget().text() == "Current"
+    assert action_widget.layout().itemAt(1).widget().text() == "Edit"
+    assert action_widget.layout().itemAt(2).widget().text() == "Test"
+    assert action_widget.layout().itemAt(3).widget().text() == "Delete"
 
 
 def test_provider_list_card_renders_one_group_per_provider(_qapp) -> None:
@@ -224,6 +261,34 @@ def test_activate_provider_refreshes_summary_and_action_widgets(_qapp, monkeypat
     p1_activate_btn = page._provider_action_widgets["p1"].layout().itemAt(0).widget()
     assert isinstance(p2_activate_btn, PrimaryPushButton)
     assert type(p1_activate_btn) is PushButton
+
+
+def test_retranslate_ui_refreshes_provider_copy(_qapp) -> None:
+    providers = [
+        LLMProviderConfig(
+            id="p1",
+            name="OpenAI",
+            api_key="k1",
+            base_url="",
+            model="",
+        ),
+    ]
+    cfg = AppConfig(language="zh", llm_providers=providers, active_provider_id="p1")
+    main, _ = make_main(cfg)
+    page = SettingsPage(main)
+
+    main.config = main.config.model_copy(update={"language": "en"})
+    page._main.config = main.config
+    page.retranslate_ui()
+
+    assert page._provider_summary_card.titleLabel.text() == "Active Provider"
+    assert page._provider_mgmt_card.titleLabel.text() == "LLM Provider"
+    assert page._provider_summary_status_label.text() == "Active"
+    assert "No model configured" in page._provider_summary_meta_label.text()
+
+    action_widget = page._provider_action_widgets["p1"]
+    assert action_widget.layout().itemAt(0).widget().text() == "Current"
+    assert action_widget.layout().itemAt(1).widget().text() == "Edit"
 
 
 def test_save_first_provider_refreshes_summary_and_group_list(_qapp, monkeypatch) -> None:
