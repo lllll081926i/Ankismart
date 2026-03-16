@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Iterable, Literal
+from typing import Any, Callable, Iterable, Literal
 
 from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.styling import MODERN_CARD_CSS
@@ -504,6 +504,7 @@ class AnkiGateway:
         self,
         cards: list[CardDraft],
         update_mode: UpdateMode = "create_only",
+        progress_callback: Callable[[int, int, CardPushStatus], None] | None = None,
     ) -> PushResult:
         metrics.increment("anki_push_batches_total")
         metrics.increment("anki_push_cards_total", value=len(cards))
@@ -540,9 +541,13 @@ class AnkiGateway:
                             "Card push failed",
                             extra={"index": i, "error": exc.message, "trace_id": trace_id},
                         )
-                        results.append(CardPushStatus(index=i, success=False, error=exc.message))
+                        status = CardPushStatus(index=i, success=False, error=exc.message)
+                        results.append(status)
                         failed += 1
                         metrics.increment("anki_push_failed_total")
+
+                    if progress_callback is not None:
+                        progress_callback(i + 1, len(prepared_cards), status)
 
                 total_processed = succeeded + failed
                 success_ratio = (succeeded / total_processed) if total_processed else 0.0

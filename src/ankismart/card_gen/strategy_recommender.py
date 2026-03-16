@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ankismart.core.logging import get_logger
 
@@ -11,6 +11,12 @@ if TYPE_CHECKING:
     from ankismart.card_gen.llm_client import LLMClient
 
 logger = get_logger("strategy_recommender")
+
+RULE_STRATEGY_ALIASES = {
+    "basic_qa": "basic",
+    "fill_blank": "cloze",
+    "concept_explanation": "concept",
+}
 
 
 class StrategyRecommendation:
@@ -98,6 +104,55 @@ class StrategyRecommender:
 
         # Fallback to rule-based recommendation
         return self._rule_based_recommend(analysis_content, doc_type)
+
+    @staticmethod
+    def _normalize_strategy_mix(
+        strategy_mix: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        for item in strategy_mix:
+            strategy = str(item.get("strategy", "")).strip()
+            if not strategy:
+                continue
+            normalized.append(
+                {
+                    **item,
+                    "strategy": RULE_STRATEGY_ALIASES.get(strategy, strategy),
+                }
+            )
+        return normalized
+
+    @staticmethod
+    def _normalize_ratios(strategy_mix: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        total_ratio = sum(
+            item["ratio"]
+            for item in strategy_mix
+            if isinstance(item.get("ratio"), (int, float)) and item["ratio"] > 0
+        )
+        if total_ratio <= 0:
+            return strategy_mix
+
+        normalized: list[dict[str, Any]] = []
+        remainders: list[tuple[float, int]] = []
+        allocated = 0
+
+        for index, item in enumerate(strategy_mix):
+            raw_ratio = item.get("ratio", 0)
+            if not isinstance(raw_ratio, (int, float)) or raw_ratio <= 0:
+                normalized.append({**item, "ratio": 0})
+                remainders.append((0.0, index))
+                continue
+
+            raw = float(raw_ratio) * 100 / total_ratio
+            value = int(raw)
+            normalized.append({**item, "ratio": value})
+            remainders.append((raw - value, index))
+            allocated += value
+
+        for _, index in sorted(remainders, reverse=True)[: max(0, 100 - allocated)]:
+            normalized[index]["ratio"] += 1
+
+        return normalized
 
     def _detect_document_type(self, content: str) -> str:
         """Detect document type from content patterns.
@@ -212,10 +267,8 @@ class StrategyRecommender:
                     item["ratio"] += 5
                     break
 
-        # Normalize ratios to sum to 100
-        total_ratio = sum(item["ratio"] for item in strategy_mix)
-        for item in strategy_mix:
-            item["ratio"] = int(item["ratio"] * 100 / total_ratio)
+        strategy_mix = self._normalize_strategy_mix(strategy_mix)
+        strategy_mix = self._normalize_ratios(strategy_mix)
 
         return StrategyRecommendation(
             strategy_mix=strategy_mix,
@@ -279,7 +332,7 @@ class StrategyRecommender:
             result = json.loads(json_str)
 
             return StrategyRecommendation(
-                strategy_mix=result.get("strategy_mix", []),
+                strategy_mix=self._normalize_strategy_mix(result.get("strategy_mix", [])),
                 reasoning=result.get("reasoning", "LLM 分析推荐"),
                 confidence=result.get("confidence", 0.8),
                 document_type=doc_type,

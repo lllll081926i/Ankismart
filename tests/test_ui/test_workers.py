@@ -5,7 +5,13 @@ from types import SimpleNamespace
 
 from ankismart.core.config import LLMProviderConfig
 from ankismart.core.errors import CardGenError, ErrorCode
-from ankismart.core.models import ConvertedDocument, MarkdownResult
+from ankismart.core.models import (
+    CardDraft,
+    CardPushStatus,
+    ConvertedDocument,
+    MarkdownResult,
+    PushResult,
+)
 from ankismart.ui.workers import (
     BatchConvertWorker,
     BatchGenerateWorker,
@@ -267,6 +273,39 @@ def test_push_worker_success_emits_finished() -> None:
 
     assert len(finished) == 1
     assert finished[0].succeeded == 2
+
+
+def test_push_worker_emits_card_progress_updates() -> None:
+    progress_messages: list[str] = []
+    card_progress_events: list[tuple[int, int]] = []
+    finished: list[PushResult] = []
+
+    cards = [
+        CardDraft(fields={"Front": "Q1", "Back": "A1"}, note_type="Basic", deck_name="Default"),
+        CardDraft(fields={"Front": "Q2", "Back": "A2"}, note_type="Basic", deck_name="Default"),
+    ]
+
+    class _Gateway:
+        def push(self, _cards, *, update_mode, progress_callback=None):
+            assert update_mode == "create_only"
+            status1 = CardPushStatus(index=0, success=True, error="")
+            status2 = CardPushStatus(index=1, success=True, error="")
+            if progress_callback is not None:
+                progress_callback(1, 2, status1)
+                progress_callback(2, 2, status2)
+            return PushResult(total=2, succeeded=2, failed=0, results=[status1, status2])
+
+    worker = PushWorker(_Gateway(), cards)
+    worker.progress.connect(progress_messages.append)
+    worker.card_progress.connect(
+        lambda current, total: card_progress_events.append((current, total))
+    )
+    worker.finished.connect(finished.append)
+    worker.run()
+
+    assert card_progress_events == [(1, 2), (2, 2)]
+    assert any("1/2" in message for message in progress_messages)
+    assert len(finished) == 1
 
 
 def test_push_worker_error_emits_structured_message() -> None:

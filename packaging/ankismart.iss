@@ -1,7 +1,7 @@
 ; Ankismart installer script (Inno Setup 6)
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.6"
+  #define MyAppVersion "0.1.7"
 #endif
 
 #ifndef ProjectRoot

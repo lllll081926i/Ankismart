@@ -442,19 +442,26 @@ class SettingsPage(ScrollArea):
     def _apply_provider_card_styles(self) -> None:
         """Apply theme-aware styles to provider summary and detail panels."""
         palette = get_list_widget_palette(dark=isDarkTheme())
-        panel_style = (
-            "QWidget#providerSummaryPanel, QWidget#providerDetailPanel {"
-            f"background-color: {palette.hover};"
+        summary_panel_style = (
+            "QWidget#providerSummaryPanel {"
+            "background-color: transparent;"
             f"border: 1px solid {palette.border};"
             "border-radius: 10px;"
             "}"
         )
+        detail_panel_style = (
+            "QWidget#providerRowPanel {"
+            "background-color: transparent;"
+            "border: none;"
+            "border-radius: 0;"
+            "}"
+        )
 
         if hasattr(self, "_provider_summary_panel"):
-            self._provider_summary_panel.setStyleSheet(panel_style)
+            self._provider_summary_panel.setStyleSheet(summary_panel_style)
 
         for widget in getattr(self, "_provider_detail_widgets", []):
-            widget.setStyleSheet(panel_style)
+            widget.setStyleSheet(detail_panel_style)
 
         for label_name, size, weight in (
             ("_provider_summary_status_label", 12, 500),
@@ -538,6 +545,10 @@ class SettingsPage(ScrollArea):
         self._provider_mgmt_card.setContent(self._provider_text("mgmt_desc"))
         self._provider_summary_card.setTitle(self._provider_text("summary_title"))
         self._provider_summary_card.setContent(self._provider_text("summary_desc"))
+        if hasattr(self, "_provider_list_title_label"):
+            self._provider_list_title_label.setText(self._provider_text("list_title"))
+        if hasattr(self, "_provider_list_desc_label"):
+            self._provider_list_desc_label.setText(self._provider_text("list_desc"))
 
     def _replace_provider_list_card(self) -> None:
         old_card = getattr(self, "_provider_list_card", None)
@@ -571,16 +582,18 @@ class SettingsPage(ScrollArea):
         self._provider_summary_panel.setMaximumWidth(280)
         summary_layout = QVBoxLayout(self._provider_summary_panel)
         summary_layout.setContentsMargins(12, 10, 12, 10)
-        summary_layout.setSpacing(2)
+        summary_layout.setSpacing(4)
 
         self._provider_summary_status_label = BodyLabel(self._provider_summary_panel)
         self._provider_summary_name_label = BodyLabel(self._provider_summary_panel)
         self._provider_summary_meta_label = BodyLabel(self._provider_summary_panel)
         self._provider_summary_meta_label.setWordWrap(True)
 
-        summary_layout.addWidget(self._provider_summary_status_label)
         summary_layout.addWidget(self._provider_summary_name_label)
+        summary_layout.addWidget(self._provider_summary_status_label)
         summary_layout.addWidget(self._provider_summary_meta_label)
+        self._provider_summary_status_label.hide()
+        self._provider_summary_meta_label.hide()
 
         card.hBoxLayout.addWidget(self._provider_summary_panel, 0, Qt.AlignmentFlag.AlignRight)
         card.hBoxLayout.addSpacing(16)
@@ -1268,24 +1281,16 @@ class SettingsPage(ScrollArea):
     def _update_provider_summary_card(self) -> None:
         provider = self._current_provider()
         if provider is None:
-            self._provider_summary_status_label.setText(self._provider_text("no_provider_status"))
             self._provider_summary_name_label.setText(self._provider_text("no_provider_name"))
-            self._provider_summary_meta_label.setText(self._provider_text("no_provider_desc"))
+            self._provider_summary_status_label.hide()
+            self._provider_summary_meta_label.hide()
             return
 
-        self._provider_summary_status_label.setText(self._provider_text("active_status"))
         self._provider_summary_name_label.setText(
-            provider.name.strip() or self._provider_text("unnamed_provider")
+            self._provider_summary_line_text(provider)
         )
-        self._provider_summary_meta_label.setText(
-            "\n".join(
-                [
-                    self._provider_model_text(provider),
-                    self._provider_url_text(provider),
-                    self._provider_rpm_text(provider),
-                ]
-            )
-        )
+        self._provider_summary_status_label.hide()
+        self._provider_summary_meta_label.hide()
 
     def _update_provider_expand_card(self) -> None:
         self._provider_group_widgets = {}
@@ -1299,21 +1304,24 @@ class SettingsPage(ScrollArea):
         for provider in self._providers:
             is_active = provider.id == self._active_provider_id
             detail_widget = QWidget(self._provider_list_card)
-            detail_widget.setObjectName("providerDetailPanel")
-            detail_layout = QVBoxLayout(detail_widget)
-            detail_layout.setContentsMargins(12, 10, 12, 10)
+            detail_widget.setObjectName("providerRowPanel")
+            detail_widget.setFixedHeight(46)
+            detail_layout = QHBoxLayout(detail_widget)
+            detail_layout.setContentsMargins(12, 6, 12, 6)
             detail_layout.setSpacing(8)
 
-            credential_label = BodyLabel(
-                f"{self._provider_text('api_key')}: {self._mask_provider_secret(provider.api_key)}",
-                detail_widget,
-            )
-            credential_label.setWordWrap(True)
-            detail_layout.addWidget(credential_label)
-
-            rpm_label = BodyLabel(self._provider_rpm_text(provider), detail_widget)
-            rpm_label.setWordWrap(True)
-            detail_layout.addWidget(rpm_label)
+            for object_name, text, width in (
+                ("providerExpandRpm", self._provider_rpm_text(provider), 96),
+            ):
+                label = BodyLabel(text, detail_widget)
+                label.setObjectName(object_name)
+                label.setWordWrap(False)
+                label.setMinimumWidth(width)
+                label.setMaximumWidth(width)
+                label.setStyleSheet(
+                    "background-color: transparent; border: none; border-radius: 0; padding: 0;"
+                )
+                detail_layout.addWidget(label)
 
             action_widget = self._build_provider_action_widget(
                 provider,
@@ -1321,7 +1329,7 @@ class SettingsPage(ScrollArea):
                 can_delete=can_delete,
                 parent=detail_widget,
             )
-            detail_layout.addWidget(action_widget)
+            detail_layout.addWidget(action_widget, 0, Qt.AlignmentFlag.AlignRight)
 
             group_widget = self._provider_list_card.addGroup(
                 FluentIcon.ACCEPT_MEDIUM if is_active else FluentIcon.ROBOT,
@@ -1347,6 +1355,10 @@ class SettingsPage(ScrollArea):
         parent: QWidget,
     ) -> QWidget:
         action_widget = QWidget(parent)
+        action_widget.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
         action_layout = QHBoxLayout(action_widget)
         action_layout.setContentsMargins(2, 2, 2, 2)
         action_layout.setSpacing(4)
@@ -1379,7 +1391,6 @@ class SettingsPage(ScrollArea):
         delete_btn.setEnabled(can_delete)
         delete_btn.clicked.connect(lambda checked=False, p=provider: self._delete_provider(p))
         action_layout.addWidget(delete_btn)
-        action_layout.addStretch(1)
         return action_widget
 
     def _current_provider(self) -> LLMProviderConfig | None:
@@ -1394,9 +1405,17 @@ class SettingsPage(ScrollArea):
         model = str(provider.model or "").strip()
         return model if model else self._provider_text("no_model")
 
+    def _provider_summary_line_text(self, provider: LLMProviderConfig) -> str:
+        name = provider.name.strip() or self._provider_text("unnamed_provider")
+        model = self._provider_model_text(provider)
+        return f"{name} / {model}"
+
     def _provider_url_text(self, provider: LLMProviderConfig) -> str:
         base_url = str(provider.base_url or "").strip()
         return base_url if base_url else self._provider_text("no_endpoint")
+
+    def _provider_row_text(self, provider: LLMProviderConfig) -> str:
+        return f"{self._provider_summary_line_text(provider)} / {self._provider_url_text(provider)}"
 
     def _provider_rpm_text(self, provider: LLMProviderConfig) -> str:
         if provider.rpm_limit > 0:
@@ -1931,17 +1950,13 @@ class SettingsPage(ScrollArea):
             return
 
         # Confirm deletion
-        reply = QMessageBox.question(
-            self,
+        message_text, informative_text = self._clear_cache_dialog_texts(count=count, size=size_mb)
+        dialog = self._build_clear_cache_message_box(
             t("settings.confirm_clear_cache", self._main.config.language),
-            t(
-                "settings.confirm_clear_cache_msg",
-                self._main.config.language,
-                count=count,
-                size=size_mb,
-            ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            message_text,
+            informative_text,
         )
+        reply = self._exec_message_box(dialog)
 
         if reply == QMessageBox.StandardButton.Yes:
             success = clear_cache()
@@ -1961,6 +1976,107 @@ class SettingsPage(ScrollArea):
                     t("settings.cache_clear_failed_msg", self._main.config.language),
                     duration=5000,
                 )
+
+    def _clear_cache_dialog_texts(self, *, count: int, size: float) -> tuple[str, str]:
+        is_zh = self._main.config.language == "zh"
+        if is_zh:
+            return (
+                "确认要清空所有缓存文件吗？",
+                f"这将删除 {count} 个文件（{size:.2f} MB），此操作不可撤销。",
+            )
+        return (
+            "Clear all cache files?",
+            f"This will delete {count} files ({size:.2f} MB) and cannot be undone.",
+        )
+
+    def _build_clear_cache_message_box(
+        self,
+        title: str,
+        text: str,
+        informative_text: str,
+    ) -> QMessageBox:
+        dark = isDarkTheme()
+        surface = "rgba(32, 32, 32, 0.98)" if dark else "white"
+        border = "rgba(255, 255, 255, 0.10)" if dark else "rgba(0, 0, 0, 0.08)"
+        primary_text = "rgba(255, 255, 255, 0.96)" if dark else "rgba(0, 0, 0, 0.92)"
+        secondary_text = "rgba(255, 255, 255, 0.68)" if dark else "rgba(0, 0, 0, 0.64)"
+        cancel_border = "rgba(255, 255, 255, 0.14)" if dark else "rgba(0, 0, 0, 0.12)"
+        cancel_hover = "rgba(255, 255, 255, 0.06)" if dark else "rgba(0, 0, 0, 0.04)"
+
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(title)
+        dialog.setText(text)
+        dialog.setInformativeText(informative_text)
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        dialog.setDefaultButton(QMessageBox.StandardButton.No)
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        yes_button = dialog.button(QMessageBox.StandardButton.Yes)
+        no_button = dialog.button(QMessageBox.StandardButton.No)
+        if yes_button is not None:
+            yes_button.setObjectName("clearCacheConfirmButton")
+            yes_button.setText("确认清空" if self._main.config.language == "zh" else "Clear Cache")
+        if no_button is not None:
+            no_button.setObjectName("clearCacheCancelButton")
+            no_button.setText("取消" if self._main.config.language == "zh" else "Cancel")
+        dialog.setMinimumWidth(520)
+        dialog.setStyleSheet(
+            f"""
+            QMessageBox {{
+                background-color: {surface};
+                border: 1px solid {border};
+                border-radius: 14px;
+            }}
+            QMessageBox QLabel {{
+                background: transparent;
+                border: none;
+                color: {primary_text};
+            }}
+            QMessageBox QLabel#qt_msgbox_label {{
+                font-size: 16px;
+                font-weight: 600;
+                padding: 6px 0 2px 0;
+                min-width: 360px;
+            }}
+            QMessageBox QLabel#qt_msgbox_informativelabel {{
+                font-size: 13px;
+                line-height: 1.4;
+                color: {secondary_text};
+                padding: 0 0 4px 0;
+            }}
+            QMessageBox QPushButton {{
+                min-width: 108px;
+                min-height: 40px;
+                padding: 0 18px;
+                border-radius: 10px;
+                font-size: 14px;
+                font-weight: 600;
+            }}
+            QMessageBox QPushButton#clearCacheConfirmButton {{
+                background-color: #2563eb;
+                border: 1px solid #2563eb;
+                color: white;
+            }}
+            QMessageBox QPushButton#clearCacheConfirmButton:hover {{
+                background-color: #1d4ed8;
+                border-color: #1d4ed8;
+            }}
+            QMessageBox QPushButton#clearCacheCancelButton {{
+                background-color: transparent;
+                border: 1px solid {cancel_border};
+                color: {primary_text};
+            }}
+            QMessageBox QPushButton#clearCacheCancelButton:hover {{
+                background-color: {cancel_hover};
+            }}
+            """
+        )
+        return dialog
+
+    def _exec_message_box(self, dialog: QMessageBox) -> QMessageBox.StandardButton:
+        return QMessageBox.StandardButton(dialog.exec())
 
     def _on_log_level_changed(self, index: int) -> None:
         """Handle log level change."""

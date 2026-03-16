@@ -304,8 +304,23 @@ class PushWorker(QThread):
             )
             self.progress.emit(f"正在推送 {len(self._cards)} 张卡片到 Anki")
 
+            def on_progress(current: int, total: int, _status) -> None:
+                if self._cancelled:
+                    raise _WorkerCancelledError()
+                self.card_progress.emit(current, total)
+                self.progress.emit(f"已推送 {current}/{total} 张卡片")
+
             # Push with progress tracking
-            result = self._gateway.push(self._cards, update_mode=self._update_mode)
+            try:
+                result = self._gateway.push(
+                    self._cards,
+                    update_mode=self._update_mode,
+                    progress_callback=on_progress,
+                )
+            except TypeError as exc:
+                if "progress_callback" not in str(exc):
+                    raise
+                result = self._gateway.push(self._cards, update_mode=self._update_mode)
 
             if self._cancelled:
                 self.cancelled.emit()
@@ -321,6 +336,8 @@ class PushWorker(QThread):
                 },
             )
             self.finished.emit(result)
+        except _WorkerCancelledError:
+            self.cancelled.emit()
         except Exception as e:
             if not self._cancelled:
                 logger.exception(
