@@ -359,11 +359,20 @@ def test_clear_cache_confirmation_dialog_uses_custom_clean_styles(_qapp, monkeyp
 
     dialog = shown_dialog["dialog"]
     assert dialog.windowTitle() == "确认清空缓存"
-    assert "988" in dialog.text()
-    assert "1.29" in dialog.text()
+    assert "确认要清空所有缓存文件吗？" == dialog.text()
+    assert "988" in dialog.informativeText()
+    assert "1.29" in dialog.informativeText()
     style = dialog.styleSheet()
-    assert "QLabel" in style
-    assert "background: transparent" in style
-    assert "QPushButton" in style
-    assert "min-width: 88px" in style
-    assert "border: none" in style
+    assert "QMessageBox {" in style
+    assert "border-radius: 14px" in style
+    assert "#clearCacheConfirmButton" in style
+    assert "#clearCacheCancelButton" in style
+    assert "min-width: 108px" in style
+    assert "min-height: 40px" in style
+
+    yes_button = dialog.button(QMessageBox.StandardButton.Yes)
+    no_button = dialog.button(QMessageBox.StandardButton.No)
+    assert yes_button.text() == "确认清空"
+    assert yes_button.objectName() == "clearCacheConfirmButton"
+    assert no_button.text() == "取消"
+    assert no_button.objectName() == "clearCacheCancelButton"

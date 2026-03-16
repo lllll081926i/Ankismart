@@ -1950,14 +1950,11 @@ class SettingsPage(ScrollArea):
             return
 
         # Confirm deletion
+        message_text, informative_text = self._clear_cache_dialog_texts(count=count, size=size_mb)
         dialog = self._build_clear_cache_message_box(
             t("settings.confirm_clear_cache", self._main.config.language),
-            t(
-                "settings.confirm_clear_cache_msg",
-                self._main.config.language,
-                count=count,
-                size=size_mb,
-            ),
+            message_text,
+            informative_text,
         )
         reply = self._exec_message_box(dialog)
 
@@ -1980,42 +1977,102 @@ class SettingsPage(ScrollArea):
                     duration=5000,
                 )
 
-    def _build_clear_cache_message_box(self, title: str, text: str) -> QMessageBox:
+    def _clear_cache_dialog_texts(self, *, count: int, size: float) -> tuple[str, str]:
+        is_zh = self._main.config.language == "zh"
+        if is_zh:
+            return (
+                "确认要清空所有缓存文件吗？",
+                f"这将删除 {count} 个文件（{size:.2f} MB），此操作不可撤销。",
+            )
+        return (
+            "Clear all cache files?",
+            f"This will delete {count} files ({size:.2f} MB) and cannot be undone.",
+        )
+
+    def _build_clear_cache_message_box(
+        self,
+        title: str,
+        text: str,
+        informative_text: str,
+    ) -> QMessageBox:
+        dark = isDarkTheme()
+        surface = "rgba(32, 32, 32, 0.98)" if dark else "white"
+        border = "rgba(255, 255, 255, 0.10)" if dark else "rgba(0, 0, 0, 0.08)"
+        primary_text = "rgba(255, 255, 255, 0.96)" if dark else "rgba(0, 0, 0, 0.92)"
+        secondary_text = "rgba(255, 255, 255, 0.68)" if dark else "rgba(0, 0, 0, 0.64)"
+        cancel_border = "rgba(255, 255, 255, 0.14)" if dark else "rgba(0, 0, 0, 0.12)"
+        cancel_hover = "rgba(255, 255, 255, 0.06)" if dark else "rgba(0, 0, 0, 0.04)"
+
         dialog = QMessageBox(self)
         dialog.setWindowTitle(title)
         dialog.setText(text)
+        dialog.setInformativeText(informative_text)
         dialog.setIcon(QMessageBox.Icon.Question)
         dialog.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         dialog.setDefaultButton(QMessageBox.StandardButton.No)
         dialog.setTextFormat(Qt.TextFormat.PlainText)
-        dialog.setStyleSheet(
-            """
-            QMessageBox QLabel {
-                background: transparent;
-                border: none;
-                padding: 0;
-            }
-            QMessageBox QPushButton {
-                min-width: 88px;
-                padding: 8px 18px;
-                background: transparent;
-                border: none;
-                border-radius: 0;
-            }
-            QMessageBox QPushButton:hover {
-                background: transparent;
-                text-decoration: underline;
-            }
-            """
-        )
         yes_button = dialog.button(QMessageBox.StandardButton.Yes)
         no_button = dialog.button(QMessageBox.StandardButton.No)
         if yes_button is not None:
-            yes_button.setText("确认" if self._main.config.language == "zh" else "Yes")
+            yes_button.setObjectName("clearCacheConfirmButton")
+            yes_button.setText("确认清空" if self._main.config.language == "zh" else "Clear Cache")
         if no_button is not None:
-            no_button.setText("取消" if self._main.config.language == "zh" else "No")
+            no_button.setObjectName("clearCacheCancelButton")
+            no_button.setText("取消" if self._main.config.language == "zh" else "Cancel")
+        dialog.setMinimumWidth(520)
+        dialog.setStyleSheet(
+            f"""
+            QMessageBox {{
+                background-color: {surface};
+                border: 1px solid {border};
+                border-radius: 14px;
+            }}
+            QMessageBox QLabel {{
+                background: transparent;
+                border: none;
+                color: {primary_text};
+            }}
+            QMessageBox QLabel#qt_msgbox_label {{
+                font-size: 16px;
+                font-weight: 600;
+                padding: 6px 0 2px 0;
+                min-width: 360px;
+            }}
+            QMessageBox QLabel#qt_msgbox_informativelabel {{
+                font-size: 13px;
+                line-height: 1.4;
+                color: {secondary_text};
+                padding: 0 0 4px 0;
+            }}
+            QMessageBox QPushButton {{
+                min-width: 108px;
+                min-height: 40px;
+                padding: 0 18px;
+                border-radius: 10px;
+                font-size: 14px;
+                font-weight: 600;
+            }}
+            QMessageBox QPushButton#clearCacheConfirmButton {{
+                background-color: #2563eb;
+                border: 1px solid #2563eb;
+                color: white;
+            }}
+            QMessageBox QPushButton#clearCacheConfirmButton:hover {{
+                background-color: #1d4ed8;
+                border-color: #1d4ed8;
+            }}
+            QMessageBox QPushButton#clearCacheCancelButton {{
+                background-color: transparent;
+                border: 1px solid {cancel_border};
+                color: {primary_text};
+            }}
+            QMessageBox QPushButton#clearCacheCancelButton:hover {{
+                background-color: {cancel_hover};
+            }}
+            """
+        )
         return dialog
 
     def _exec_message_box(self, dialog: QMessageBox) -> QMessageBox.StandardButton:
