@@ -333,3 +333,31 @@ def test_settings_page_uses_llm_group_as_top_content(_qapp) -> None:
 
     assert page._llm_group.y() <= page._provider_summary_card.y()
     assert page._llm_group.y() < page._anki_group.y()
+
+
+def test_clear_cache_uses_top_infobar_confirmation(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    button_holder: dict[str, object] = {}
+
+    class _InfoBarStub:
+        def addWidget(self, widget) -> None:  # noqa: N802
+            button_holder["widget"] = widget
+
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page._get_cache_stats",
+        lambda: {"size_mb": 1.29, "count": 988},
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.InfoBar.warning",
+        lambda *args, **kwargs: _InfoBarStub(),
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.QMessageBox.question",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not use QMessageBox")),
+    )
+
+    page._clear_cache()
+
+    assert button_holder["widget"].text() == "确认清空"

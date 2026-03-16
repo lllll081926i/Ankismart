@@ -22,7 +22,6 @@ from PyQt6.QtWidgets import (
 from qfluentwidgets import (
     BodyLabel,
     ComboBox,
-    ExpandGroupSettingCard,
     ExpandLayout,
     FluentIcon,
     InfoBar,
@@ -35,6 +34,7 @@ from qfluentwidgets import (
     ScrollArea,
     SettingCard,
     SettingCardGroup,
+    SimpleCardWidget,
     Slider,
     SmoothMode,
     SpinBox,
@@ -63,6 +63,18 @@ from ankismart.ui.styles import (
 
 if TYPE_CHECKING:
     from ankismart.ui.main_window import MainWindow
+
+
+def _get_cache_stats() -> dict[str, float | int]:
+    from ankismart.converter.cache import get_cache_stats
+
+    return get_cache_stats()
+
+
+def _clear_cache_files() -> bool:
+    from ankismart.converter.cache import clear_cache
+
+    return clear_cache()
 
 
 _OCR_MODE_CHOICES = (
@@ -275,11 +287,13 @@ class SettingsPage(ScrollArea):
         self._provider_group_widgets: dict[str, QWidget] = {}
         self._provider_action_widgets: dict[str, QWidget] = {}
         self._provider_detail_widgets: list[QWidget] = []
+        self._syncing_provider_summary_combo = False
         self._provider_test_worker = None
         self._anki_test_worker = None
         self._ocr_cloud_test_worker = None
         self._cache_stats_seq = 0
         self._cache_stats_future: concurrent.futures.Future | None = None
+        self._cache_clear_confirm_bar = None
         self._ocr_card_height_bounds: dict[int, tuple[int, int]] = {}
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setSingleShot(True)
@@ -443,7 +457,7 @@ class SettingsPage(ScrollArea):
         """Apply theme-aware styles to provider summary and detail panels."""
         palette = get_list_widget_palette(dark=isDarkTheme())
         panel_style = (
-            "QWidget#providerSummaryPanel, QWidget#providerDetailPanel {"
+            "QWidget#providerSummaryPanel, QWidget#providerRowPanel {"
             f"background-color: {palette.hover};"
             f"border: 1px solid {palette.border};"
             "border-radius: 10px;"
@@ -538,6 +552,10 @@ class SettingsPage(ScrollArea):
         self._provider_mgmt_card.setContent(self._provider_text("mgmt_desc"))
         self._provider_summary_card.setTitle(self._provider_text("summary_title"))
         self._provider_summary_card.setContent(self._provider_text("summary_desc"))
+        if hasattr(self, "_provider_list_title_label"):
+            self._provider_list_title_label.setText(self._provider_text("list_title"))
+        if hasattr(self, "_provider_list_desc_label"):
+            self._provider_list_desc_label.setText(self._provider_text("list_desc"))
 
     def _replace_provider_list_card(self) -> None:
         old_card = getattr(self, "_provider_list_card", None)
@@ -571,29 +589,47 @@ class SettingsPage(ScrollArea):
         self._provider_summary_panel.setMaximumWidth(280)
         summary_layout = QVBoxLayout(self._provider_summary_panel)
         summary_layout.setContentsMargins(12, 10, 12, 10)
-        summary_layout.setSpacing(2)
+        summary_layout.setSpacing(6)
+
+        self._provider_summary_combo = ComboBox(self._provider_summary_panel)
+        self._provider_summary_combo.setMinimumWidth(240)
+        self._provider_summary_combo.currentIndexChanged.connect(
+            self._on_provider_summary_changed
+        )
+        summary_layout.addWidget(self._provider_summary_combo)
 
         self._provider_summary_status_label = BodyLabel(self._provider_summary_panel)
         self._provider_summary_name_label = BodyLabel(self._provider_summary_panel)
         self._provider_summary_meta_label = BodyLabel(self._provider_summary_panel)
         self._provider_summary_meta_label.setWordWrap(True)
-
-        summary_layout.addWidget(self._provider_summary_status_label)
-        summary_layout.addWidget(self._provider_summary_name_label)
-        summary_layout.addWidget(self._provider_summary_meta_label)
+        self._provider_summary_status_label.hide()
+        self._provider_summary_name_label.hide()
+        self._provider_summary_meta_label.hide()
 
         card.hBoxLayout.addWidget(self._provider_summary_panel, 0, Qt.AlignmentFlag.AlignRight)
         card.hBoxLayout.addSpacing(16)
         return card
 
-    def _build_provider_list_card(self) -> ExpandGroupSettingCard:
-        card = ExpandGroupSettingCard(
-            FluentIcon.ROBOT,
-            self._provider_text("list_title"),
-            self._provider_text("list_desc"),
-            self.scrollWidget,
-        )
-        card.setExpand(False)
+    def _build_provider_list_card(self) -> SimpleCardWidget:
+        card = SimpleCardWidget(self.scrollWidget)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(18, 16, 18, 16)
+        card_layout.setSpacing(10)
+
+        self._provider_list_title_label = BodyLabel(self._provider_text("list_title"), card)
+        self._provider_list_title_label.setStyleSheet("font-size: 15px; font-weight: 700;")
+        card_layout.addWidget(self._provider_list_title_label)
+
+        self._provider_list_desc_label = BodyLabel(self._provider_text("list_desc"), card)
+        self._provider_list_desc_label.setWordWrap(True)
+        self._provider_list_desc_label.setStyleSheet("font-size: 12px;")
+        card_layout.addWidget(self._provider_list_desc_label)
+
+        self._provider_list_rows_container = QWidget(card)
+        self._provider_list_rows_layout = QVBoxLayout(self._provider_list_rows_container)
+        self._provider_list_rows_layout.setContentsMargins(0, 4, 0, 0)
+        self._provider_list_rows_layout.setSpacing(8)
+        card_layout.addWidget(self._provider_list_rows_container)
         return card
 
     def _init_layout(self):
@@ -1267,53 +1303,59 @@ class SettingsPage(ScrollArea):
 
     def _update_provider_summary_card(self) -> None:
         provider = self._current_provider()
+        self._syncing_provider_summary_combo = True
+        self._provider_summary_combo.blockSignals(True)
+        self._provider_summary_combo.clear()
+
         if provider is None:
-            self._provider_summary_status_label.setText(self._provider_text("no_provider_status"))
-            self._provider_summary_name_label.setText(self._provider_text("no_provider_name"))
-            self._provider_summary_meta_label.setText(self._provider_text("no_provider_desc"))
+            self._provider_summary_combo.addItem(self._provider_text("no_provider_name"))
+            self._provider_summary_combo.setCurrentIndex(0)
+            self._provider_summary_combo.setEnabled(False)
+            self._provider_summary_combo.blockSignals(False)
+            self._syncing_provider_summary_combo = False
             return
 
-        self._provider_summary_status_label.setText(self._provider_text("active_status"))
-        self._provider_summary_name_label.setText(
-            provider.name.strip() or self._provider_text("unnamed_provider")
-        )
-        self._provider_summary_meta_label.setText(
-            "\n".join(
-                [
-                    self._provider_model_text(provider),
-                    self._provider_url_text(provider),
-                    self._provider_rpm_text(provider),
-                ]
+        active_index = 0
+        for index, item in enumerate(self._providers):
+            self._provider_summary_combo.addItem(
+                self._provider_summary_line_text(item),
+                userData=item.id,
             )
-        )
+            if item.id == provider.id:
+                active_index = index
+
+        self._provider_summary_combo.setCurrentIndex(active_index)
+        self._provider_summary_combo.setEnabled(True)
+        self._provider_summary_combo.blockSignals(False)
+        self._syncing_provider_summary_combo = False
 
     def _update_provider_expand_card(self) -> None:
         self._provider_group_widgets = {}
         self._provider_action_widgets = {}
         self._provider_detail_widgets = []
 
-        for group in list(self._provider_list_card.widgets):
-            self._provider_list_card.removeGroupWidget(group)
+        while self._provider_list_rows_layout.count():
+            item = self._provider_list_rows_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
 
         can_delete = len(self._providers) > 1
         for provider in self._providers:
             is_active = provider.id == self._active_provider_id
-            detail_widget = QWidget(self._provider_list_card)
-            detail_widget.setObjectName("providerDetailPanel")
-            detail_layout = QVBoxLayout(detail_widget)
-            detail_layout.setContentsMargins(12, 10, 12, 10)
-            detail_layout.setSpacing(8)
+            detail_widget = QWidget(self._provider_list_rows_container)
+            detail_widget.setObjectName("providerRowPanel")
+            detail_widget.setFixedHeight(44)
+            detail_layout = QHBoxLayout(detail_widget)
+            detail_layout.setContentsMargins(12, 6, 12, 6)
+            detail_layout.setSpacing(10)
 
-            credential_label = BodyLabel(
-                f"{self._provider_text('api_key')}: {self._mask_provider_secret(provider.api_key)}",
-                detail_widget,
-            )
-            credential_label.setWordWrap(True)
-            detail_layout.addWidget(credential_label)
-
-            rpm_label = BodyLabel(self._provider_rpm_text(provider), detail_widget)
-            rpm_label.setWordWrap(True)
-            detail_layout.addWidget(rpm_label)
+            summary_label = BodyLabel(self._provider_row_text(provider), detail_widget)
+            summary_label.setObjectName("providerRowSummary")
+            summary_label.setWordWrap(False)
+            detail_layout.addWidget(summary_label, 1)
 
             action_widget = self._build_provider_action_widget(
                 provider,
@@ -1321,22 +1363,14 @@ class SettingsPage(ScrollArea):
                 can_delete=can_delete,
                 parent=detail_widget,
             )
-            detail_layout.addWidget(action_widget)
+            detail_layout.addWidget(action_widget, 0, Qt.AlignmentFlag.AlignRight)
 
-            group_widget = self._provider_list_card.addGroup(
-                FluentIcon.ACCEPT_MEDIUM if is_active else FluentIcon.ROBOT,
-                provider.name.strip() or self._provider_text("unnamed_provider"),
-                " · ".join(
-                    [
-                        self._provider_model_text(provider),
-                        self._provider_url_text(provider),
-                    ]
-                ),
-                detail_widget,
-            )
-            self._provider_group_widgets[provider.id] = group_widget
+            self._provider_list_rows_layout.addWidget(detail_widget)
+            self._provider_group_widgets[provider.id] = detail_widget
             self._provider_action_widgets[provider.id] = action_widget
             self._provider_detail_widgets.append(detail_widget)
+
+        self._provider_list_rows_layout.addStretch(1)
 
     def _build_provider_action_widget(
         self,
@@ -1394,6 +1428,14 @@ class SettingsPage(ScrollArea):
         model = str(provider.model or "").strip()
         return model if model else self._provider_text("no_model")
 
+    def _provider_summary_line_text(self, provider: LLMProviderConfig) -> str:
+        name = provider.name.strip() or self._provider_text("unnamed_provider")
+        model = self._provider_model_text(provider)
+        return f"{name} / {model}"
+
+    def _provider_row_text(self, provider: LLMProviderConfig) -> str:
+        return f"{self._provider_summary_line_text(provider)} / {self._provider_url_text(provider)}"
+
     def _provider_url_text(self, provider: LLMProviderConfig) -> str:
         base_url = str(provider.base_url or "").strip()
         return base_url if base_url else self._provider_text("no_endpoint")
@@ -1406,6 +1448,19 @@ class SettingsPage(ScrollArea):
                 else f"RPM: {provider.rpm_limit}"
             )
         return self._provider_text("rpm_unlimited")
+
+    def _on_provider_summary_changed(self, index: int) -> None:
+        if self._syncing_provider_summary_combo:
+            return
+
+        provider_id = self._provider_summary_combo.itemData(index)
+        if not provider_id:
+            return
+
+        provider = next((item for item in self._providers if item.id == provider_id), None)
+        if provider is None or provider.id == self._active_provider_id:
+            return
+        self._activate_provider(provider)
 
     def _mask_provider_secret(self, secret: str) -> str:
         value = str(secret).strip()
@@ -1848,9 +1903,7 @@ class SettingsPage(ScrollArea):
 
     def _refresh_cache_stats(self) -> None:
         """Refresh cache statistics display."""
-        from ankismart.converter.cache import get_cache_stats
-
-        stats = get_cache_stats()
+        stats = _get_cache_stats()
         self._apply_cache_stats(stats)
 
     def _refresh_cache_stats_deferred(self) -> None:
@@ -1866,9 +1919,7 @@ class SettingsPage(ScrollArea):
 
     @staticmethod
     def _compute_cache_stats() -> dict[str, float | int]:
-        from ankismart.converter.cache import get_cache_stats
-
-        return get_cache_stats()
+        return _get_cache_stats()
 
     def _poll_cache_stats_future(self, token: int) -> None:
         if token != self._cache_stats_seq:
@@ -1913,10 +1964,9 @@ class SettingsPage(ScrollArea):
 
     def _clear_cache(self) -> None:
         """Clear all cache files."""
-        from ankismart.converter.cache import clear_cache, get_cache_stats
         from ankismart.ui.i18n import t
 
-        stats = get_cache_stats()
+        stats = _get_cache_stats()
         size_mb = stats["size_mb"]
         count = stats["count"]
 
@@ -1930,37 +1980,60 @@ class SettingsPage(ScrollArea):
             )
             return
 
-        # Confirm deletion
-        reply = QMessageBox.question(
-            self,
-            t("settings.confirm_clear_cache", self._main.config.language),
-            t(
+        self._show_cache_clear_confirmation(count=count, size_mb=size_mb)
+
+    def _show_cache_clear_confirmation(self, *, count: int, size_mb: float) -> None:
+        from ankismart.ui.i18n import t
+
+        if self._cache_clear_confirm_bar is not None:
+            self._cache_clear_confirm_bar.close()
+            self._cache_clear_confirm_bar = None
+
+        info_bar = InfoBar.warning(
+            title=t("settings.confirm_clear_cache", self._main.config.language),
+            content=t(
                 "settings.confirm_clear_cache_msg",
                 self._main.config.language,
                 count=count,
                 size=size_mb,
             ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=8000,
+            parent=self,
         )
+        confirm_button = PushButton(
+            "确认清空" if self._main.config.language == "zh" else "Confirm Clear",
+            self,
+        )
+        confirm_button.clicked.connect(lambda: self._confirm_clear_cache(size_mb=size_mb))
+        info_bar.addWidget(confirm_button)
+        self._cache_clear_confirm_bar = info_bar
 
-        if reply == QMessageBox.StandardButton.Yes:
-            success = clear_cache()
-            if success:
-                self._show_info_bar(
-                    "success",
-                    t("settings.cache_cleared", self._main.config.language),
-                    t("settings.cache_cleared_msg", self._main.config.language, size=size_mb),
-                    duration=3500,
-                )
-                # Refresh stats display
-                self._refresh_cache_stats()
-            else:
-                self._show_info_bar(
-                    "error",
-                    t("settings.cache_clear_failed", self._main.config.language),
-                    t("settings.cache_clear_failed_msg", self._main.config.language),
-                    duration=5000,
-                )
+    def _confirm_clear_cache(self, *, size_mb: float) -> None:
+        from ankismart.ui.i18n import t
+
+        if self._cache_clear_confirm_bar is not None:
+            self._cache_clear_confirm_bar.close()
+            self._cache_clear_confirm_bar = None
+
+        success = _clear_cache_files()
+        if success:
+            self._show_info_bar(
+                "success",
+                t("settings.cache_cleared", self._main.config.language),
+                t("settings.cache_cleared_msg", self._main.config.language, size=size_mb),
+                duration=3500,
+            )
+            self._refresh_cache_stats()
+        else:
+            self._show_info_bar(
+                "error",
+                t("settings.cache_clear_failed", self._main.config.language),
+                t("settings.cache_clear_failed_msg", self._main.config.language),
+                duration=5000,
+            )
 
     def _on_log_level_changed(self, index: int) -> None:
         """Handle log level change."""
