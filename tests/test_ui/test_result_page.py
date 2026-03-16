@@ -254,8 +254,11 @@ def test_retry_failed_sync_finished_worker_is_cleaned_up(_qapp, monkeypatch) -> 
     class _PushWorkerStub:
         def __init__(self, **kwargs) -> None:
             self.kwargs = kwargs
+            self.progress = _SignalStub()
+            self.card_progress = _SignalStub()
             self.finished = _SignalStub()
             self.error = _SignalStub()
+            self.cancelled = _SignalStub()
             self.deleted = False
 
         def start(self) -> None:
@@ -307,6 +310,81 @@ def test_load_result_only_shows_top_feedback_once(_qapp, monkeypatch) -> None:
     page._refresh()
 
     assert len(success_calls) == 1
+
+
+def test_export_apkg_uses_export_worker(monkeypatch, _qapp, tmp_path) -> None:
+    page = ResultPage(_FakeMainWindow())
+    page._cards = [_make_card()]
+    monkeypatch.setattr(
+        "ankismart.ui.result_page.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: (str(tmp_path / "out.apkg"), "Anki Package (*.apkg)"),
+    )
+
+    created = {}
+
+    class _ExportWorkerStub:
+        def __init__(self, exporter, cards, output_path):
+            created["exporter"] = exporter
+            created["cards"] = cards
+            created["path"] = output_path
+            created["worker"] = self
+            self.finished = _SignalStub()
+            self.error = _SignalStub()
+            self.progress = _SignalStub()
+            self.cancelled = _SignalStub()
+
+        def start(self) -> None:
+            created["started"] = True
+
+    monkeypatch.setattr("ankismart.ui.result_page.ExportWorker", _ExportWorkerStub)
+
+    page._export_apkg()
+
+    assert created["cards"] == page._cards
+    assert str(created["path"]).endswith("out.apkg")
+    assert created["started"] is True
+    assert page._btn_export_apkg.isEnabled() is False
+    assert page._btn_retry.isEnabled() is False
+    assert page._btn_repush_all.isEnabled() is False
+
+    created["worker"].progress.emit("正在导出 1 张卡片到 APKG")
+
+    assert "导出" in page._status_label.text()
+
+
+def test_retry_failed_updates_persistent_push_status(monkeypatch, _qapp) -> None:
+    page = ResultPage(_FakeMainWindow())
+    page._cards = [_make_card()]
+    page._push_result = PushResult(
+        total=1,
+        succeeded=0,
+        failed=1,
+        results=[CardPushStatus(index=0, success=False, error="failed")],
+    )
+    page._display_result(page._push_result, page._cards)
+
+    class _PushWorkerStub:
+        def __init__(self, **kwargs) -> None:
+            self.progress = _SignalStub()
+            self.finished = _SignalStub()
+            self.error = _SignalStub()
+            self.card_progress = _SignalStub()
+            self.cancelled = _SignalStub()
+
+        def start(self) -> None:
+            self.card_progress.emit(1, 1)
+
+        def isRunning(self) -> bool:  # noqa: N802
+            return True
+
+    monkeypatch.setattr("ankismart.ui.result_page.AnkiConnectClient", lambda **kwargs: object())
+    monkeypatch.setattr("ankismart.ui.result_page.AnkiGateway", lambda client: object())
+    monkeypatch.setattr("ankismart.ui.result_page.PushWorker", _PushWorkerStub)
+    monkeypatch.setattr("ankismart.ui.result_page.InfoBar.info", lambda *args, **kwargs: None)
+
+    page._retry_failed()
+
+    assert "1/1" in page._status_label.text()
 
 
 def test_table_title_uses_question_field_only(_qapp) -> None:

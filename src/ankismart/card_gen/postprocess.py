@@ -50,6 +50,25 @@ def validate_cloze(text: str) -> bool:
     return bool(_CLOZE_PATTERN.search(text))
 
 
+def _has_required_fields(card: dict, note_type: str) -> bool:
+    normalized_note_type = (note_type or "").strip()
+
+    if normalized_note_type in {"Cloze", "AnkiSmart Cloze"} or normalized_note_type.startswith(
+        "Cloze"
+    ):
+        text = str(card.get("Text", "")).strip()
+        return bool(text) and validate_cloze(text)
+
+    if normalized_note_type in {"Basic", "AnkiSmart Basic"} or normalized_note_type.startswith(
+        "Basic"
+    ):
+        question = str(card.get("Front", "") or card.get("Question", "")).strip()
+        answer = str(card.get("Back", "") or card.get("Answer", "")).strip()
+        return bool(question and answer)
+
+    return bool(card)
+
+
 def build_card_drafts(
     raw_cards: list[dict],
     deck_name: str,
@@ -66,15 +85,12 @@ def build_card_drafts(
             logger.warning("Skipping non-dict card", extra={"index": i, "trace_id": trace_id})
             continue
 
-        # For Cloze cards, validate syntax
-        if note_type == "Cloze":
-            text = card.get("Text", "")
-            if not validate_cloze(text):
-                logger.warning(
-                    "Skipping card with invalid cloze syntax",
-                    extra={"index": i, "trace_id": trace_id},
-                )
-                continue
+        if not _has_required_fields(card, note_type):
+            logger.warning(
+                "Skipping malformed card",
+                extra={"index": i, "note_type": note_type, "trace_id": trace_id},
+            )
+            continue
 
         draft = CardDraft(
             trace_id=trace_id,

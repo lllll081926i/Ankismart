@@ -6,6 +6,7 @@ import json
 from unittest.mock import MagicMock
 
 from ankismart.card_gen.generator import _STRATEGY_MAP, CardGenerator
+from ankismart.card_gen.postprocess import build_card_drafts
 from ankismart.card_gen.prompts import (
     BASIC_SYSTEM_PROMPT,
     CLOZE_SYSTEM_PROMPT,
@@ -281,6 +282,39 @@ class TestSplitMarkdown:
         assert len(drafts) >= 2
         assert gen._llm.chat.call_count >= 2
 
+    def test_split_generation_respects_global_target_count(self):
+        gen = _make_generator(chat_side_effect=_fake_llm_basic)
+        request = GenerateRequest(
+            markdown="Paragraph one.\n\nParagraph two.\n\nParagraph three.",
+            strategy="basic",
+            enable_auto_split=True,
+            split_threshold=10,
+            target_count=1,
+        )
+
+        drafts = gen.generate(request)
+
+        assert len(drafts) == 1
+        assert gen._llm.chat.call_count == 1
+
+    def test_split_image_qa_still_attaches_source_image(self, tmp_path):
+        img_path = tmp_path / "diagram.png"
+        img_path.write_bytes(b"fake")
+        gen = _make_generator(chat_side_effect=_fake_llm_basic)
+
+        drafts = gen.generate(
+            GenerateRequest(
+                markdown="Paragraph one.\n\nParagraph two.\n\nParagraph three.",
+                strategy="image_qa",
+                source_path=str(img_path),
+                enable_auto_split=True,
+                split_threshold=10,
+            )
+        )
+
+        assert drafts
+        assert all(draft.media.picture for draft in drafts)
+
 
 class TestStrategyRecommender:
     def test_detect_document_type_and_rule_recommend(self):
@@ -290,6 +324,24 @@ class TestStrategyRecommender:
         assert result.document_type in {"textbook", "general"}
         assert result.strategy_mix
         assert 0.0 <= result.confidence <= 1.0
+
+    def test_recommended_strategy_ids_are_supported_by_generator(self):
+        recommender = StrategyRecommender()
+        recommendation = recommender.recommend("第1章 定义：测试概念。例题：请解释。")
+
+        unsupported = [
+            item["strategy"]
+            for item in recommendation.strategy_mix
+            if item["strategy"] not in _STRATEGY_MAP
+        ]
+
+        assert unsupported == []
+
+    def test_rule_based_recommendation_ratios_sum_to_100(self):
+        result = StrategyRecommender().recommend(
+            "第1章 定义：测试概念。例题：请解释。\n- a\n- b\n- c\n- d\n- e\n- f"
+        )
+        assert sum(item["ratio"] for item in result.strategy_mix) == 100
 
     def test_llm_recommend_parses_json_code_block(self):
         llm = MagicMock()
@@ -302,7 +354,7 @@ class TestStrategyRecommender:
 ```"""
         recommender = StrategyRecommender(llm_client=llm)
         result = recommender.recommend("notes summary")
-        assert result.strategy_mix[0]["strategy"] == "basic_qa"
+        assert result.strategy_mix[0]["strategy"] == "basic"
         assert result.reasoning == "ok"
         assert result.confidence == 0.9
 
@@ -313,3 +365,15 @@ class TestStrategyRecommender:
         result = recommender.recommend("abstract introduction conclusion")
         assert result.strategy_mix
         assert result.document_type in {"paper", "general"}
+
+
+def test_build_card_drafts_skips_basic_cards_missing_required_fields():
+    drafts = build_card_drafts(
+        raw_cards=[{"Front": ""}, {"Back": "A"}, {"Question": "Q"}],
+        deck_name="Default",
+        note_type="Basic",
+        tags=["x"],
+        trace_id="t",
+    )
+
+    assert drafts == []

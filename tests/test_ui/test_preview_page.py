@@ -404,3 +404,41 @@ def test_generation_message_wraps_long_text():
 
     assert "\n" in text
     assert len(text) < 220
+
+
+def test_push_card_progress_updates_state_tooltip(monkeypatch):
+    main = _make_main_window()
+    main.config.language = "zh"
+    page = PreviewPage(main)
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        page,
+        "_show_state_tooltip",
+        lambda title, content: calls.append((title, content)),
+    )
+
+    page._on_push_card_progress(2, 5)
+
+    assert calls == [("正在推送到 Anki", "已完成 2/5")]
+
+
+def test_sample_error_marks_state_tooltip_failed(monkeypatch):
+    main = _make_main_window()
+    main.config.language = "zh"
+    page = PreviewPage(main)
+    calls: list[tuple[bool, str]] = []
+
+    monkeypatch.setattr(
+        page,
+        "_finish_state_tooltip",
+        lambda success, content: calls.append((success, content)),
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.preview_page.build_error_display",
+        lambda error, language: {"title": "失败", "content": error},
+    )
+    monkeypatch.setattr("ankismart.ui.preview_page.InfoBar.error", lambda *args, **kwargs: None)
+
+    page._on_sample_error("boom")
+
+    assert calls == [(False, "样本卡片生成失败")]
