@@ -31,6 +31,7 @@ def test_provider_summary_panel_uses_theme_neutral_style(_qapp) -> None:
 
     style = page._provider_summary_panel.styleSheet()
     assert "border: 1px solid" in style
+    assert "background-color: transparent" in style
     assert "#FFFFFF" not in style
 
 
@@ -87,12 +88,9 @@ def test_provider_ui_uses_english_copy_for_empty_fields(_qapp) -> None:
     assert page._provider_summary_meta_label.isHidden()
 
     detail_widget = page._provider_detail_widgets[0]
-    assert detail_widget.findChild(BodyLabel, "providerExpandName").text() == "Unnamed provider"
-    assert (
-        detail_widget.findChild(BodyLabel, "providerExpandModel").text()
-        == "No model configured"
-    )
-    assert detail_widget.findChild(BodyLabel, "providerExpandUrl").text() == "No endpoint"
+    assert detail_widget.findChild(BodyLabel, "providerExpandName") is None
+    assert detail_widget.findChild(BodyLabel, "providerExpandModel") is None
+    assert detail_widget.findChild(BodyLabel, "providerExpandUrl") is None
     assert detail_widget.findChild(BodyLabel, "providerExpandRpm").text() == "RPM: Unlimited"
     assert "API Key" not in " ".join(
         label.text() for label in detail_widget.findChildren(BodyLabel)
@@ -141,11 +139,14 @@ def test_provider_expand_group_hides_api_key_and_keeps_actions(_qapp) -> None:
 
     assert "API Key" not in joined_text
     assert "secret-key" not in joined_text
-    assert detail_widget.findChild(BodyLabel, "providerExpandName") is not None
+    assert detail_widget.findChild(BodyLabel, "providerExpandName") is None
     assert detail_widget.height() <= 56
+    assert "background-color: transparent" in detail_widget.styleSheet()
+    assert "border: none" in detail_widget.styleSheet()
+    assert "border-radius: 0" in detail_widget.styleSheet()
 
 
-def test_provider_expand_group_uses_aligned_single_line_columns(_qapp) -> None:
+def test_provider_expand_group_keeps_only_rpm_column(_qapp) -> None:
     providers = [
         LLMProviderConfig(
             id="p1",
@@ -166,29 +167,16 @@ def test_provider_expand_group_uses_aligned_single_line_columns(_qapp) -> None:
 
     first_detail = page._provider_detail_widgets[0]
     second_detail = page._provider_detail_widgets[1]
-    first_labels = {
-        key: first_detail.findChild(BodyLabel, key)
-        for key in (
-            "providerExpandName",
-            "providerExpandModel",
-            "providerExpandUrl",
-            "providerExpandRpm",
-        )
-    }
-    second_labels = {
-        key: second_detail.findChild(BodyLabel, key)
-        for key in (
-            "providerExpandName",
-            "providerExpandModel",
-            "providerExpandUrl",
-            "providerExpandRpm",
-        )
-    }
-
-    for key in first_labels:
-        assert first_labels[key] is not None
-        assert second_labels[key] is not None
-        assert first_labels[key].minimumWidth() == second_labels[key].minimumWidth()
+    assert first_detail.findChild(BodyLabel, "providerExpandName") is None
+    assert first_detail.findChild(BodyLabel, "providerExpandModel") is None
+    assert first_detail.findChild(BodyLabel, "providerExpandUrl") is None
+    first_rpm = first_detail.findChild(BodyLabel, "providerExpandRpm")
+    second_rpm = second_detail.findChild(BodyLabel, "providerExpandRpm")
+    assert first_rpm is not None
+    assert second_rpm is not None
+    assert first_rpm.minimumWidth() == second_rpm.minimumWidth()
+    assert "border: none" in first_rpm.styleSheet()
+    assert "background-color: transparent" in first_rpm.styleSheet()
 
 
 def test_provider_summary_uses_first_provider_when_active_id_missing(_qapp) -> None:

@@ -442,19 +442,26 @@ class SettingsPage(ScrollArea):
     def _apply_provider_card_styles(self) -> None:
         """Apply theme-aware styles to provider summary and detail panels."""
         palette = get_list_widget_palette(dark=isDarkTheme())
-        panel_style = (
-            "QWidget#providerSummaryPanel, QWidget#providerRowPanel {"
-            f"background-color: {palette.hover};"
+        summary_panel_style = (
+            "QWidget#providerSummaryPanel {"
+            "background-color: transparent;"
             f"border: 1px solid {palette.border};"
             "border-radius: 10px;"
             "}"
         )
+        detail_panel_style = (
+            "QWidget#providerRowPanel {"
+            "background-color: transparent;"
+            "border: none;"
+            "border-radius: 0;"
+            "}"
+        )
 
         if hasattr(self, "_provider_summary_panel"):
-            self._provider_summary_panel.setStyleSheet(panel_style)
+            self._provider_summary_panel.setStyleSheet(summary_panel_style)
 
         for widget in getattr(self, "_provider_detail_widgets", []):
-            widget.setStyleSheet(panel_style)
+            widget.setStyleSheet(detail_panel_style)
 
         for label_name, size, weight in (
             ("_provider_summary_status_label", 12, 500),
@@ -1304,13 +1311,6 @@ class SettingsPage(ScrollArea):
             detail_layout.setSpacing(8)
 
             for object_name, text, width in (
-                (
-                    "providerExpandName",
-                    provider.name.strip() or self._provider_text("unnamed_provider"),
-                    116,
-                ),
-                ("providerExpandModel", self._provider_model_text(provider), 140),
-                ("providerExpandUrl", self._provider_url_text(provider), 280),
                 ("providerExpandRpm", self._provider_rpm_text(provider), 96),
             ):
                 label = BodyLabel(text, detail_widget)
@@ -1318,6 +1318,9 @@ class SettingsPage(ScrollArea):
                 label.setWordWrap(False)
                 label.setMinimumWidth(width)
                 label.setMaximumWidth(width)
+                label.setStyleSheet(
+                    "background-color: transparent; border: none; border-radius: 0; padding: 0;"
+                )
                 detail_layout.addWidget(label)
 
             action_widget = self._build_provider_action_widget(
@@ -1947,8 +1950,7 @@ class SettingsPage(ScrollArea):
             return
 
         # Confirm deletion
-        reply = QMessageBox.question(
-            self,
+        dialog = self._build_clear_cache_message_box(
             t("settings.confirm_clear_cache", self._main.config.language),
             t(
                 "settings.confirm_clear_cache_msg",
@@ -1956,8 +1958,8 @@ class SettingsPage(ScrollArea):
                 count=count,
                 size=size_mb,
             ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
+        reply = self._exec_message_box(dialog)
 
         if reply == QMessageBox.StandardButton.Yes:
             success = clear_cache()
@@ -1977,6 +1979,47 @@ class SettingsPage(ScrollArea):
                     t("settings.cache_clear_failed_msg", self._main.config.language),
                     duration=5000,
                 )
+
+    def _build_clear_cache_message_box(self, title: str, text: str) -> QMessageBox:
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(title)
+        dialog.setText(text)
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        dialog.setDefaultButton(QMessageBox.StandardButton.No)
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        dialog.setStyleSheet(
+            """
+            QMessageBox QLabel {
+                background: transparent;
+                border: none;
+                padding: 0;
+            }
+            QMessageBox QPushButton {
+                min-width: 88px;
+                padding: 8px 18px;
+                background: transparent;
+                border: none;
+                border-radius: 0;
+            }
+            QMessageBox QPushButton:hover {
+                background: transparent;
+                text-decoration: underline;
+            }
+            """
+        )
+        yes_button = dialog.button(QMessageBox.StandardButton.Yes)
+        no_button = dialog.button(QMessageBox.StandardButton.No)
+        if yes_button is not None:
+            yes_button.setText("确认" if self._main.config.language == "zh" else "Yes")
+        if no_button is not None:
+            no_button.setText("取消" if self._main.config.language == "zh" else "No")
+        return dialog
+
+    def _exec_message_box(self, dialog: QMessageBox) -> QMessageBox.StandardButton:
+        return QMessageBox.StandardButton(dialog.exec())
 
     def _on_log_level_changed(self, index: int) -> None:
         """Handle log level change."""

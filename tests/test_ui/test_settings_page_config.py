@@ -333,3 +333,37 @@ def test_settings_page_uses_llm_group_as_top_content(_qapp) -> None:
 
     assert page._llm_group.y() <= page._provider_summary_card.y()
     assert page._llm_group.y() < page._anki_group.y()
+
+
+def test_clear_cache_confirmation_dialog_uses_custom_clean_styles(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    monkeypatch.setattr(
+        "ankismart.converter.cache.get_cache_stats",
+        lambda: {"size_mb": 1.29, "count": 988},
+    )
+
+    shown_dialog: dict[str, QMessageBox] = {}
+
+    def _fake_exec(dialog: QMessageBox) -> QMessageBox.StandardButton:
+        shown_dialog["dialog"] = dialog
+        return QMessageBox.StandardButton.No
+
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.SettingsPage._exec_message_box",
+        lambda self, dialog: _fake_exec(dialog),
+    )
+
+    page._clear_cache()
+
+    dialog = shown_dialog["dialog"]
+    assert dialog.windowTitle() == "确认清空缓存"
+    assert "988" in dialog.text()
+    assert "1.29" in dialog.text()
+    style = dialog.styleSheet()
+    assert "QLabel" in style
+    assert "background: transparent" in style
+    assert "QPushButton" in style
+    assert "min-width: 88px" in style
+    assert "border: none" in style
