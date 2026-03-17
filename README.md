@@ -150,6 +150,27 @@ uv sync --group dev
 uv run ankismart
 ```
 
+测量启动导入成本：
+
+```bash
+uv run python -X importtime -c "import ankismart.ui.app" 2> importtime.log
+```
+
+查看运行期启动阶段日志：
+
+```bash
+uv run ankismart
+```
+
+启动后查看日志目录中的 `app.startup.timing` 记录，重点关注：
+
+- `qapp_ms`
+- `config_ms`
+- `theme_ms`
+- `window_ms`
+- `show_ms`
+- `total_ms`
+
 运行非 E2E 测试：
 
 ```bash

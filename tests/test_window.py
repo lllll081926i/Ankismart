@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import time
 
 import pytest
 from PyQt6.QtWidgets import QApplication
@@ -40,6 +41,17 @@ def test_main_window_smoke(monkeypatch) -> None:
 
     window.close()
     app.processEvents()
+
+
+def test_main_window_startup_smoke_budget(monkeypatch) -> None:
+    monkeypatch.setattr("ankismart.ui.main_window.save_config", lambda _cfg: None)
+
+    started = time.perf_counter()
+    window = MainWindow(config=AppConfig(language="zh", theme="light"))
+    elapsed_ms = (time.perf_counter() - started) * 1000
+
+    assert elapsed_ms < 350
+    window.close()
 
 
 def test_shutdown_pages_closes_all_child_pages(monkeypatch) -> None:

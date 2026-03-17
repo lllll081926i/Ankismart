@@ -75,6 +75,33 @@ uv run pytest -q
 uv run ankismart
 ```
 
+### 启动性能测量
+
+如需评估启动优化，请同时记录“冷启动导入成本”和“运行期阶段耗时”。
+
+导入成本：
+
+```bash
+uv run python -X importtime -c "import ankismart.ui.app" 2> importtime.log
+```
+
+运行期阶段耗时：
+
+```bash
+uv run ankismart
+```
+
+应用启动后查看日志目录中的 `app.startup.timing` 记录，对比以下字段：
+
+- `qapp_ms`
+- `config_ms`
+- `theme_ms`
+- `window_ms`
+- `show_ms`
+- `total_ms`
+
+提交启动性能相关改动时，建议在 PR 描述里附上改动前后的两组数据。
+
 ---
 
 ## 代码规范
