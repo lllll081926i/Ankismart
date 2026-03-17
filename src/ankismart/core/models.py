@@ -101,7 +101,9 @@ class PushResult(BaseModel):
 
 class GenerateRequest(BaseModel):
     markdown: str
-    strategy: str = "basic"  # "basic", "cloze", "image_qa" (兼容 "image_occlusion")
+    strategy: str = (
+        "basic"
+    )  # basic, cloze, concept, key_terms, single_choice, multiple_choice, image_qa, image_occlusion
     deck_name: str = "Default"
     tags: list[str] = Field(default_factory=list)
     trace_id: str = ""

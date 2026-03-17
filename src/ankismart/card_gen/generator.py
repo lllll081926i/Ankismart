@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from random import shuffle
 
 from ankismart.card_gen.llm_client import LLMClient
 from ankismart.card_gen.postprocess import build_card_drafts, parse_llm_output
@@ -31,6 +30,12 @@ _STRATEGY_MAP: dict[str, tuple[str, str]] = {
     "multiple_choice": (MULTIPLE_CHOICE_SYSTEM_PROMPT, "Basic"),
     "image_qa": (IMAGE_QA_SYSTEM_PROMPT, "Basic"),
     "image_occlusion": (IMAGE_QA_SYSTEM_PROMPT, "Basic"),
+}
+
+_STRATEGY_ALIASES = {
+    "basic_qa": "basic",
+    "fill_blank": "cloze",
+    "concept_explanation": "concept",
 }
 
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"}
@@ -176,23 +181,24 @@ class CardGenerator:
     def generate(self, request: GenerateRequest) -> list[CardDraft]:
         with trace_context(request.trace_id or None) as trace_id:
             with timed("card_generate_total"):
-                strategy_info = _STRATEGY_MAP.get(request.strategy)
+                normalized_strategy = _STRATEGY_ALIASES.get(request.strategy, request.strategy)
+                strategy_info = _STRATEGY_MAP.get(normalized_strategy)
                 if strategy_info is None:
                     strategy_info = _STRATEGY_MAP["basic"]
+                    normalized_strategy = "basic"
 
-                system_prompt, note_type = strategy_info
+                base_system_prompt, note_type = strategy_info
                 markdown = request.markdown
 
-                # Add target count to system prompt if specified
+                system_prompt = base_system_prompt
                 if request.target_count > 0:
-                    system_prompt = (
-                        system_prompt + f"\n- Generate exactly {request.target_count} cards\n"
-                    )
+                    system_prompt += f"\n- Generate exactly {request.target_count} cards\n"
 
                 logger.info(
                     "Generating cards",
                     extra={
-                        "strategy": request.strategy,
+                        "strategy": normalized_strategy,
+                        "strategy_requested": request.strategy,
                         "note_type": note_type,
                         "content_length": len(markdown),
                         "target_count": request.target_count,
@@ -209,6 +215,7 @@ class CardGenerator:
                 if enable_split and len(markdown) > split_threshold:
                     # Split document into chunks
                     chunks = self._split_markdown(markdown, split_threshold)
+                    remaining_target = max(0, request.target_count)
 
                     logger.info(
                         "Processing document in chunks",
@@ -220,6 +227,9 @@ class CardGenerator:
 
                     # Process each chunk
                     for i, chunk in enumerate(chunks, 1):
+                        if remaining_target <= 0 and request.target_count > 0:
+                            break
+
                         logger.info(
                             f"Processing chunk {i}/{len(chunks)}",
                             extra={
@@ -229,9 +239,20 @@ class CardGenerator:
                             },
                         )
 
+                        chunk_system_prompt = base_system_prompt
+                        chunk_target = 0
+                        if remaining_target > 0:
+                            chunks_left = len(chunks) - i + 1
+                            base_target = remaining_target // max(1, chunks_left)
+                            extra_target = 1 if remaining_target % max(1, chunks_left) else 0
+                            chunk_target = max(1, base_target + extra_target)
+                            chunk_system_prompt += (
+                                f"\n- Generate exactly {chunk_target} cards\n"
+                            )
+
                         # Call LLM for this chunk
                         with timed(f"llm_generate_chunk_{i}"):
-                            raw_output = self._llm.chat(system_prompt, chunk)
+                            raw_output = self._llm.chat(chunk_system_prompt, chunk)
 
                         # Parse and build card drafts for this chunk
                         raw_cards = parse_llm_output(raw_output)
@@ -243,7 +264,14 @@ class CardGenerator:
                             trace_id=trace_id,
                         )
 
+                        if chunk_target > 0 and len(chunk_drafts) > chunk_target:
+                            chunk_drafts = chunk_drafts[:chunk_target]
+
                         all_drafts.extend(chunk_drafts)
+                        if remaining_target > 0:
+                            remaining_target = max(0, remaining_target - len(chunk_drafts))
+                            if remaining_target <= 0:
+                                break
 
                     drafts = all_drafts
                 else:
@@ -262,11 +290,10 @@ class CardGenerator:
                     )
 
                 # Attach source image for image-based strategy
-                if request.strategy in {"image_qa", "image_occlusion"} and request.source_path:
+                if normalized_strategy in {"image_qa", "image_occlusion"} and request.source_path:
                     self._attach_image(drafts, request.source_path)
 
                 if request.target_count > 0 and len(drafts) > request.target_count:
-                    shuffle(drafts)
                     drafts = drafts[: request.target_count]
 
                 logger.info(

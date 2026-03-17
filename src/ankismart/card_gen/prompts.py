@@ -19,8 +19,8 @@ BASIC_SYSTEM_PROMPT = (
     "- Avoid overly simple or overly broad questions; each card should test "
     "a specific, meaningful piece of knowledge\n"
     "- If the content is in Chinese, generate cards in Chinese\n"
-    "- For math formulas: use $formula$ for inline (e.g., $x^2 + y^2 = z^2$) "
-    "and $$formula$$ for display mode (e.g., $$\\\\int_0^\\\\infty e^{-x^2} dx$$)\n"
+    "- For math formulas: use <anki-mathjax>formula</anki-mathjax> for inline (e.g., <anki-mathjax>x^2 + y^2 = z^2</anki-mathjax>) "
+    'and <anki-mathjax block="true">formula</anki-mathjax> for display mode (e.g., <anki-mathjax block="true">\\\\int_0^\\\\infty e^{-x^2} dx</anki-mathjax>)\n'
     "- Use standard LaTeX syntax; Anki will render formulas with MathJax\n"
     "\n"
     "Example output:\n"
@@ -30,8 +30,8 @@ BASIC_SYSTEM_PROMPT = (
     'Explanation:\\nOccurs mainly in chloroplasts.\\n'
     'Produces glucose and oxygen from CO2 and water."},\n'
     '  {"Front": "What is the Pythagorean theorem?",\n'
-    '   "Back": "Answer: In a right triangle, $a^2 + b^2 = c^2$.\\n'
-    'Explanation:\\n$c$ is the hypotenuse.\\n$a$ and $b$ are the other two sides."}\n'
+    '   "Back": "Answer: In a right triangle, <anki-mathjax>a^2 + b^2 = c^2</anki-mathjax>.\\n'
+    'Explanation:\\n<anki-mathjax>c</anki-mathjax> is the hypotenuse.\\n<anki-mathjax>a</anki-mathjax> and <anki-mathjax>b</anki-mathjax> are the other two sides."}\n'
     "]\n"
 )
 
@@ -55,8 +55,8 @@ CLOZE_SYSTEM_PROMPT = (
     "- Extra must be a layered explanation block using multiple lines; "
     "do NOT add numbering prefixes like 1./2.\n"
     "- If the content is in Chinese, generate cards in Chinese\n"
-    "- For math formulas: use $formula$ for inline (e.g., $x^2 + y^2 = z^2$) "
-    "and $$formula$$ for display mode (e.g., $$\\\\int_0^\\\\infty e^{-x^2} dx$$)\n"
+    "- For math formulas: use <anki-mathjax>formula</anki-mathjax> for inline (e.g., <anki-mathjax>x^2 + y^2 = z^2</anki-mathjax>) "
+    'and <anki-mathjax block="true">formula</anki-mathjax> for display mode (e.g., <anki-mathjax block="true">\\\\int_0^\\\\infty e^{-x^2} dx</anki-mathjax>)\n'
     "- Use standard LaTeX syntax; Anki will render formulas with MathJax\n"
     "\n"
     "Example output:\n"
@@ -64,9 +64,9 @@ CLOZE_SYSTEM_PROMPT = (
     '  {"Text": "Photosynthesis converts {{c1::light energy}} into '
     '{{c2::chemical energy}} in the form of glucose.",\n'
     '   "Extra": "This process occurs in chloroplasts."},\n'
-    '  {"Text": "The quadratic formula is {{c1::$x = \\\\frac{-b \\\\pm '
-    "\\\\sqrt{b^2 - 4ac}}{2a}$}}, used to solve equations of the form "
-    '{{c2::$ax^2 + bx + c = 0$}}.","Extra": ""}\n'
+    '  {"Text": "The quadratic formula is {{c1::<anki-mathjax>x = \\\\frac{-b \\\\pm '
+    "\\\\sqrt{b^2 - 4ac}}{2a}</anki-mathjax>}}, used to solve equations of the form "
+    '{{c2::<anki-mathjax>ax^2 + bx + c = 0</anki-mathjax>}}.","Extra": ""}\n'
     "]\n"
 )
 
@@ -88,8 +88,8 @@ IMAGE_QA_SYSTEM_PROMPT = (
     "(do NOT add numbering prefixes like 1./2.)\n"
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
-    "- For math formulas: use $formula$ for inline (e.g., $x^2 + y^2 = z^2$) "
-    "and $$formula$$ for display mode (e.g., $$\\\\int_0^\\\\infty e^{-x^2} dx$$)\n"
+    "- For math formulas: use <anki-mathjax>formula</anki-mathjax> for inline (e.g., <anki-mathjax>x^2 + y^2 = z^2</anki-mathjax>) "
+    'and <anki-mathjax block="true">formula</anki-mathjax> for display mode (e.g., <anki-mathjax block="true">\\\\int_0^\\\\infty e^{-x^2} dx</anki-mathjax>)\n'
     "- Use standard LaTeX syntax; Anki will render formulas with MathJax\n"
     "\n"
     "Example output:\n"
@@ -100,8 +100,8 @@ IMAGE_QA_SYSTEM_PROMPT = (
     'Explanation:\\nLocated in the cytoplasm.\\nConverts nutrients into ATP."},\n'
     '  {"Front": "What formula is shown in the diagram for calculating '
     'kinetic energy?",\n'
-    '   "Back": "Answer: $$E_k = \\\\frac{1}{2}mv^2$$.\\n'
-    'Explanation:\\n$m$ is mass.\\n$v$ is velocity."}\n'
+    '   "Back": "Answer: <anki-mathjax block=\\"true\\">E_k = \\\\frac{1}{2}mv^2</anki-mathjax>.\\n'
+    'Explanation:\\n<anki-mathjax>m</anki-mathjax> is mass.\\n<anki-mathjax>v</anki-mathjax> is velocity."}\n'
     "]\n"
 )
 
@@ -124,8 +124,8 @@ CONCEPT_SYSTEM_PROMPT = (
     "- Create 3-10 cards depending on content density\n"
     "- Focus on concepts that require understanding, not simple facts\n"
     "- If the content is in Chinese, generate cards in Chinese\n"
-    "- For math formulas: use $formula$ for inline (e.g., $x^2 + y^2 = z^2$) "
-    "and $$formula$$ for display mode (e.g., $$\\\\int_0^\\\\infty e^{-x^2} dx$$)\n"
+    "- For math formulas: use <anki-mathjax>formula</anki-mathjax> for inline (e.g., <anki-mathjax>x^2 + y^2 = z^2</anki-mathjax>) "
+    'and <anki-mathjax block="true">formula</anki-mathjax> for display mode (e.g., <anki-mathjax block="true">\\\\int_0^\\\\infty e^{-x^2} dx</anki-mathjax>)\n'
     "- Use standard LaTeX syntax; Anki will render formulas with MathJax\n"
     "\n"
     "Example output:\n"
@@ -135,8 +135,8 @@ CONCEPT_SYSTEM_PROMPT = (
     "Explanation:\\nOccurs in chloroplasts via light reactions and Calvin cycle.\\n"
     'It is a primary source of oxygen and organic matter on Earth."},\n'
     '  {"Front": "Euler\'s Identity",\n'
-    '   "Back": "Answer: $e^{i\\\\pi} + 1 = 0$.\\n'
-    "Explanation:\\nConnects constants $e$, $i$, $\\\\pi$, 1, and 0.\\n"
+    '   "Back": "Answer: <anki-mathjax>e^{i\\\\pi} + 1 = 0</anki-mathjax>.\\n'
+    "Explanation:\\nConnects constants <anki-mathjax>e</anki-mathjax>, <anki-mathjax>i</anki-mathjax>, <anki-mathjax>\\\\pi</anki-mathjax>, 1, and 0.\\n"
     "Shows relation between exponentials and trigonometry via Euler's formula.\"}\n"
     "]\n"
 )
@@ -159,8 +159,8 @@ KEY_TERMS_SYSTEM_PROMPT = (
     "- Create 3-10 cards depending on content density\n"
     "- Prioritize domain-specific or technical terms over common vocabulary\n"
     "- If the content is in Chinese, generate cards in Chinese\n"
-    "- For math formulas: use $formula$ for inline (e.g., $x^2 + y^2 = z^2$) "
-    "and $$formula$$ for display mode (e.g., $$\\\\int_0^\\\\infty e^{-x^2} dx$$)\n"
+    "- For math formulas: use <anki-mathjax>formula</anki-mathjax> for inline (e.g., <anki-mathjax>x^2 + y^2 = z^2</anki-mathjax>) "
+    'and <anki-mathjax block="true">formula</anki-mathjax> for display mode (e.g., <anki-mathjax block="true">\\\\int_0^\\\\infty e^{-x^2} dx</anki-mathjax>)\n'
     "- Use standard LaTeX syntax; Anki will render formulas with MathJax\n"
     "\n"
     "Example output:\n"
@@ -171,9 +171,9 @@ KEY_TERMS_SYSTEM_PROMPT = (
     'Example: chloroplasts enable leaves to produce glucose from sunlight."},\n'
     '  {"Front": "Derivative",\n'
     '   "Back": "Answer: The rate of change of a function, denoted by '
-    '$\\\\frac{df}{dx}$ or $f\'(x)$.\\n'
+    '<anki-mathjax>\\\\frac{df}{dx}</anki-mathjax> or <anki-mathjax>f\'(x)</anki-mathjax>.\\n'
     "Explanation:\\nRepresents tangent slope at a point.\\n"
-    'Example: for $f(x)=x^2$, derivative is $2x$."}'
+    'Example: for <anki-mathjax>f(x)=x^2</anki-mathjax>, derivative is <anki-mathjax>2x</anki-mathjax>."}'
     "\n"
     "]\n"
 )
@@ -195,19 +195,19 @@ SINGLE_CHOICE_SYSTEM_PROMPT = (
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
     "- If the content is in Chinese, generate cards in Chinese\n"
-    "- For math formulas: use $formula$ for inline (e.g., $x^2 + y^2 = z^2$) "
-    "and $$formula$$ for display mode (e.g., $$\\\\int_0^\\\\infty e^{-x^2} dx$$)\n"
+    "- For math formulas: use <anki-mathjax>formula</anki-mathjax> for inline (e.g., <anki-mathjax>x^2 + y^2 = z^2</anki-mathjax>) "
+    'and <anki-mathjax block="true">formula</anki-mathjax> for display mode (e.g., <anki-mathjax block="true">\\\\int_0^\\\\infty e^{-x^2} dx</anki-mathjax>)\n'
     "- Use standard LaTeX syntax; Anki will render formulas with MathJax\n"
     "\n"
     "Example output:\n"
     "[\n"
-    '  {"Front": "What is the derivative of $f(x) = x^3$?\\n\\n'
-    "A. $2x^2$\\n"
-    "B. $3x^2$\\n"
-    "C. $x^2$\\n"
-    'D. $3x$",\n'
+    '  {"Front": "What is the derivative of <anki-mathjax>f(x) = x^3</anki-mathjax>?\\n\\n'
+    "A. <anki-mathjax>2x^2</anki-mathjax>\\n"
+    "B. <anki-mathjax>3x^2</anki-mathjax>\\n"
+    "C. <anki-mathjax>x^2</anki-mathjax>\\n"
+    'D. <anki-mathjax>3x</anki-mathjax>",\n'
     '   "Back": "答案: B\\n'
-    "解析:\\nUsing the power rule $\\\\frac{d}{dx}(x^n) = nx^{n-1}$.\\nSo $f'(x) = 3x^2$.\"}\n"
+    "解析:\\nUsing the power rule <anki-mathjax>\\\\frac{d}{dx}(x^n) = nx^{n-1}</anki-mathjax>.\\nSo <anki-mathjax>f'(x) = 3x^2</anki-mathjax>.\"}\n"
     "]\n"
 )
 
@@ -228,19 +228,19 @@ MULTIPLE_CHOICE_SYSTEM_PROMPT = (
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
     "- If the content is in Chinese, generate cards in Chinese\n"
-    "- For math formulas: use $formula$ for inline (e.g., $x^2 + y^2 = z^2$) "
-    "and $$formula$$ for display mode (e.g., $$\\\\int_0^\\\\infty e^{-x^2} dx$$)\n"
+    "- For math formulas: use <anki-mathjax>formula</anki-mathjax> for inline (e.g., <anki-mathjax>x^2 + y^2 = z^2</anki-mathjax>) "
+    'and <anki-mathjax block="true">formula</anki-mathjax> for display mode (e.g., <anki-mathjax block="true">\\\\int_0^\\\\infty e^{-x^2} dx</anki-mathjax>)\n'
     "- Use standard LaTeX syntax; Anki will render formulas with MathJax\n"
     "\n"
     "Example output:\n"
     "[\n"
-    '  {"Front": "Which of the following are solutions to $x^2 - 5x + 6 = 0$?\\n\\n'
-    "A. $x = 1$\\n"
-    "B. $x = 2$\\n"
-    "C. $x = 3$\\n"
-    'D. $x = 6$",\n'
+    '  {"Front": "Which of the following are solutions to <anki-mathjax>x^2 - 5x + 6 = 0</anki-mathjax>?\\n\\n'
+    "A. <anki-mathjax>x = 1</anki-mathjax>\\n"
+    "B. <anki-mathjax>x = 2</anki-mathjax>\\n"
+    "C. <anki-mathjax>x = 3</anki-mathjax>\\n"
+    'D. <anki-mathjax>x = 6</anki-mathjax>",\n'
     '   "Back": "答案: B, C\\n'
-    '解析:\\nFactoring gives $(x-2)(x-3) = 0$.\\nSo $x = 2$ or $x = 3$."}\n'
+    '解析:\\nFactoring gives <anki-mathjax>(x-2)(x-3) = 0</anki-mathjax>.\\nSo <anki-mathjax>x = 2</anki-mathjax> or <anki-mathjax>x = 3</anki-mathjax>."}\n'
     "]\n"
 )
 

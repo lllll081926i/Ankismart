@@ -811,12 +811,9 @@ class PreviewPage(ProgressMixin, QWidget):
             )
             return
 
-        # Show generating message
-        self._show_info_bar(
-            "info",
-            "生成中" if is_zh else "Generating",
-            "正在生成样本卡片..." if is_zh else "Generating sample cards...",
-            duration=2000,
+        self._show_state_tooltip(
+            "正在生成样本卡片" if is_zh else "Generating Sample Cards",
+            "正在调用模型，请稍候" if is_zh else "Calling model, please wait",
         )
 
         # Generate sample cards in background
@@ -900,6 +897,10 @@ class PreviewPage(ProgressMixin, QWidget):
         except Exception as e:
             self._update_ui_state()
             self._btn_preview.setEnabled(True)
+            self._finish_state_tooltip(
+                False,
+                "样本卡片生成失败" if is_zh else "Sample generation failed",
+            )
             InfoBar.error(
                 title="错误" if is_zh else "Error",
                 content=f"样本生成初始化失败：{e}"
@@ -920,6 +921,10 @@ class PreviewPage(ProgressMixin, QWidget):
         is_zh = self._main.config.language == "zh"
 
         if not cards:
+            self._finish_state_tooltip(
+                False,
+                "样本卡片生成失败" if is_zh else "Sample generation failed",
+            )
             InfoBar.warning(
                 title="警告" if is_zh else "Warning",
                 content="未能生成样本卡片" if is_zh else "Failed to generate sample cards",
@@ -930,6 +935,11 @@ class PreviewPage(ProgressMixin, QWidget):
                 parent=self,
             )
             return
+
+        self._finish_state_tooltip(
+            True,
+            "样本卡片生成完成" if is_zh else "Sample generation completed",
+        )
 
         # Show sample cards in a dialog
         from PyQt6.QtWidgets import QDialog, QTextEdit, QVBoxLayout
@@ -993,6 +1003,10 @@ class PreviewPage(ProgressMixin, QWidget):
         self._btn_preview.setEnabled(True)
         is_zh = self._main.config.language == "zh"
         error_display = build_error_display(error, self._main.config.language)
+        self._finish_state_tooltip(
+            False,
+            "样本卡片生成失败" if is_zh else "Sample generation failed",
+        )
         InfoBar.error(
             title=error_display["title"],
             content=f"生成样本卡片失败：{error_display['content']}"
@@ -1402,6 +1416,7 @@ class PreviewPage(ProgressMixin, QWidget):
             update_mode=config.last_update_mode or "create_or_update",
         )
         self._push_worker.progress.connect(self._on_push_progress)
+        self._push_worker.card_progress.connect(self._on_push_card_progress)
         self._push_worker.finished.connect(self._on_push_finished)
         self._push_worker.error.connect(self._on_push_error)
         self._push_worker.cancelled.connect(self._on_push_cancelled)
@@ -1413,6 +1428,14 @@ class PreviewPage(ProgressMixin, QWidget):
         self._show_state_tooltip(
             "正在推送到 Anki" if is_zh else "Pushing to Anki",
             message,
+        )
+
+    def _on_push_card_progress(self, current: int, total: int):
+        """Handle per-card push progress."""
+        is_zh = self._main.config.language == "zh"
+        self._show_state_tooltip(
+            "正在推送到 Anki" if is_zh else "Pushing to Anki",
+            f"已完成 {current}/{total}" if is_zh else f"Completed {current}/{total}",
         )
 
     def _on_push_finished(self, result):

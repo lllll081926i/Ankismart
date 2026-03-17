@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from qfluentwidgets import ExpandGroupSettingCard, PrimaryPushButton, PushButton
+from qfluentwidgets import BodyLabel, ExpandGroupSettingCard, PrimaryPushButton, PushButton
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.ui.settings_page import SettingsPage
@@ -31,6 +31,7 @@ def test_provider_summary_panel_uses_theme_neutral_style(_qapp) -> None:
 
     style = page._provider_summary_panel.styleSheet()
     assert "border: 1px solid" in style
+    assert "background-color: transparent" in style
     assert "#FFFFFF" not in style
 
 
@@ -63,10 +64,9 @@ def test_provider_summary_displays_active_provider_fields(_qapp) -> None:
     ]
     page = _build_settings_page_with_providers(_qapp, providers, active_provider_id="p1")
 
-    assert page._provider_summary_name_label.text() == "Vendor-X"
-    assert "model-a" in page._provider_summary_meta_label.text()
-    assert "https://example.com/v1" in page._provider_summary_meta_label.text()
-    assert "120" in page._provider_summary_meta_label.text()
+    assert page._provider_summary_name_label.text() == "Vendor-X / model-a"
+    assert page._provider_summary_status_label.isHidden()
+    assert page._provider_summary_meta_label.isHidden()
 
 
 def test_provider_ui_uses_english_copy_for_empty_fields(_qapp) -> None:
@@ -83,14 +83,18 @@ def test_provider_ui_uses_english_copy_for_empty_fields(_qapp) -> None:
     main, _ = make_main(cfg)
     page = SettingsPage(main)
 
-    assert page._provider_summary_status_label.text() == "Active"
-    assert page._provider_summary_name_label.text() == "Unnamed provider"
-    assert "No model configured" in page._provider_summary_meta_label.text()
-    assert "No endpoint" in page._provider_summary_meta_label.text()
+    assert page._provider_summary_name_label.text() == "Unnamed provider / No model configured"
+    assert page._provider_summary_status_label.isHidden()
+    assert page._provider_summary_meta_label.isHidden()
 
-    group = page._provider_group_widgets["p1"]
-    assert group.titleLabel.text() == "Unnamed provider"
-    assert "No model configured" in group.contentLabel.text()
+    detail_widget = page._provider_detail_widgets[0]
+    assert detail_widget.findChild(BodyLabel, "providerExpandName") is None
+    assert detail_widget.findChild(BodyLabel, "providerExpandModel") is None
+    assert detail_widget.findChild(BodyLabel, "providerExpandUrl") is None
+    assert detail_widget.findChild(BodyLabel, "providerExpandRpm").text() == "RPM: Unlimited"
+    assert "API Key" not in " ".join(
+        label.text() for label in detail_widget.findChildren(BodyLabel)
+    )
 
     action_widget = page._provider_action_widgets["p1"]
     assert action_widget.layout().itemAt(0).widget().text() == "Current"
@@ -114,6 +118,65 @@ def test_provider_list_card_renders_one_group_per_provider(_qapp) -> None:
     assert first_group.titleLabel.text() == "Vendor-X"
     assert "model-a" in first_group.contentLabel.text()
     assert "https://a.example/v1" in first_group.contentLabel.text()
+    assert page._provider_list_card.isExpand is False
+
+
+def test_provider_expand_group_hides_api_key_and_keeps_actions(_qapp) -> None:
+    providers = [
+        LLMProviderConfig(
+            id="p1",
+            name="OpenAI",
+            api_key="secret-key",
+            model="gpt-4o",
+            base_url="https://api.openai.com/v1",
+        )
+    ]
+    page = _build_settings_page_with_providers(_qapp, providers, active_provider_id="p1")
+
+    detail_widget = page._provider_detail_widgets[0]
+    labels = detail_widget.findChildren(BodyLabel)
+    joined_text = " ".join(label.text() for label in labels)
+
+    assert "API Key" not in joined_text
+    assert "secret-key" not in joined_text
+    assert detail_widget.findChild(BodyLabel, "providerExpandName") is None
+    assert detail_widget.height() <= 56
+    assert "background-color: transparent" in detail_widget.styleSheet()
+    assert "border: none" in detail_widget.styleSheet()
+    assert "border-radius: 0" in detail_widget.styleSheet()
+
+
+def test_provider_expand_group_keeps_only_rpm_column(_qapp) -> None:
+    providers = [
+        LLMProviderConfig(
+            id="p1",
+            name="OpenAI",
+            model="gpt-4o",
+            base_url="https://api.openai.com/v1",
+            rpm_limit=0,
+        ),
+        LLMProviderConfig(
+            id="p2",
+            name="DeepSeek",
+            model="deepseek-chat",
+            base_url="https://api.deepseek.com/v1",
+            rpm_limit=120,
+        ),
+    ]
+    page = _build_settings_page_with_providers(_qapp, providers, active_provider_id="p1")
+
+    first_detail = page._provider_detail_widgets[0]
+    second_detail = page._provider_detail_widgets[1]
+    assert first_detail.findChild(BodyLabel, "providerExpandName") is None
+    assert first_detail.findChild(BodyLabel, "providerExpandModel") is None
+    assert first_detail.findChild(BodyLabel, "providerExpandUrl") is None
+    first_rpm = first_detail.findChild(BodyLabel, "providerExpandRpm")
+    second_rpm = second_detail.findChild(BodyLabel, "providerExpandRpm")
+    assert first_rpm is not None
+    assert second_rpm is not None
+    assert first_rpm.minimumWidth() == second_rpm.minimumWidth()
+    assert "border: none" in first_rpm.styleSheet()
+    assert "background-color: transparent" in first_rpm.styleSheet()
 
 
 def test_provider_summary_uses_first_provider_when_active_id_missing(_qapp) -> None:
@@ -123,7 +186,7 @@ def test_provider_summary_uses_first_provider_when_active_id_missing(_qapp) -> N
     ]
     page = _build_settings_page_with_providers(_qapp, providers, active_provider_id="missing")
 
-    assert page._provider_summary_name_label.text() == "Fallback-A"
+    assert page._provider_summary_name_label.text() == "Fallback-A / model-a"
 
 
 def test_proxy_manual_layout_places_input_left_of_mode_combo(_qapp) -> None:
@@ -256,7 +319,7 @@ def test_activate_provider_refreshes_summary_and_action_widgets(_qapp, monkeypat
 
     page._activate_provider(page._providers[1])
 
-    assert page._provider_summary_name_label.text() == "DeepSeek"
+    assert page._provider_summary_name_label.text() == "DeepSeek / deepseek-chat"
     p2_activate_btn = page._provider_action_widgets["p2"].layout().itemAt(0).widget()
     p1_activate_btn = page._provider_action_widgets["p1"].layout().itemAt(0).widget()
     assert isinstance(p2_activate_btn, PrimaryPushButton)
@@ -283,8 +346,7 @@ def test_retranslate_ui_refreshes_provider_copy(_qapp) -> None:
 
     assert page._provider_summary_card.titleLabel.text() == "Active Provider"
     assert page._provider_mgmt_card.titleLabel.text() == "LLM Provider"
-    assert page._provider_summary_status_label.text() == "Active"
-    assert "No model configured" in page._provider_summary_meta_label.text()
+    assert page._provider_summary_name_label.text() == "OpenAI / No model configured"
 
     action_widget = page._provider_action_widgets["p1"]
     assert action_widget.layout().itemAt(0).widget().text() == "Current"
@@ -307,7 +369,7 @@ def test_save_first_provider_refreshes_summary_and_group_list(_qapp, monkeypatch
 
     page._on_provider_saved(provider)
 
-    assert page._provider_summary_name_label.text() == "OpenAI"
+    assert page._provider_summary_name_label.text() == "OpenAI / gpt-4o"
     assert list(page._provider_group_widgets) == ["p1"]
     activate_btn = page._provider_action_widgets["p1"].layout().itemAt(0).widget()
     assert isinstance(activate_btn, PrimaryPushButton)
