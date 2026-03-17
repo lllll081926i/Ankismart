@@ -41,7 +41,6 @@ from .styles import (
 
 if TYPE_CHECKING:
     from .card_preview_page import CardPreviewPage
-    from .performance_page import PerformancePage
     from .preview_page import PreviewPage
     from .result_page import ResultPage
     from .settings_page import SettingsPage
@@ -77,14 +76,12 @@ class MainWindow(FluentWindow):
         self._preview_page: PreviewPage | None = None
         self._card_preview_page: CardPreviewPage | None = None
         self._result_page: ResultPage | None = None
-        self._performance_page: PerformancePage | None = None
         self._settings_page: SettingsPage | None = None
         self._nav_routes_added: set[str] = set()
         self._deferred_page_queue: list[str] = [
             "preview",
             "card_preview",
             "result",
-            "performance",
             "settings",
         ]
         self._deferred_bootstrap_started = False
@@ -267,10 +264,6 @@ NavigationPanel[transparent=true] {{
             from .result_page import ResultPage
 
             return ResultPage(self)
-        if page_key == "performance":
-            from .performance_page import PerformancePage
-
-            return PerformancePage(self)
         if page_key == "settings":
             from .settings_page import SettingsPage
 
@@ -307,13 +300,6 @@ NavigationPanel[transparent=true] {{
                 labels["result"],
                 NavigationItemPosition.TOP,
             )
-        elif page_key == "performance":
-            self.addSubInterface(
-                page,
-                FluentIcon.SPEED_HIGH,
-                labels["performance"],
-                NavigationItemPosition.TOP,
-            )
         elif page_key == "settings":
             self.addSubInterface(
                 page,
@@ -333,7 +319,6 @@ NavigationPanel[transparent=true] {{
             "preview": "_preview_page",
             "card_preview": "_card_preview_page",
             "result": "_result_page",
-            "performance": "_performance_page",
             "settings": "_settings_page",
         }
         attr = attr_map.get(page_key)
@@ -354,7 +339,6 @@ NavigationPanel[transparent=true] {{
             self._preview_page,
             self._card_preview_page,
             self._result_page,
-            self._performance_page,
             self._settings_page,
         ):
             if page is not None:
@@ -491,7 +475,6 @@ NavigationPanel[transparent=true] {{
             "preview": t("nav.preview", lang),
             "card_preview": t("nav.card_preview", lang),
             "result": t("nav.result", lang),
-            "performance": t("nav.performance", lang),
             "settings": t("nav.settings", lang)
         }
 
@@ -592,8 +575,6 @@ NavigationPanel[transparent=true] {{
             route_to_label[self._card_preview_page.objectName()] = labels["card_preview"]
         if self._result_page is not None:
             route_to_label[self._result_page.objectName()] = labels["result"]
-        if self._performance_page is not None:
-            route_to_label[self._performance_page.objectName()] = labels["performance"]
         if self._settings_page is not None:
             route_to_label[self._settings_page.objectName()] = labels["settings"]
         for route_key, text in route_to_label.items():
@@ -612,7 +593,7 @@ NavigationPanel[transparent=true] {{
 
     def _switch_page(self, index: int) -> None:
         """Switch page by index for backward compatibility."""
-        page_keys = ["import", "preview", "card_preview", "result", "performance", "settings"]
+        page_keys = ["import", "preview", "card_preview", "result", "settings"]
         if 0 <= index < len(page_keys):
             page = self._ensure_page(page_keys[index], add_to_navigation=True)
             self.switchTo(page)
@@ -648,7 +629,7 @@ NavigationPanel[transparent=true] {{
 
     def switch_to_settings(self) -> None:
         """Switch to settings page."""
-        self._switch_page(5)
+        self._switch_page(4)
 
     def switch_to_results(self) -> None:
         """Compatibility alias for old callers."""
@@ -665,7 +646,6 @@ NavigationPanel[transparent=true] {{
             "preview_page": self._preview_page,
             "card_preview_page": self._card_preview_page,
             "result_page": self._result_page,
-            "performance_page": self._performance_page,
             "settings_page": self._settings_page,
         }
         for attr, page in page_map.items():
@@ -702,10 +682,6 @@ NavigationPanel[transparent=true] {{
     @property
     def result_page(self) -> ResultPage:
         return self._ensure_page("result", add_to_navigation=True)
-
-    @property
-    def performance_page(self) -> PerformancePage:
-        return self._ensure_page("performance", add_to_navigation=True)
 
     @property
     def settings_page(self) -> SettingsPage:

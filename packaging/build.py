@@ -94,6 +94,10 @@ def ensure_runtime_dirs(target_dir: Path) -> None:
         (target_dir / name).mkdir(parents=True, exist_ok=True)
 
 
+def write_portable_marker(target_dir: Path) -> None:
+    (target_dir / ".portable").write_text("", encoding="utf-8")
+
+
 def remove_ocr_model_artifacts(target_dir: Path) -> tuple[int, int]:
     removed_dirs = 0
     removed_files = 0
@@ -186,6 +190,7 @@ def create_portable_package(version: str) -> Path:
     shutil.copytree(STAGED_APP_DIR, portable_dir)
 
     ensure_runtime_dirs(portable_dir)
+    write_portable_marker(portable_dir)
     remove_ocr_model_artifacts(portable_dir)
 
     archive_base = portable_dir.parent / portable_dir.name
@@ -268,8 +273,14 @@ def verify_no_ocr_models(target_dir: Path) -> None:
         )
 
 
+def verify_portable_marker(target_dir: Path) -> None:
+    portable_marker = target_dir / ".portable"
+    if not portable_marker.exists():
+        raise RuntimeError(f"便携版目录缺少便携模式标记文件: {portable_marker}")
+
+
 def verify_no_portable_helper_files(target_dir: Path) -> None:
-    helper_files = [target_dir / ".portable", target_dir / "README-Portable.txt"]
+    helper_files = [target_dir / "README-Portable.txt"]
     exists = [str(p) for p in helper_files if p.exists()]
     if exists:
         raise RuntimeError(f"检测到不应打包的便携辅助文件: {exists}")
@@ -309,6 +320,7 @@ def verify_layout(version: str) -> None:
     verify_no_ocr_models(portable_dir)
     verify_no_paddle_related(STAGED_APP_DIR)
     verify_no_paddle_related(portable_dir)
+    verify_portable_marker(portable_dir)
     verify_no_portable_helper_files(STAGED_APP_DIR)
     verify_no_portable_helper_files(portable_dir)
 

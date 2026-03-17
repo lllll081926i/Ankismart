@@ -90,6 +90,10 @@ PREVIEW_READABILITY_CSS = """
     margin-top: 12px;
 }
 
+.card[data-card-type] .flat-section-spacer {
+    height: 18px;
+}
+
 .card[data-card-type] .flat-answer {
     border-color: #b7e1c7;
     background: #f3fcf6;
@@ -163,6 +167,18 @@ PREVIEW_READABILITY_CSS = """
     line-height: 1.85 !important;
 }
 """.strip()
+
+_CARD_KIND_LABELS = {
+    "basic": ("基础问答", "Basic Q&A"),
+    "basic_reversed": ("双向基础卡", "Reversed Basic"),
+    "cloze": ("填空题", "Cloze"),
+    "concept": ("概念解释", "Concept"),
+    "key_terms": ("关键术语", "Key Terms"),
+    "single_choice": ("单选题", "Single Choice"),
+    "multiple_choice": ("多选题", "Multiple Choice"),
+    "image_qa": ("图片问答", "Image Q&A"),
+    "generic": ("通用卡片", "Generic"),
+}
 
 
 class CardRenderer:
@@ -465,10 +481,12 @@ class CardRenderer:
                 <div class="flat-title">问题</div>
                 <div class="flat-content">{question_html}</div>
             </section>
+            <div class="flat-section-spacer"></div>
             <section class="flat-block flat-answer">
                 <div class="flat-title">答案</div>
                 <div class="flat-answer-line">{answer_html}</div>
             </section>
+            <div class="flat-section-spacer"></div>
             <section class="flat-block flat-explain">
                 <div class="flat-title">解析</div>
                 <div class="flat-explain-wrap">{explanation_html}</div>
@@ -881,11 +899,8 @@ class CardPreviewPage(QWidget):
         info_bar.addWidget(self._deck_label)
 
         self._tags_label = BodyLabel("标签: -")
-        self._tags_label.setWordWrap(True)
+        self._tags_label.setWordWrap(False)
         info_bar.addWidget(self._tags_label)
-
-        self._quality_label = BodyLabel("质量: -")
-        info_bar.addWidget(self._quality_label)
 
         info_bar.addStretch()
 
@@ -938,20 +953,6 @@ class CardPreviewPage(QWidget):
         self._btn_export_csv.clicked.connect(self._export_csv)
         layout.addWidget(self._btn_export_csv)
 
-        self._btn_export_json = PushButton(
-            "导出为 JSON" if self._main.config.language == "zh" else "Export JSON"
-        )
-        self._btn_export_json.setIcon(FluentIcon.DICTIONARY)
-        self._btn_export_json.clicked.connect(self._export_json)
-        layout.addWidget(self._btn_export_json)
-
-        self._btn_push_preview = PushButton(
-            "推送预演" if self._main.config.language == "zh" else "Push Preview"
-        )
-        self._btn_push_preview.setIcon(FluentIcon.VIEW)
-        self._btn_push_preview.clicked.connect(self._show_push_preview)
-        layout.addWidget(self._btn_push_preview)
-
         # Push to Anki button
         self._btn_push = PrimaryPushButton(
             "推送到 Anki" if self._main.config.language == "zh" else "Push to Anki"
@@ -982,19 +983,41 @@ class CardPreviewPage(QWidget):
             self._note_type_label.setText("类型: -" if is_zh else "Type: -")
             self._deck_label.setText("牌组: -" if is_zh else "Deck: -")
             self._tags_label.setText("标签: -" if is_zh else "Tags: -")
-            self._quality_label.setText("质量: -" if is_zh else "Quality: -")
+            self._deck_label.setToolTip("")
+            self._tags_label.setToolTip("")
             return
 
-        tags_text = ", ".join(card.tags) if card.tags else "-"
+        card_kind = CardRenderer.detect_card_kind(card)
+        kind_zh, kind_en = _CARD_KIND_LABELS.get(card_kind, _CARD_KIND_LABELS["generic"])
+        kind_text = kind_zh if is_zh else kind_en
+        deck_name = card.deck_name or "-"
+        tags_text = self._format_tags_summary(card.tags)
         quality_score = self._compute_card_quality_score(card)
         self._note_type_label.setText(
-            f"类型: {card.note_type}" if is_zh else f"Type: {card.note_type}"
+            f"类型: {kind_text}  质量: {quality_score}"
+            if is_zh
+            else f"Type: {kind_text}  Quality: {quality_score}"
         )
-        self._deck_label.setText(f"牌组: {card.deck_name}" if is_zh else f"Deck: {card.deck_name}")
+        self._deck_label.setText(f"牌组: {deck_name}" if is_zh else f"Deck: {deck_name}")
         self._tags_label.setText(f"标签: {tags_text}" if is_zh else f"Tags: {tags_text}")
-        self._quality_label.setText(
-            f"质量: {quality_score}" if is_zh else f"Quality: {quality_score}"
-        )
+        self._deck_label.setToolTip(deck_name if deck_name != "-" else "")
+        self._tags_label.setToolTip(", ".join(card.tags) if card.tags else "")
+
+    def _format_tags_summary(self, tags: list[str] | None, *, max_tags: int = 3) -> str:
+        is_zh = self._main.config.language == "zh"
+        if not tags:
+            return "-"
+
+        visible = [tag for tag in tags[:max_tags] if tag]
+        if not visible:
+            return "-"
+
+        if len(tags) <= max_tags:
+            return ", ".join(visible)
+
+        remain = len(tags) - max_tags
+        suffix = f" 等{remain}个" if is_zh else f" +{remain}"
+        return f"{', '.join(visible)}{suffix}"
 
     def _apply_filters(self):
         """Apply current filter settings to card list."""
@@ -1270,8 +1293,6 @@ class CardPreviewPage(QWidget):
         self._btn_next.setText("下一张" if is_zh else "Next")
         self._btn_export_apkg.setText("导出为 APKG" if is_zh else "Export as APKG")
         self._btn_export_csv.setText("导出为 CSV" if is_zh else "Export CSV")
-        self._btn_export_json.setText("导出为 JSON" if is_zh else "Export JSON")
-        self._btn_push_preview.setText("推送预演" if is_zh else "Push Preview")
         self._btn_push.setText("推送到 Anki" if is_zh else "Push to Anki")
 
         if 0 <= self._current_index < len(self._filtered_cards):
@@ -1692,8 +1713,6 @@ class CardPreviewPage(QWidget):
         self._btn_push.setEnabled(enabled)
         self._btn_export_apkg.setEnabled(enabled)
         self._btn_export_csv.setEnabled(enabled)
-        self._btn_export_json.setEnabled(enabled)
-        self._btn_push_preview.setEnabled(enabled)
 
     def _build_export_rows(self) -> tuple[list[str], list[dict[str, str]]]:
         rows: list[dict[str, str]] = []

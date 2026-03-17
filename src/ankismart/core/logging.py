@@ -80,6 +80,20 @@ def _resolve_app_dir() -> Path:
     return root / ".local" / "ankismart"
 
 
+def _resolve_log_dir() -> Path:
+    root = _resolve_project_root()
+
+    # 打包后的安装版和便携版统一把日志写在可执行文件同级目录。
+    if getattr(sys, "frozen", False) or _is_portable_mode():
+        return root / "logs"
+
+    env_app_dir = os.getenv("ANKISMART_APP_DIR", "").strip()
+    if env_app_dir:
+        return Path(env_app_dir).expanduser().resolve() / "logs"
+
+    return _resolve_app_dir() / "logs"
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         from ankismart.core.tracing import get_trace_id
@@ -191,7 +205,7 @@ def setup_logging(level: int = logging.INFO) -> None:
     root_logger.addHandler(stream_handler)
 
     try:
-        log_dir = _resolve_app_dir() / "logs"
+        log_dir = _resolve_log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_dir / "ankismart.log", encoding="utf-8")
         file_handler.setLevel(level)
@@ -234,4 +248,4 @@ def get_log_directory() -> Path:
     Returns:
         Path to the log directory.
     """
-    return _resolve_app_dir() / "logs"
+    return _resolve_log_dir()

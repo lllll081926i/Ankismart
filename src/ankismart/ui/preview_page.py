@@ -4,7 +4,7 @@ import re
 import time
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
 from PyQt6.QtWidgets import QHBoxLayout, QListWidget, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -184,12 +184,6 @@ class PreviewPage(ProgressMixin, QWidget):
         self._btn_save.clicked.connect(self._save_current_edit)
         title_bar.addWidget(self._btn_save)
 
-        preview_text = "生成样本卡片" if is_zh else "Preview Sample"
-        self._btn_preview = PushButton(preview_text)
-        self._btn_preview.setEnabled(True)
-        self._btn_preview.clicked.connect(self._on_preview_sample)
-        title_bar.addWidget(self._btn_preview)
-
         generate_text = "开始制作卡片" if is_zh else "Generate Cards"
         self._btn_generate = PrimaryPushButton(generate_text)
         self._btn_generate.setEnabled(True)  # Explicitly enable
@@ -313,12 +307,16 @@ class PreviewPage(ProgressMixin, QWidget):
             if self._documents:  # Only enable if we have documents
                 self._btn_save.setEnabled(True)
                 self._btn_generate.setEnabled(True)
-                self._btn_preview.setEnabled(True)
 
     def _is_busy(self) -> bool:
         """Return True when any worker is actively running."""
         workers = (self._generate_worker, self._push_worker, self._sample_worker)
         return any(worker is not None and worker.isRunning() for worker in workers)
+
+    def _set_sample_preview_enabled(self, enabled: bool) -> None:
+        button = getattr(self, "_btn_preview", None)
+        if button is not None:
+            button.setEnabled(enabled)
 
     def _hide_progress(self) -> None:
         """Hide all progress indicators (override from ProgressMixin)."""
@@ -674,7 +672,7 @@ class PreviewPage(ProgressMixin, QWidget):
         # Show progress
         self._btn_generate.setEnabled(False)
         self._btn_save.setEnabled(False)
-        self._btn_preview.setEnabled(False)
+        self._set_sample_preview_enabled(False)
         self._progress_bar.show()
 
         # Create LLM client
@@ -892,11 +890,11 @@ class PreviewPage(ProgressMixin, QWidget):
             self._sample_worker.finished.connect(self._on_sample_finished)
             self._sample_worker.error.connect(self._on_sample_error)
             self._btn_generate.setEnabled(False)
-            self._btn_preview.setEnabled(False)
+            self._set_sample_preview_enabled(False)
             self._sample_worker.start()
         except Exception as e:
             self._update_ui_state()
-            self._btn_preview.setEnabled(True)
+            self._set_sample_preview_enabled(True)
             self._finish_state_tooltip(
                 False,
                 "样本卡片生成失败" if is_zh else "Sample generation failed",
@@ -917,7 +915,7 @@ class PreviewPage(ProgressMixin, QWidget):
         """Handle sample generation completion."""
         self._cleanup_sample_worker()
         self._update_ui_state()
-        self._btn_preview.setEnabled(True)
+        self._set_sample_preview_enabled(True)
         is_zh = self._main.config.language == "zh"
 
         if not cards:
@@ -1000,7 +998,7 @@ class PreviewPage(ProgressMixin, QWidget):
         """Handle sample generation error."""
         self._cleanup_sample_worker()
         self._update_ui_state()
-        self._btn_preview.setEnabled(True)
+        self._set_sample_preview_enabled(True)
         is_zh = self._main.config.language == "zh"
         error_display = build_error_display(error, self._main.config.language)
         self._finish_state_tooltip(
@@ -1042,11 +1040,53 @@ class PreviewPage(ProgressMixin, QWidget):
         """Show or update workflow state tooltip."""
         if self._state_tooltip is None:
             self._state_tooltip = StateToolTip(title, content, self.window())
-            self._state_tooltip.move(self._state_tooltip.getSuitablePos())
+            self._configure_state_tooltip(self._state_tooltip)
             self._state_tooltip.show()
             return
 
         self._state_tooltip.setContent(content)
+        self._configure_state_tooltip(self._state_tooltip)
+
+    def _configure_state_tooltip(self, tooltip: StateToolTip) -> None:
+        window = self.window() or self
+        max_width = min(720, max(380, max(window.width(), self.width()) - 48))
+        min_height = 108
+
+        set_max_width = getattr(tooltip, "setMaximumWidth", None)
+        if callable(set_max_width):
+            set_max_width(max_width)
+
+        set_min_height = getattr(tooltip, "setMinimumHeight", None)
+        if callable(set_min_height):
+            set_min_height(min_height)
+
+        for label_name in ("titleLabel", "contentLabel"):
+            label = getattr(tooltip, label_name, None)
+            if label is None:
+                continue
+            set_word_wrap = getattr(label, "setWordWrap", None)
+            if callable(set_word_wrap):
+                set_word_wrap(True)
+            label_set_max_width = getattr(label, "setMaximumWidth", None)
+            if callable(label_set_max_width):
+                label_set_max_width(max_width - 32)
+
+        adjust_size = getattr(tooltip, "adjustSize", None)
+        if callable(adjust_size):
+            adjust_size()
+
+        tooltip_width = max_width
+        size_hint = getattr(tooltip, "sizeHint", None)
+        if callable(size_hint):
+            hint = size_hint()
+            hint_width = getattr(hint, "width", None)
+            if callable(hint_width):
+                tooltip_width = min(max_width, max(380, hint_width()))
+
+        move = getattr(tooltip, "move", None)
+        if callable(move):
+            x = max(16, window.width() - tooltip_width - 24)
+            move(QPoint(x, 24))
 
     def _finish_state_tooltip(self, success: bool, content: str) -> None:
         """Finish workflow state tooltip and clear reference."""
@@ -1055,6 +1095,7 @@ class PreviewPage(ProgressMixin, QWidget):
 
         tooltip = self._state_tooltip
         tooltip.setContent(content)
+        self._configure_state_tooltip(tooltip)
         tooltip.setState(success)
         self._state_tooltip = None
         if hasattr(tooltip, "deleteLater"):
@@ -1186,7 +1227,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
-        self._btn_preview.setEnabled(True)
+        self._set_sample_preview_enabled(True)
 
         if not cards:
             InfoBar.warning(
@@ -1289,7 +1330,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
-        self._btn_preview.setEnabled(True)
+        self._set_sample_preview_enabled(True)
         InfoBar.error(
             title=title,
             content=message,
@@ -1329,7 +1370,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
-        self._btn_preview.setEnabled(True)
+        self._set_sample_preview_enabled(True)
 
         InfoBar.warning(
             title="已取消" if is_zh else "Cancelled",
@@ -1384,7 +1425,7 @@ class PreviewPage(ProgressMixin, QWidget):
         """Start pushing cards to Anki."""
         self._btn_generate.setEnabled(False)
         self._btn_save.setEnabled(False)
-        self._btn_preview.setEnabled(False)
+        self._set_sample_preview_enabled(False)
         self._progress_bar.show()
 
         # Apply duplicate check settings to cards
@@ -1449,7 +1490,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
-        self._btn_preview.setEnabled(True)
+        self._set_sample_preview_enabled(True)
 
         # Sync result data without automatic page navigation.
         self._main.result_page.load_result(result, self._main.cards)
@@ -1481,7 +1522,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
-        self._btn_preview.setEnabled(True)
+        self._set_sample_preview_enabled(True)
         InfoBar.error(
             title=error_display["title"],
             content=error_display["content"],
@@ -1503,7 +1544,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._hide_progress()
         self._btn_generate.setEnabled(True)
         self._btn_save.setEnabled(True)
-        self._btn_preview.setEnabled(True)
+        self._set_sample_preview_enabled(True)
 
         InfoBar.warning(
             title="已取消" if is_zh else "Cancelled",
@@ -1522,7 +1563,6 @@ class PreviewPage(ProgressMixin, QWidget):
         # Update title and button text
         self._title_label.setText("文档预览与编辑" if is_zh else "Document Preview & Edit")
         self._btn_save.setText("保存编辑" if is_zh else "Save Edit")
-        self._btn_preview.setText("生成样本卡片" if is_zh else "Preview Sample")
         self._btn_generate.setText("开始制作卡片" if is_zh else "Generate Cards")
 
         # Update tooltips with shortcuts

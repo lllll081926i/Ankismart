@@ -164,10 +164,10 @@ class TestConsoleFormatter:
 class TestSetupLogging:
     def test_sets_level_and_adds_handlers(self):
         with (
-            patch("ankismart.core.logging._resolve_app_dir") as mock_app_dir,
+            patch("ankismart.core.logging._resolve_log_dir") as mock_log_dir,
             patch("ankismart.core.logging.logging.FileHandler") as mock_fh,
         ):
-            mock_app_dir.return_value = Path("/fake/app")
+            mock_log_dir.return_value = Path("/fake/app/logs")
             mock_fh_instance = mock_fh.return_value
             mock_fh_instance.setFormatter = lambda f: None
 
@@ -184,10 +184,10 @@ class TestSetupLogging:
         root.addHandler(logging.StreamHandler())
 
         with (
-            patch("ankismart.core.logging._resolve_app_dir") as mock_app_dir,
+            patch("ankismart.core.logging._resolve_log_dir") as mock_log_dir,
             patch("ankismart.core.logging.logging.FileHandler") as mock_fh,
         ):
-            mock_app_dir.return_value = Path("/fake/app")
+            mock_log_dir.return_value = Path("/fake/app/logs")
             mock_fh_instance = mock_fh.return_value
             mock_fh_instance.setFormatter = lambda f: None
 
@@ -208,10 +208,10 @@ class TestSetupLogging:
 
     def test_default_level_is_info(self):
         with (
-            patch("ankismart.core.logging._resolve_app_dir") as mock_app_dir,
+            patch("ankismart.core.logging._resolve_log_dir") as mock_log_dir,
             patch("ankismart.core.logging.logging.FileHandler") as mock_fh,
         ):
-            mock_app_dir.return_value = Path("/fake/app")
+            mock_log_dir.return_value = Path("/fake/app/logs")
             mock_fh_instance = mock_fh.return_value
             mock_fh_instance.setFormatter = lambda f: None
 
@@ -266,3 +266,29 @@ class TestResolveAppDir:
 
         result = logging_module._resolve_app_dir()
         assert result == (local_app_data / "ankismart").resolve()
+
+
+class TestResolveLogDir:
+    def test_portable_mode_uses_project_logs_dir(self, monkeypatch, tmp_path: Path):
+        root = tmp_path / "portable-root"
+        root.mkdir(parents=True, exist_ok=True)
+        (root / ".portable").write_text("", encoding="utf-8")
+
+        monkeypatch.setattr(logging_module, "_resolve_project_root", lambda: root)
+        monkeypatch.setattr(logging_module.sys, "frozen", False, raising=False)
+
+        result = logging_module._resolve_log_dir()
+        assert result == root / "logs"
+
+    def test_frozen_windows_non_portable_uses_install_logs_dir(self, monkeypatch, tmp_path: Path):
+        root = tmp_path / "installed-app"
+        root.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr(logging_module, "_resolve_project_root", lambda: root)
+        monkeypatch.setattr(logging_module.sys, "frozen", True, raising=False)
+        monkeypatch.setattr(logging_module.sys, "platform", "win32")
+        monkeypatch.setattr(logging_module, "_is_portable_mode", lambda: False)
+        monkeypatch.delenv("ANKISMART_APP_DIR", raising=False)
+
+        result = logging_module._resolve_log_dir()
+        assert result == root / "logs"

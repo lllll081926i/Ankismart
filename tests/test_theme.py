@@ -121,6 +121,20 @@ def test_choice_preview_keeps_question_answer_structure() -> None:
     assert 'class="flat-block flat-explain"' in html
 
 
+def test_card_preview_inserts_visual_spacers_between_sections() -> None:
+    card = CardDraft(
+        note_type="Basic",
+        fields={
+            "Front": "什么是事务的原子性？",
+            "Back": "事务中的操作要么全部成功，要么全部失败。\n解析：这是 ACID 的 A。",
+        },
+    )
+
+    html = CardRenderer.render_card(card)
+
+    assert html.count('class="flat-section-spacer"') == 2
+
+
 def test_choice_back_prefixed_answer_is_split() -> None:
     keys, explanation = CardRenderer._parse_choice_back(
         "B 该模式面向两条线路存在共线区段，车辆在换乘站区间前后衔接。"
@@ -259,3 +273,33 @@ def test_card_preview_list_marks_low_quality_and_duplicate_risk() -> None:
     assert "[低分]" in page._card_list.item(0).text()
     assert "[近重复]" in page._card_list.item(1).text()
     assert "[近重复]" in page._card_list.item(2).text()
+
+
+def test_card_preview_meta_labels_use_chinese_type_mapping_and_trim_tags() -> None:
+    main = _make_card_preview_main()
+    page = CardPreviewPage(main)
+    card = CardDraft(
+        note_type="Basic",
+        deck_name="Ankismart::Demo",
+        tags=["ankismart", "demo", "basic", "extra"],
+        fields={"Front": "Q", "Back": "A"},
+    )
+
+    page._set_card_meta_labels(card)
+
+    assert "类型: 基础问答" in page._note_type_label.text()
+    assert "质量:" in page._note_type_label.text()
+    assert page._deck_label.text() == "牌组: Ankismart::Demo"
+    assert page._tags_label.text() == "标签: ankismart, demo, basic 等1个"
+    assert page._tags_label.toolTip() == "ankismart, demo, basic, extra"
+
+
+def test_card_preview_bottom_bar_keeps_only_core_actions() -> None:
+    main = _make_card_preview_main()
+    page = CardPreviewPage(main)
+
+    assert hasattr(page, "_btn_export_apkg")
+    assert hasattr(page, "_btn_export_csv")
+    assert hasattr(page, "_btn_push")
+    assert not hasattr(page, "_btn_export_json")
+    assert not hasattr(page, "_btn_push_preview")

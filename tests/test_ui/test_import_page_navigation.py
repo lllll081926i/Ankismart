@@ -155,7 +155,7 @@ def test_switch_to_settings_targets_settings_page() -> None:
 
     MainWindow.switch_to_settings(window)
 
-    assert switched_to["index"] == 5
+    assert switched_to["index"] == 4
 
 
 def test_import_page_real_instance_does_not_render_startup_precheck() -> None:

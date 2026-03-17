@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel
 from pytest import mark
 
 from ankismart.core.models import (
@@ -68,6 +68,13 @@ class _ThreadLikeWorker:
 
 
 class TestPreviewPageLoadDocuments:
+    def test_preview_page_does_not_render_sample_button(self):
+        main = _make_main_window()
+        page = PreviewPage(main)
+
+        assert not hasattr(page, "_btn_preview")
+        assert page._btn_generate is not None
+
     def test_load_single_document(self):
         main = _make_main_window()
         page = PreviewPage(main)
@@ -420,6 +427,72 @@ def test_push_card_progress_updates_state_tooltip(monkeypatch):
     page._on_push_card_progress(2, 5)
 
     assert calls == [("正在推送到 Anki", "已完成 2/5")]
+
+
+def test_show_state_tooltip_applies_adaptive_max_width(monkeypatch):
+    main = _make_main_window()
+    main.config.language = "zh"
+    page = PreviewPage(main)
+
+    class _TooltipStub:
+        def __init__(self, title, content, parent):
+            self.title = title
+            self.content = content
+            self.parent = parent
+            self.max_width = None
+            self.min_height = None
+            self.position = None
+            self.shown = False
+            self.used_suitable_pos = False
+            self.titleLabel = QLabel(title)
+            self.contentLabel = QLabel(content)
+
+        def setMaximumWidth(self, width):
+            self.max_width = width
+
+        def setMinimumHeight(self, height):
+            self.min_height = height
+
+        def adjustSize(self):
+            return None
+
+        def move(self, pos):
+            self.position = (pos.x(), pos.y())
+
+        def getSuitablePos(self):
+            self.used_suitable_pos = True
+            return object()
+
+        def sizeHint(self):
+            class _SizeHint:
+                def width(self):
+                    return 420
+
+                def height(self):
+                    return 84
+
+            return _SizeHint()
+
+        def show(self):
+            self.shown = True
+
+        def setContent(self, content):
+            self.content = content
+            self.contentLabel.setText(content)
+
+    monkeypatch.setattr("ankismart.ui.preview_page.StateToolTip", _TooltipStub)
+
+    page.resize(1200, 800)
+    page._show_state_tooltip("正在生成卡片", "这是一个非常长的提示内容" * 8)
+
+    tooltip = page._state_tooltip
+    assert tooltip is not None
+    assert tooltip.max_width == 720
+    assert tooltip.min_height == 108
+    assert tooltip.contentLabel.wordWrap() is True
+    assert tooltip.position == (756, 24)
+    assert tooltip.used_suitable_pos is False
+    assert tooltip.shown is True
 
 
 def test_sample_error_marks_state_tooltip_failed(monkeypatch):

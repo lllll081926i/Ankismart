@@ -287,7 +287,6 @@ QWidget#importPage,
 QWidget#previewPage,
 QWidget#cardPreviewPage,
 QWidget#resultPage,
-QWidget#performancePage,
 QScrollArea#settingsPage,
 QWidget#scrollWidget {{
     background-color: {page_background};

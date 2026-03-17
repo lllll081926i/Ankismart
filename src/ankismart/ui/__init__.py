@@ -10,7 +10,6 @@ _LAZY_EXPORTS = {
     "ImportPage": ("ankismart.ui.import_page", "ImportPage"),
     "PreviewPage": ("ankismart.ui.preview_page", "PreviewPage"),
     "ResultPage": ("ankismart.ui.result_page", "ResultPage"),
-    "PerformancePage": ("ankismart.ui.performance_page", "PerformancePage"),
     "SettingsPage": ("ankismart.ui.settings_page", "SettingsPage"),
     "get_text": ("ankismart.ui.i18n", "get_text"),
     "ConvertWorker": ("ankismart.ui.workers", "ConvertWorker"),
@@ -36,4 +35,3 @@ def __getattr__(name: str):
     value = getattr(module, attr_name)
     globals()[name] = value
     return value
-

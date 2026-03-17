@@ -45,6 +45,10 @@ def ensure_runtime_dirs(target_dir: Path) -> None:
         (target_dir / name).mkdir(parents=True, exist_ok=True)
 
 
+def write_portable_marker(target_dir: Path) -> None:
+    (target_dir / ".portable").write_text("", encoding="utf-8")
+
+
 def remove_ocr_models(target_dir: Path) -> None:
     """删除所有 OCR 和 paddle 相关的文件和目录"""
     # 收集所有需要删除的目录
@@ -87,6 +91,7 @@ def build_portable(source_dir: Path, output_root: Path, version: str) -> Path:
     shutil.copytree(source_dir, output_dir)
 
     ensure_runtime_dirs(output_dir)
+    write_portable_marker(output_dir)
     remove_ocr_models(output_dir)
 
     archive_base = output_root / output_dir.name
