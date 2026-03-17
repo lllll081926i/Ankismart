@@ -177,3 +177,11 @@ def test_log_startup_timing_emits_expected_summary(monkeypatch) -> None:
             },
         )
     ]
+
+
+def test_app_module_keeps_httpx_off_startup_import_path() -> None:
+    assert "httpx" not in app_module.__dict__
+
+
+def test_app_module_keeps_main_window_off_startup_import_path() -> None:
+    assert "MainWindow" not in app_module.__dict__

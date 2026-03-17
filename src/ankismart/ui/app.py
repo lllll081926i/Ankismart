@@ -15,11 +15,11 @@ import time
 import traceback
 from datetime import date, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 # Set environment variables as early as possible to avoid startup delays
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "1")
 
-import httpx
 from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
@@ -28,8 +28,10 @@ from qfluentwidgets import InfoBar, InfoBarPosition, Theme, isDarkTheme, setThem
 from ankismart import __version__
 from ankismart.core.config import CONFIG_DIR, create_config_backup, load_config, save_config
 from ankismart.core.logging import get_logger, setup_logging
-from ankismart.ui.main_window import MainWindow
 from ankismart.ui.styles import FIXED_THEME_ACCENT_HEX, get_stylesheet
+
+if TYPE_CHECKING:
+    from ankismart.ui.main_window import MainWindow
 
 logger = get_logger("app")
 
@@ -183,6 +185,8 @@ def _resolve_update_check_proxy(config) -> str:
 
 
 def _fetch_latest_github_release(*, timeout: float, proxy_url: str = "") -> tuple[str, str]:
+    import httpx
+
     latest_url = _GITHUB_RELEASES_WEB_URL
     client_kwargs: dict[str, object] = {"timeout": timeout}
     if proxy_url:
@@ -444,6 +448,8 @@ def main() -> int:
         _mark_startup("theme.applied")
 
         # Create and configure main window (pass config to avoid duplicate loading)
+        from ankismart.ui.main_window import MainWindow
+
         window = MainWindow(config)
         _mark_startup("window.created")
         logger.info("Main window created")
