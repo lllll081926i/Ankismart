@@ -326,7 +326,6 @@ def test_export_apkg_uses_export_worker(monkeypatch, _qapp, tmp_path) -> None:
         "ankismart.ui.result_page._create_apkg_exporter",
         lambda: created.__setitem__("factory_called", True) or object(),
     )
-
     class _ExportWorkerStub:
         def __init__(self, exporter, cards, output_path):
             created["exporter"] = exporter
@@ -426,7 +425,6 @@ def test_repush_all_uses_lazy_gateway_factory(monkeypatch, _qapp) -> None:
 
     assert created["gateway_calls"] == 1
     assert created["started"] is True
-
 
 def test_table_title_uses_question_field_only(_qapp) -> None:
     page = ResultPage(_FakeMainWindow())

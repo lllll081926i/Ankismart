@@ -494,7 +494,6 @@ def test_show_state_tooltip_applies_adaptive_max_width(monkeypatch):
     assert tooltip.used_suitable_pos is False
     assert tooltip.shown is True
 
-
 def test_sample_error_marks_state_tooltip_failed(monkeypatch):
     main = _make_main_window()
     main.config.language = "zh"
