@@ -1,7 +1,7 @@
 ; Ankismart installer script (Inno Setup 6)
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.2"
+  #define MyAppVersion "0.2.1"
 #endif
 
 #ifndef ProjectRoot
@@ -52,7 +52,6 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
 chinesesimplified.CreateDesktopShortcutOnFinish=创建桌面快捷方式
-chinesesimplified.OpenInstallDirOnFinish=打开安装目录
 chinesesimplified.WelcomeHeadline=安装 Ankismart
 chinesesimplified.WelcomeBody=Ankismart 会把文档转换、卡片生成与推送流程集中到一个桌面工具里。安装程序将把应用文件放在当前目录，配置保存在 %LOCALAPPDATA%\\ankismart，日志保存在安装目录下的 logs 文件夹中。
 chinesesimplified.SelectDirBody=请选择 Ankismart 的安装位置。程序文件会写入这里，配置仍保存在 %LOCALAPPDATA%\\ankismart，日志写入安装目录下的 logs 文件夹。
@@ -60,7 +59,6 @@ chinesesimplified.FinishedHeadline=Ankismart 已准备就绪
 chinesesimplified.FinishedBody=安装已经完成。你现在可以立即启动 Ankismart，开始导入文档、生成卡片并推送到 Anki。
 chinesesimplified.RemoveUserDataOnUninstall=卸载时删除此用户的配置与本地数据（%LOCALAPPDATA%\\ankismart）
 english.CreateDesktopShortcutOnFinish=Create desktop shortcut
-english.OpenInstallDirOnFinish=Open install directory
 english.WelcomeHeadline=Install Ankismart
 english.WelcomeBody=Ankismart brings document conversion, card generation, review, and Anki delivery into one desktop app. The installer keeps app files here, stores configuration in %LOCALAPPDATA%\\ankismart, and writes logs to the local logs folder beside the executable.
 english.SelectDirBody=Choose where Ankismart should be installed. App files will be written here, configuration stays in %LOCALAPPDATA%\\ankismart, and logs are stored in the local logs folder beside the executable.
@@ -85,7 +83,6 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent unchecked
-Filename: "{win}\explorer.exe"; Parameters: """{app}"""; Description: "{cm:OpenInstallDirOnFinish}"; Flags: nowait postinstall skipifsilent unchecked
 
 [Code]
 var
@@ -146,7 +143,6 @@ begin
   if CurPageID = wpFinished then
   begin
     WizardForm.RunList.Checked[0] := False;
-    WizardForm.RunList.Checked[1] := False;
   end;
 end;
 

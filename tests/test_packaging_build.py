@@ -156,10 +156,10 @@ def test_installer_script_uses_directory_page_and_finish_page_options() -> None:
     assert "DesktopIconCheck := TNewCheckBox.Create(WizardForm.FinishedPage)" in content
     assert "DesktopIconCheck.Checked := True" in content
     assert "WizardForm.RunList.Checked[0] := False" in content
-    assert "WizardForm.RunList.Checked[1] := False" in content
-    assert 'chinesesimplified.OpenInstallDirOnFinish=' in content
-    assert 'english.OpenInstallDirOnFinish=' in content
-    assert 'Description: "{cm:OpenInstallDirOnFinish}"' in content
+    assert "WizardForm.RunList.Checked[1] := False" not in content
+    assert 'chinesesimplified.OpenInstallDirOnFinish=' not in content
+    assert 'english.OpenInstallDirOnFinish=' not in content
+    assert 'Description: "{cm:OpenInstallDirOnFinish}"' not in content
 
 
 def test_dev_demo_script_builds_demo_payload_without_entering_release_bundle() -> None:
