@@ -322,6 +322,11 @@ def test_export_apkg_uses_export_worker(monkeypatch, _qapp, tmp_path) -> None:
 
     created = {}
 
+    monkeypatch.setattr(
+        "ankismart.ui.result_page._create_apkg_exporter",
+        lambda: created.__setitem__("factory_called", True) or object(),
+    )
+
     class _ExportWorkerStub:
         def __init__(self, exporter, cards, output_path):
             created["exporter"] = exporter
@@ -342,6 +347,7 @@ def test_export_apkg_uses_export_worker(monkeypatch, _qapp, tmp_path) -> None:
 
     assert created["cards"] == page._cards
     assert str(created["path"]).endswith("out.apkg")
+    assert created["factory_called"] is True
     assert created["started"] is True
     assert page._btn_export_apkg.isEnabled() is False
     assert page._btn_retry.isEnabled() is False
@@ -385,6 +391,41 @@ def test_retry_failed_updates_persistent_push_status(monkeypatch, _qapp) -> None
     page._retry_failed()
 
     assert "1/1" in page._status_label.text()
+
+
+def test_repush_all_uses_lazy_gateway_factory(monkeypatch, _qapp) -> None:
+    page = ResultPage(_FakeMainWindow())
+    page._cards = [_make_card()]
+    created = {"gateway_calls": 0}
+
+    monkeypatch.setattr(
+        "ankismart.ui.result_page._create_push_gateway",
+        lambda config: created.__setitem__("gateway_calls", created["gateway_calls"] + 1)
+        or object(),
+    )
+
+    class _PushWorkerStub:
+        def __init__(self, **kwargs) -> None:
+            created["gateway"] = kwargs["gateway"]
+            self.progress = _SignalStub()
+            self.finished = _SignalStub()
+            self.error = _SignalStub()
+            self.card_progress = _SignalStub()
+            self.cancelled = _SignalStub()
+
+        def start(self) -> None:
+            created["started"] = True
+
+        def isRunning(self) -> bool:  # noqa: N802
+            return True
+
+    monkeypatch.setattr("ankismart.ui.result_page.PushWorker", _PushWorkerStub)
+    monkeypatch.setattr("ankismart.ui.result_page.InfoBar.info", lambda *args, **kwargs: None)
+
+    page._repush_all_cards()
+
+    assert created["gateway_calls"] == 1
+    assert created["started"] is True
 
 
 def test_table_title_uses_question_field_only(_qapp) -> None:

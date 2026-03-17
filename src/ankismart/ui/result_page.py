@@ -35,9 +35,6 @@ from qfluentwidgets import (
     ToolButton,
 )
 
-from ankismart.anki_gateway.apkg_exporter import ApkgExporter as _ApkgExporter
-from ankismart.anki_gateway.client import AnkiConnectClient
-from ankismart.anki_gateway.gateway import AnkiGateway
 from ankismart.core.models import CardDraft, CardPushStatus, PushResult
 from ankismart.ui.card_edit_widget import CardEditDialog
 from ankismart.ui.error_handler import build_error_display
@@ -53,8 +50,48 @@ from ankismart.ui.styles import (
 from ankismart.ui.workers import ExportWorker, PushWorker
 
 logger = logging.getLogger(__name__)
-# Backward compatibility for tests patching ankismart.ui.result_page.ApkgExporter.
-ApkgExporter = _ApkgExporter
+ApkgExporter = None
+AnkiConnectClient = None
+AnkiGateway = None
+
+
+def _load_gateway_classes():
+    client_class = globals().get("AnkiConnectClient")
+    gateway_class = globals().get("AnkiGateway")
+    if client_class is None or gateway_class is None:
+        from ankismart.anki_gateway.client import AnkiConnectClient
+        from ankismart.anki_gateway.gateway import AnkiGateway
+
+        client_class = AnkiConnectClient
+        gateway_class = AnkiGateway
+        globals()["AnkiConnectClient"] = client_class
+        globals()["AnkiGateway"] = gateway_class
+    return client_class, gateway_class
+
+
+def _load_apkg_exporter_class():
+    exporter_class = globals().get("ApkgExporter")
+    if exporter_class is None:
+        from ankismart.anki_gateway.apkg_exporter import ApkgExporter
+
+        exporter_class = ApkgExporter
+        globals()["ApkgExporter"] = exporter_class
+    return exporter_class
+
+
+def _create_push_gateway(config) -> object:
+    client_class, gateway_class = _load_gateway_classes()
+    client = client_class(
+        url=config.anki_connect_url,
+        key=config.anki_connect_key,
+        proxy_url=config.proxy_url,
+    )
+    return gateway_class(client)
+
+
+def _create_apkg_exporter():
+    exporter_class = _load_apkg_exporter_class()
+    return exporter_class()
 
 
 class ResultPage(QWidget):
@@ -440,7 +477,7 @@ class ResultPage(QWidget):
         if not path:
             return
 
-        worker = ExportWorker(ApkgExporter(), self._cards, Path(path))
+        worker = ExportWorker(_create_apkg_exporter(), self._cards, Path(path))
         self._export_worker = worker
         self._export_button_states = {
             "retry": self._btn_retry.isEnabled(),
@@ -754,12 +791,7 @@ class ResultPage(QWidget):
 
         # Start push worker
         config = self._main.config
-        client = AnkiConnectClient(
-            url=config.anki_connect_url,
-            key=config.anki_connect_key,
-            proxy_url=config.proxy_url,
-        )
-        gateway = AnkiGateway(client)
+        gateway = _create_push_gateway(config)
         worker = PushWorker(
             gateway=gateway,
             cards=failed_cards,
@@ -1118,12 +1150,7 @@ class ResultPage(QWidget):
 
         # Start push worker
         config = self._main.config
-        client = AnkiConnectClient(
-            url=config.anki_connect_url,
-            key=config.anki_connect_key,
-            proxy_url=config.proxy_url,
-        )
-        gateway = AnkiGateway(client)
+        gateway = _create_push_gateway(config)
         worker = PushWorker(
             gateway=gateway,
             cards=self._cards,

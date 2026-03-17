@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import types
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -391,23 +392,31 @@ def test_export_worker_error_emits_message(tmp_path) -> None:
 
 def test_connection_check_worker_success(monkeypatch) -> None:
     results: list[bool] = []
+    captured = {"loader_calls": 0, "client_args": None}
 
     class _Client:
         def __init__(self, url, key, proxy_url):
-            self.url = url
-            self.key = key
-            self.proxy_url = proxy_url
+            captured["client_args"] = (url, key, proxy_url)
 
         def check_connection(self):
             return True
 
-    monkeypatch.setattr("ankismart.ui.workers.AnkiConnectClient", _Client)
+    monkeypatch.setattr(
+        "ankismart.ui.workers._load_anki_gateway_types",
+        lambda: (
+            captured.__setitem__("loader_calls", captured["loader_calls"] + 1) or _Client,
+            object,
+            types.SimpleNamespace,
+        ),
+    )
 
     worker = ConnectionCheckWorker("http://127.0.0.1:8765", "k", proxy_url="")
     worker.finished.connect(results.append)
     worker.run()
 
     assert results == [True]
+    assert captured["loader_calls"] == 1
+    assert captured["client_args"] == ("http://127.0.0.1:8765", "k", "")
 
 
 def test_connection_check_worker_exception_returns_false(monkeypatch) -> None:
@@ -417,7 +426,10 @@ def test_connection_check_worker_exception_returns_false(monkeypatch) -> None:
         def __init__(self, *args, **kwargs):
             raise OSError("socket error")
 
-    monkeypatch.setattr("ankismart.ui.workers.AnkiConnectClient", _BrokenClient)
+    monkeypatch.setattr(
+        "ankismart.ui.workers._load_anki_gateway_types",
+        lambda: (_BrokenClient, object, types.SimpleNamespace),
+    )
 
     worker = ConnectionCheckWorker("http://127.0.0.1:8765", "k", proxy_url="")
     worker.finished.connect(results.append)

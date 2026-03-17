@@ -8,9 +8,6 @@ from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from ankismart.anki_gateway.apkg_exporter import ApkgExporter
-from ankismart.anki_gateway.client import AnkiConnectClient
-from ankismart.anki_gateway.gateway import AnkiGateway, UpdateMode
 from ankismart.core.config import LLMProviderConfig, record_operation_metric
 from ankismart.core.errors import AnkiSmartError
 from ankismart.core.logging import get_logger
@@ -23,11 +20,18 @@ from ankismart.core.models import (
 )
 
 if TYPE_CHECKING:
+    from ankismart.anki_gateway.apkg_exporter import ApkgExporter
+    from ankismart.anki_gateway.client import AnkiConnectClient
+    from ankismart.anki_gateway.gateway import AnkiGateway, UpdateMode
     from ankismart.card_gen.llm_client import LLMClient
     from ankismart.converter.converter import DocumentConverter
 
 # Keep monkeypatch target available while avoiding startup import cost.
 DocumentConverter = None
+ApkgExporter = None
+AnkiConnectClient = None
+AnkiGateway = None
+UpdateMode = str
 
 logger = get_logger(__name__)
 
@@ -47,6 +51,24 @@ def _load_card_generator_class():
     from ankismart.card_gen.generator import CardGenerator as CardGeneratorClass
 
     return CardGeneratorClass
+
+
+def _load_anki_gateway_types():
+    client_class = globals().get("AnkiConnectClient")
+    gateway_class = globals().get("AnkiGateway")
+    update_mode_type = globals().get("UpdateMode")
+    if client_class is None or gateway_class is None or update_mode_type is str:
+        from importlib import import_module
+
+        client_module = import_module("ankismart.anki_gateway.client")
+        gateway_module = import_module("ankismart.anki_gateway.gateway")
+        client_class = client_module.AnkiConnectClient
+        gateway_class = gateway_module.AnkiGateway
+        update_mode_type = gateway_module.UpdateMode
+        globals()["AnkiConnectClient"] = client_class
+        globals()["AnkiGateway"] = gateway_class
+        globals()["UpdateMode"] = update_mode_type
+    return client_class, gateway_class, update_mode_type
 
 
 class CardGenerator:
@@ -274,9 +296,9 @@ class PushWorker(QThread):
 
     def __init__(
         self,
-        gateway: AnkiGateway,
+        gateway: Any,
         cards: list[CardDraft],
-        update_mode: UpdateMode = "create_only",
+        update_mode: str = "create_only",
     ) -> None:
         super().__init__()
         self._gateway = gateway
@@ -357,7 +379,7 @@ class ExportWorker(QThread):
 
     def __init__(
         self,
-        exporter: ApkgExporter,
+        exporter: Any,
         cards: list[CardDraft],
         output_path: Path,
     ) -> None:
@@ -412,7 +434,8 @@ class ConnectionCheckWorker(QThread):
 
     def run(self) -> None:
         try:
-            client = AnkiConnectClient(url=self._url, key=self._key, proxy_url=self._proxy_url)
+            client_class, _, _ = _load_anki_gateway_types()
+            client = client_class(url=self._url, key=self._key, proxy_url=self._proxy_url)
             self.finished.emit(client.check_connection())
         except (OSError, ValueError, RuntimeError) as e:
             logger.warning(f"AnkiConnect connection check failed: {e}")
