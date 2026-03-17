@@ -4,7 +4,7 @@ import re
 import time
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QDragEnterEvent, QDropEvent
 from PyQt6.QtWidgets import (
     QDialog,
@@ -560,6 +560,10 @@ class ImportPage(ProgressMixin, QWidget):
         self._converter = None
         self._gateway = None
         self._card_generator = None
+        self._strategy_group_initialized = False
+        self._strategy_group_init_scheduled = False
+        self._strategy_group_host: QWidget | None = None
+        self._strategy_sliders: list[tuple[str, Slider, BodyLabel]] = []
 
         self.setObjectName("importPage")
 
@@ -716,9 +720,15 @@ class ImportPage(ProgressMixin, QWidget):
         config_group = self._create_config_group()
         self.expand_layout.addWidget(config_group)
 
-        # Strategy configuration group
-        strategy_group = self._create_strategy_group()
-        self.expand_layout.addWidget(strategy_group)
+        self._strategy_group_host = QWidget(self._scroll_widget)
+        self._strategy_group_host.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
+        )
+        self._strategy_group_host.setStyleSheet("background-color: transparent;")
+        strategy_host_layout = QVBoxLayout(self._strategy_group_host)
+        strategy_host_layout.setContentsMargins(0, 0, 0, 0)
+        strategy_host_layout.setSpacing(0)
+        self.expand_layout.addWidget(self._strategy_group_host)
 
         # Progress display
         progress_widget = self._create_progress_display()
@@ -727,6 +737,39 @@ class ImportPage(ProgressMixin, QWidget):
         self.expand_layout.addStretch(1)
 
         return scroll
+
+    def _initialize_strategy_group_if_needed(self) -> None:
+        if self.__dict__.get("_strategy_group_initialized", True):
+            return
+
+        host = self.__dict__.get("_strategy_group_host")
+        if host is None:
+            return
+
+        layout = host.layout()
+        if layout is None:
+            return
+
+        strategy_group = self._create_strategy_group()
+        layout.addWidget(strategy_group)
+        self._strategy_group_initialized = True
+
+    def _schedule_strategy_group_init(self) -> None:
+        if self.__dict__.get("_strategy_group_initialized", True):
+            return
+        if self.__dict__.get("_strategy_group_init_scheduled", False):
+            return
+        self._strategy_group_init_scheduled = True
+
+        def _build() -> None:
+            self._strategy_group_init_scheduled = False
+            self._initialize_strategy_group_if_needed()
+
+        QTimer.singleShot(0, _build)
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        self._schedule_strategy_group_init()
 
     @staticmethod
     def _get_start_convert_text(language: str) -> str:
@@ -966,6 +1009,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._apply_selected_strategy_template(show_feedback=False)
 
     def _apply_selected_strategy_template(self, *, show_feedback: bool = True) -> None:
+        self._initialize_strategy_group_if_needed()
         template_id = str(self._strategy_template_combo.currentData() or "")
         template = _STRATEGY_TEMPLATE_LIBRARY.get(template_id)
         is_zh = self._main.config.language == "zh"
@@ -1963,6 +2007,7 @@ class ImportPage(ProgressMixin, QWidget):
 
     def build_generation_config(self) -> dict:
         """Build generation configuration from UI state."""
+        self._initialize_strategy_group_if_needed()
         strategy_mix = []
         for strategy_id, slider, _ in self._strategy_sliders:
             ratio = slider.value()
@@ -2724,6 +2769,7 @@ class ImportPage(ProgressMixin, QWidget):
 
     def _apply_strategy_mix(self, strategy_mix: dict):
         """Apply strategy mix to sliders."""
+        self._initialize_strategy_group_if_needed()
         # Reset all sliders first
         for strategy_id, slider, value_label in self._strategy_sliders:
             slider.setValue(0)

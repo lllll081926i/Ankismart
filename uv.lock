@@ -37,7 +37,7 @@ wheels = [
 
 [[package]]
 name = "ankismart"
-version = "0.1.7"
+version = "1.1"
 source = { editable = "." }
 dependencies = [
     { name = "chardet" },
