@@ -9,6 +9,7 @@ import pytest
 from PyQt6.QtWidgets import QApplication
 
 from ankismart.core.config import AppConfig
+from ankismart.core.task_models import TaskStatus, build_default_task_run
 from ankismart.ui import app as app_module
 from ankismart.ui.main_window import MainWindow
 from tests.e2e.conftest import _configure_test_qapp, _teardown_test_window
@@ -51,6 +52,20 @@ def test_main_window_startup_smoke_budget(monkeypatch) -> None:
     elapsed_ms = (time.perf_counter() - started) * 1000
 
     assert elapsed_ms < 350
+    window.close()
+
+
+def test_main_window_loads_resumable_tasks(monkeypatch) -> None:
+    monkeypatch.setattr("ankismart.ui.main_window.save_config", lambda _cfg: None)
+    task = build_default_task_run(flow="full_pipeline", task_id="task-r1")
+    task.status = TaskStatus.FAILED
+    task.resume_from_stage = "generate"
+    monkeypatch.setattr("ankismart.ui.main_window.load_resumable_tasks", lambda _store: [task])
+
+    window = MainWindow(config=AppConfig(language="zh", theme="light"))
+
+    assert [item.task_id for item in window.resumable_tasks] == ["task-r1"]
+    assert "task-r1" in window.task_center_panel._summary_label.text()
     window.close()
 
 

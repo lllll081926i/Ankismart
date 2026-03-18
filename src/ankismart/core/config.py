@@ -76,6 +76,9 @@ CONFIG_DIR: Path = _resolve_app_dir()
 CONFIG_PATH: Path = Path(
     os.getenv("ANKISMART_CONFIG_PATH", str(CONFIG_DIR / "config.yaml"))
 ).expanduser().resolve()
+TASKS_PATH: Path = Path(
+    os.getenv("ANKISMART_TASKS_PATH", str(CONFIG_DIR / "tasks.json"))
+).expanduser().resolve()
 CONFIG_BACKUP_DIR: Path = CONFIG_DIR / "backups"
 
 _ENCRYPTED_FIELDS: set[str] = {"anki_connect_key", "ocr_cloud_api_key"}

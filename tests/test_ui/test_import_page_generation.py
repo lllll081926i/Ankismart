@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ankismart.core.config import AppConfig
+from ankismart.core.task_models import build_default_task_run
 from ankismart.ui.import_page import _STRATEGY_TEMPLATE_LIBRARY, ImportPage
 from ankismart.ui.utils import format_operation_hint
 from ankismart.ui.workflows import (
@@ -30,6 +31,49 @@ def test_build_generation_config_single_mode() -> None:
     assert config["target_total"] == 20
     assert config["auto_target_count"] is True
     assert config["strategy_mix"] == [{"strategy": "basic", "ratio": 100}]
+
+
+def test_start_convert_creates_pending_task_run(monkeypatch) -> None:
+    page = make_page()
+    page._file_paths = [Path("sample.md")]
+    page._cleanup_batch_worker = lambda: None
+    page._set_generate_actions_enabled = lambda _enabled: None
+    page._files_need_ocr = lambda: False
+    page._main.register_task = lambda task, activate=True: task
+    created: dict[str, object] = {}
+
+    def _create_task_run(flow: str):
+        task = build_default_task_run(flow=flow, task_id="task-import")
+        created["flow"] = flow
+        created["task"] = task
+        return task
+
+    class _SignalStub:
+        def connect(self, _callback) -> None:
+            return None
+
+    class _WorkerStub:
+        def __init__(self, *_args, **_kwargs) -> None:
+            self.file_progress = _SignalStub()
+            self.file_completed = _SignalStub()
+            self.file_warning = _SignalStub()
+            self.page_progress = _SignalStub()
+            self.ocr_progress = _SignalStub()
+            self.finished = _SignalStub()
+            self.error = _SignalStub()
+            self.cancelled = _SignalStub()
+
+        def start(self) -> None:
+            return None
+
+    monkeypatch.setattr("ankismart.ui.import_page.save_config", lambda _config: None)
+    monkeypatch.setattr("ankismart.ui.import_page.BatchConvertWorker", _WorkerStub)
+    page._create_task_run = _create_task_run
+
+    ImportPage._start_convert(page)
+
+    assert created["flow"] == "full_pipeline"
+    assert getattr(page, "_current_task_id", "") == "task-import"
 
 
 def test_build_generation_config_mixed_mode() -> None:

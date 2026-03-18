@@ -53,6 +53,7 @@ from ankismart.core.config import (
 )
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument
+from ankismart.core.task_models import build_default_task_run
 from ankismart.ui.error_handler import build_error_display
 from ankismart.ui.i18n import get_text
 from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_text
@@ -63,6 +64,7 @@ from ankismart.ui.styles import (
     SPACING_MEDIUM,
     SPACING_SMALL,
 )
+from ankismart.ui.task_runtime import TaskEvent
 from ankismart.ui.utils import ProgressMixin, format_operation_hint, split_tags_text
 from ankismart.ui.workers import BatchConvertWorker
 from ankismart.ui.workflows import (
@@ -556,6 +558,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._last_ocr_page_status_message: str = ""
         self._last_convert_ocr_message: str = ""
         self._convert_start_ts: float = 0.0
+        self._current_task_id: str = ""
 
         # Lazy-loaded heavy dependencies
         self._converter = None
@@ -937,7 +940,9 @@ class ImportPage(ProgressMixin, QWidget):
                 str(meta["zh"] if is_zh else meta["en"]),
                 userData=key,
             )
-        self._strategy_template_combo.currentIndexChanged.connect(self._on_strategy_template_changed)
+        self._strategy_template_combo.currentIndexChanged.connect(
+            self._on_strategy_template_changed
+        )
         self._btn_apply_strategy_template = PushButton("应用" if is_zh else "Apply")
         self._btn_apply_strategy_template.clicked.connect(self._apply_selected_strategy_template)
         template_card.hBoxLayout.addWidget(self._strategy_template_combo)
@@ -1225,9 +1230,7 @@ class ImportPage(ProgressMixin, QWidget):
         count = len(queue)
         is_zh = self._main.config.language == "zh"
         button.setVisible(count > 0)
-        button.setText(
-            f"继续失败任务 ({count})" if is_zh else f"Resume Failed OCR Tasks ({count})"
-        )
+        button.setText(f"继续失败任务 ({count})" if is_zh else f"Resume Failed OCR Tasks ({count})")
 
     def _resume_failed_tasks(self) -> None:
         queue = list(getattr(self._main.config, "ocr_resume_file_paths", []) or [])
@@ -1813,6 +1816,16 @@ class ImportPage(ProgressMixin, QWidget):
         self._status_label.setText(
             "正在转换文件..." if self._main.config.language == "zh" else "Converting files..."
         )
+        task = self._create_task_run("full_pipeline")
+        self._current_task_id = task.task_id
+        self._publish_task_event(
+            TaskEvent(
+                task_id=task.task_id,
+                stage="convert",
+                kind="started",
+                message="conversion started",
+            )
+        )
 
         self._cleanup_batch_worker()
         self._worker = BatchConvertWorker(self._file_paths, self._main.config)
@@ -2095,6 +2108,16 @@ class ImportPage(ProgressMixin, QWidget):
         )
 
         self._status_label.setText(f"{file_text}\n{overall_text}")
+        task_id = str(self.__dict__.get("_current_task_id", "") or "")
+        self._publish_task_event(
+            TaskEvent(
+                task_id=task_id,
+                stage="convert",
+                kind="progress",
+                progress=percentage,
+                message=file_text,
+            )
+        )
 
     def _on_file_completed(self, filename: str, document: ConvertedDocument):
         """Handle single file conversion completion."""
@@ -2142,6 +2165,15 @@ class ImportPage(ProgressMixin, QWidget):
 
     def _on_file_warning(self, message: str) -> None:
         is_zh = self._main.config.language == "zh"
+        task_id = str(self.__dict__.get("_current_task_id", "") or "")
+        self._publish_task_event(
+            TaskEvent(
+                task_id=task_id,
+                stage="convert",
+                kind="warning",
+                message=message,
+            )
+        )
         InfoBar.warning(
             title="OCR 质量预警" if is_zh else "OCR Quality Warning",
             content=message,
@@ -2155,6 +2187,7 @@ class ImportPage(ProgressMixin, QWidget):
     def _on_page_progress(self, filename: str, current_page: int, total_pages: int):
         """Handle OCR page-by-page progress."""
         from ankismart.ui.i18n import get_text
+
         is_cloud = str(getattr(self._main.config, "ocr_mode", "local")).strip().lower() == "cloud"
 
         # Update status label with detailed page information
@@ -2204,6 +2237,16 @@ class ImportPage(ProgressMixin, QWidget):
                     total=total_files,
                 )
                 self._status_label.setText(f"{file_text}\n{overall_text}")
+                task_id = str(self.__dict__.get("_current_task_id", "") or "")
+                self._publish_task_event(
+                    TaskEvent(
+                        task_id=task_id,
+                        stage="convert",
+                        kind="progress",
+                        progress=percentage,
+                        message=file_text,
+                    )
+                )
             else:
                 self._status_label.setText(file_text)
 
@@ -2359,9 +2402,7 @@ class ImportPage(ProgressMixin, QWidget):
             tail = "" if len(quality_warnings) <= 3 else f"\n... +{len(quality_warnings) - 3}"
             InfoBar.warning(
                 title=(
-                    "OCR 质量预警"
-                    if self._main.config.language == "zh"
-                    else "OCR Quality Warning"
+                    "OCR 质量预警" if self._main.config.language == "zh" else "OCR Quality Warning"
                 ),
                 content=preview_msg + tail,
                 orient=Qt.Orientation.Horizontal,
@@ -2378,10 +2419,27 @@ class ImportPage(ProgressMixin, QWidget):
                 if self._main.config.language == "zh"
                 else "No files converted successfully"
             )
+            self._publish_task_event(
+                TaskEvent(
+                    task_id=str(self.__dict__.get("_current_task_id", "") or ""),
+                    stage="convert",
+                    kind="failed",
+                    message="no documents converted",
+                )
+            )
             return
 
         # Store result and switch to preview page
         self._main.batch_result = result
+        self._publish_task_event(
+            TaskEvent(
+                task_id=str(self.__dict__.get("_current_task_id", "") or ""),
+                stage="convert",
+                kind="completed",
+                progress=100,
+                message=f"converted {len(result.documents)} documents",
+            )
+        )
         self._status_label.setText(
             f"转换完成: {len(result.documents)} 个文件"
             if self._main.config.language == "zh"
@@ -2414,6 +2472,14 @@ class ImportPage(ProgressMixin, QWidget):
             f"转换失败: {error_display['title']}"
             if self._main.config.language == "zh"
             else f"Conversion failed: {error_display['title']}"
+        )
+        self._publish_task_event(
+            TaskEvent(
+                task_id=str(self.__dict__.get("_current_task_id", "") or ""),
+                stage="convert",
+                kind="failed",
+                message=error_display["content"],
+            )
         )
         InfoBar.error(
             title=error_display["title"],
@@ -2470,6 +2536,14 @@ class ImportPage(ProgressMixin, QWidget):
         self._status_label.setText(
             "操作已取消" if self._main.config.language == "zh" else "Operation cancelled"
         )
+        self._publish_task_event(
+            TaskEvent(
+                task_id=str(self.__dict__.get("_current_task_id", "") or ""),
+                stage="convert",
+                kind="cancelled",
+                message="conversion cancelled",
+            )
+        )
 
         from PyQt6.QtCore import Qt
         from qfluentwidgets import InfoBar, InfoBarPosition
@@ -2520,6 +2594,20 @@ class ImportPage(ProgressMixin, QWidget):
             else:
                 slider.setValue(0)
                 value_label.setText("0%")
+
+    def _create_task_run(self, flow: str):
+        task = build_default_task_run(flow=flow)
+        register_task = getattr(self._main, "register_task", None)
+        if callable(register_task):
+            return register_task(task, activate=True)
+        return task
+
+    def _publish_task_event(self, event: TaskEvent) -> None:
+        if not event.task_id:
+            return
+        publish = getattr(self._main, "publish_task_event", None)
+        if callable(publish):
+            publish(event)
 
     def _load_example(self):
         """Show dialog to select and load example documents."""
@@ -2849,7 +2937,6 @@ class ImportPage(ProgressMixin, QWidget):
             if not restored and self._strategy_template_combo.count() > 0:
                 self._strategy_template_combo.setCurrentIndex(0)
             self._strategy_template_combo.blockSignals(False)
-
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""

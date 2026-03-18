@@ -19,8 +19,10 @@ from qfluentwidgets import (
     setThemeColor,
 )
 
-from ankismart.core.config import AppConfig, load_config, save_config
+from ankismart.core.config import TASKS_PATH, AppConfig, load_config, save_config
 from ankismart.core.logging import get_logger
+from ankismart.core.task_models import TaskRun
+from ankismart.core.task_store import JsonTaskStore
 
 from .i18n import set_language, t
 from .import_page import ImportPage
@@ -38,6 +40,8 @@ from .styles import (
     get_stylesheet,
     scale_px,
 )
+from .task_center import TaskCenterPanel
+from .task_runtime import TaskEvent, TaskRuntime
 
 if TYPE_CHECKING:
     from .card_preview_page import CardPreviewPage
@@ -46,6 +50,10 @@ if TYPE_CHECKING:
     from .settings_page import SettingsPage
 
 logger = get_logger("ui.main_window")
+
+
+def load_resumable_tasks(store: JsonTaskStore) -> list[TaskRun]:
+    return store.list_resumable()
 
 
 class MainWindow(FluentWindow):
@@ -64,6 +72,12 @@ class MainWindow(FluentWindow):
         self._batch_result = None
         self._connection_status = False
         self._effective_theme_name = "dark" if isDarkTheme() else "light"
+        self._task_store = JsonTaskStore(TASKS_PATH)
+        self.task_runtime = TaskRuntime(store=self._task_store, on_event=self._on_task_event)
+        self._active_task_id = ""
+        self._resumable_tasks: list[TaskRun] = load_resumable_tasks(self._task_store)
+        for task in self._resumable_tasks:
+            self.task_runtime.register(task)
 
         # Set initial language
         set_language(self.config.language)
@@ -85,10 +99,13 @@ class MainWindow(FluentWindow):
             "settings",
         ]
         self._deferred_bootstrap_started = False
+        self._task_center_panel = TaskCenterPanel(self)
+        self._task_center_panel.hide()
 
         self._init_window()
         self._init_navigation()
         self._init_shortcuts()
+        self._refresh_task_center()
 
         # Connect to qconfig theme change signal for real-time updates
         qconfig.themeChanged.connect(self._on_theme_changed)
@@ -209,10 +226,7 @@ NavigationPanel[transparent=true] {{
 
         # Add navigation items
         self.addSubInterface(
-            self.import_page,
-            FluentIcon.FOLDER_ADD,
-            labels["import"],
-            NavigationItemPosition.TOP
+            self.import_page, FluentIcon.FOLDER_ADD, labels["import"], NavigationItemPosition.TOP
         )
         self._nav_routes_added.add(self.import_page.objectName())
 
@@ -397,15 +411,12 @@ NavigationPanel[transparent=true] {{
             self,
             ShortcutKeys.OPEN_SETTINGS,
             self._open_settings,
-            Qt.ShortcutContext.ApplicationShortcut
+            Qt.ShortcutContext.ApplicationShortcut,
         )
 
         # Ctrl+Q: Quit
         create_shortcut(
-            self,
-            ShortcutKeys.QUIT,
-            self._quit_application,
-            Qt.ShortcutContext.ApplicationShortcut
+            self, ShortcutKeys.QUIT, self._quit_application, Qt.ShortcutContext.ApplicationShortcut
         )
 
     def _open_settings(self):
@@ -479,6 +490,28 @@ NavigationPanel[transparent=true] {{
                 update_theme()
         self._update_theme_button_tooltip()
 
+    def _on_task_event(self, _event: TaskEvent) -> None:
+        self._refresh_task_center()
+
+    def _refresh_task_center(self) -> None:
+        tasks = self.task_runtime.list_resumable()
+        self._resumable_tasks = tasks
+        self._task_center_panel.render_tasks(tasks)
+        self._task_center_panel.setVisible(bool(tasks))
+
+    def register_task(self, task: TaskRun, *, activate: bool = True) -> TaskRun:
+        registered = self.task_runtime.register(task)
+        if activate:
+            self._active_task_id = registered.task_id
+        self._refresh_task_center()
+        return registered
+
+    def publish_task_event(self, event: TaskEvent) -> TaskRun:
+        task = self.task_runtime.handle(event)
+        self._active_task_id = task.task_id
+        self._refresh_task_center()
+        return task
+
     def _get_navigation_labels(self) -> dict[str, str]:
         """Get navigation labels based on current language."""
         lang = self.config.language
@@ -487,7 +520,7 @@ NavigationPanel[transparent=true] {{
             "preview": t("nav.preview", lang),
             "card_preview": t("nav.card_preview", lang),
             "result": t("nav.result", lang),
-            "settings": t("nav.settings", lang)
+            "settings": t("nav.settings", lang),
         }
 
     @staticmethod
@@ -536,6 +569,7 @@ NavigationPanel[transparent=true] {{
 
         if "log_level" in changed:
             from ankismart.core.logging import set_log_level
+
             set_log_level(self.config.log_level)
 
         self.config_updated.emit(sorted(changed))
@@ -722,3 +756,15 @@ NavigationPanel[transparent=true] {{
         self.config.window_geometry = geometry
         save_config(self.config)
         super().closeEvent(event)
+
+    @property
+    def active_task_id(self) -> str:
+        return self._active_task_id
+
+    @property
+    def resumable_tasks(self) -> list[TaskRun]:
+        return list(self._resumable_tasks)
+
+    @property
+    def task_center_panel(self) -> TaskCenterPanel:
+        return self._task_center_panel

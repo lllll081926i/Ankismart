@@ -377,6 +377,20 @@ def test_create_apkg_exporter_supports_string_path_monkeypatch(monkeypatch, tmp_
     assert calls["path"] == output_path
 
 
+def test_export_error_publishes_failed_task_event(monkeypatch, _qapp) -> None:
+    page = ResultPage(_FakeMainWindow())
+    events = []
+
+    monkeypatch.setattr(page, "_publish_task_event", lambda event: events.append(event))
+    monkeypatch.setattr("ankismart.ui.result_page.InfoBar.error", lambda *args, **kwargs: None)
+    page._current_task_id = "task-result"
+
+    page._on_export_error("disk full")
+
+    assert events[-1].kind == "failed"
+    assert events[-1].stage == "export"
+
+
 def test_retry_failed_updates_persistent_push_status(monkeypatch, _qapp) -> None:
     page = ResultPage(_FakeMainWindow())
     page._cards = [_make_card()]

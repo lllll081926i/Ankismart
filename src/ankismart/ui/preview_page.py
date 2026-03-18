@@ -36,6 +36,7 @@ from ankismart.ui.styles import (
     get_list_widget_palette,
     scale_px,
 )
+from ankismart.ui.task_runtime import TaskEvent
 from ankismart.ui.utils import ProgressMixin, split_tags_text
 from ankismart.ui.workers import BatchGenerateWorker, PushWorker
 
@@ -153,6 +154,7 @@ class PreviewPage(ProgressMixin, QWidget):
         self._ready_documents: set[str] = set()  # Track ready document names
         self._total_expected_docs = 0  # Total expected documents
         self._generation_start_ts = 0.0
+        self._current_task_id = ""
 
         self._setup_ui()
         self._init_shortcuts()
@@ -352,6 +354,7 @@ class PreviewPage(ProgressMixin, QWidget):
             total_expected: Total expected number of documents
         """
         self._documents = list(batch_result.documents)
+        self._current_task_id = str(getattr(self._main, "active_task_id", "") or "")
         self._edited_content.clear()
         self._current_index = -1
         self._pending_files_count = pending_files_count
@@ -675,6 +678,17 @@ class PreviewPage(ProgressMixin, QWidget):
         # Start generation worker
         self._cleanup_generate_worker()
         self._generation_start_ts = time.monotonic()
+        self._current_task_id = str(
+            getattr(self._main, "active_task_id", "") or self._current_task_id
+        )
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="generate",
+                kind="started",
+                message="generation started",
+            )
+        )
         self._generate_worker = BatchGenerateWorker(
             documents=documents,
             generation_config=generation_config,
@@ -1177,6 +1191,14 @@ class PreviewPage(ProgressMixin, QWidget):
             "generation progress",
             extra={"event": "ui.generation.progress", "message_detail": normalized},
         )
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="generate",
+                kind="progress",
+                message=normalized,
+            )
+        )
 
     def _on_card_progress(self, current: int, total: int):
         """Handle card generation progress."""
@@ -1187,6 +1209,16 @@ class PreviewPage(ProgressMixin, QWidget):
         self._show_state_tooltip(
             "正在生成卡片" if is_zh else "Generating Cards",
             f"已生成 {current}/{total} 张卡片" if is_zh else f"Generated {current}/{total} cards",
+        )
+        progress = int((current / total) * 100) if total > 0 else 0
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="generate",
+                kind="progress",
+                progress=progress,
+                message=f"{current}/{total}",
+            )
         )
 
     def _on_document_completed(self, document_name: str, cards_count: int):
@@ -1207,6 +1239,14 @@ class PreviewPage(ProgressMixin, QWidget):
     def _on_generation_warning(self, message: str):
         """Show non-blocking generation warnings without interrupting the workflow."""
         is_zh = self._main.config.language == "zh"
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="generate",
+                kind="warning",
+                message=message,
+            )
+        )
         InfoBar.warning(
             title="生成提示" if is_zh else "Generation Notice",
             content=message,
@@ -1236,6 +1276,14 @@ class PreviewPage(ProgressMixin, QWidget):
         self._set_sample_preview_enabled(True)
 
         if not cards:
+            self._publish_task_event(
+                TaskEvent(
+                    task_id=self._current_task_id,
+                    stage="generate",
+                    kind="failed",
+                    message="no cards generated",
+                )
+            )
             InfoBar.warning(
                 title="警告" if is_zh else "Warning",
                 content="没有生成任何卡片" if is_zh else "No cards generated",
@@ -1271,6 +1319,15 @@ class PreviewPage(ProgressMixin, QWidget):
             },
         )
         save_config(self._main.config)
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="generate",
+                kind="completed",
+                progress=100,
+                message=f"generated {len(cards)} cards",
+            )
+        )
 
         InfoBar.success(
             title="制卡完成" if is_zh else "Generation Complete",
@@ -1357,6 +1414,14 @@ class PreviewPage(ProgressMixin, QWidget):
             payload={"duration_seconds": round(elapsed, 2)},
         )
         save_config(self._main.config)
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="generate",
+                kind="failed",
+                message=message,
+            )
+        )
 
     def _on_generation_cancelled(self):
         """Handle generation cancellation."""
@@ -1400,6 +1465,14 @@ class PreviewPage(ProgressMixin, QWidget):
             error_code="cancelled",
         )
         save_config(self._main.config)
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="generate",
+                kind="cancelled",
+                message="generation cancelled",
+            )
+        )
 
     def _cancel_generation(self):
         """Cancel the current generation operation."""
@@ -1454,6 +1527,14 @@ class PreviewPage(ProgressMixin, QWidget):
 
         # Start push worker
         self._cleanup_push_worker()
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="push",
+                kind="started",
+                message="push started",
+            )
+        )
         self._push_worker = PushWorker(
             gateway=gateway,
             cards=cards,
@@ -1473,6 +1554,14 @@ class PreviewPage(ProgressMixin, QWidget):
             "正在推送到 Anki" if is_zh else "Pushing to Anki",
             message,
         )
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="push",
+                kind="progress",
+                message=message,
+            )
+        )
 
     def _on_push_card_progress(self, current: int, total: int):
         """Handle per-card push progress."""
@@ -1480,6 +1569,16 @@ class PreviewPage(ProgressMixin, QWidget):
         self._show_state_tooltip(
             "正在推送到 Anki" if is_zh else "Pushing to Anki",
             f"已完成 {current}/{total}" if is_zh else f"Completed {current}/{total}",
+        )
+        progress = int((current / total) * 100) if total > 0 else 0
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="push",
+                kind="progress",
+                progress=progress,
+                message=f"{current}/{total}",
+            )
         )
 
     def _on_push_finished(self, result):
@@ -1512,6 +1611,15 @@ class PreviewPage(ProgressMixin, QWidget):
             duration=3200,
             parent=self,
         )
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="push",
+                kind="completed",
+                progress=100,
+                message=f"push finished: {result.succeeded}/{result.total}",
+            )
+        )
 
     def _on_push_error(self, error: str):
         """Handle push error."""
@@ -1535,6 +1643,14 @@ class PreviewPage(ProgressMixin, QWidget):
             duration=5000,
             parent=self,
         )
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="push",
+                kind="failed",
+                message=error_display["content"],
+            )
+        )
 
     def _on_push_cancelled(self):
         """Handle push cancellation."""
@@ -1543,6 +1659,14 @@ class PreviewPage(ProgressMixin, QWidget):
         self._finish_state_tooltip(
             False,
             "推送已取消" if is_zh else "Push cancelled",
+        )
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="push",
+                kind="cancelled",
+                message="push cancelled",
+            )
         )
         self._hide_progress()
         self._btn_generate.setEnabled(True)
@@ -1558,6 +1682,13 @@ class PreviewPage(ProgressMixin, QWidget):
             duration=3000,
             parent=self,
         )
+
+    def _publish_task_event(self, event: TaskEvent) -> None:
+        if not event.task_id:
+            return
+        publish = getattr(self._main, "publish_task_event", None)
+        if callable(publish):
+            publish(event)
 
     def retranslate_ui(self):
         """Retranslate UI elements when language changes."""

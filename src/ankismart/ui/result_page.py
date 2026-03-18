@@ -47,6 +47,7 @@ from ankismart.ui.styles import (
     apply_compact_combo_metrics,
     apply_page_title_style,
 )
+from ankismart.ui.task_runtime import TaskEvent
 from ankismart.ui.workers import ExportWorker, PushWorker
 
 logger = logging.getLogger(__name__)
@@ -123,6 +124,7 @@ class ResultPage(QWidget):
         self._cards: list[CardDraft] = []
         self._selected_indices: set[int] = set()  # Track selected card indices
         self._result_feedback_key: tuple[str, int, int, int] | None = None
+        self._current_task_id: str = ""
 
         layout = QVBoxLayout(self)
         layout.setSpacing(SPACING_SMALL)
@@ -491,6 +493,17 @@ class ResultPage(QWidget):
         if not path:
             return
 
+        self._current_task_id = str(
+            getattr(self._main, "active_task_id", "") or self._current_task_id
+        )
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="export",
+                kind="started",
+                message="export started",
+            )
+        )
         worker = ExportWorker(_create_apkg_exporter(), self._cards, Path(path))
         self._export_worker = worker
         self._export_button_states = {
@@ -902,6 +915,14 @@ class ResultPage(QWidget):
 
     def _on_export_progress(self, message: str) -> None:
         self._set_status_label(message)
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="export",
+                kind="progress",
+                message=message,
+            )
+        )
 
     def _on_export_done(self, path: str) -> None:
         """导出完成回调。"""
@@ -921,6 +942,15 @@ class ResultPage(QWidget):
             duration=3000,
             parent=self,
         )
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="export",
+                kind="completed",
+                progress=100,
+                message=path,
+            )
+        )
 
     def _on_export_error(self, msg: str) -> None:
         """导出错误回调。"""
@@ -938,12 +968,35 @@ class ResultPage(QWidget):
             duration=5000,
             parent=self,
         )
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="export",
+                kind="failed",
+                message=error_display["content"],
+            )
+        )
 
     def _on_export_cancelled(self) -> None:
         is_zh = getattr(self._main.config, "language", "zh") == "zh"
         self._cleanup_export_worker()
         self._restore_export_buttons()
         self._set_status_label("导出已取消" if is_zh else "Export cancelled")
+        self._publish_task_event(
+            TaskEvent(
+                task_id=self._current_task_id,
+                stage="export",
+                kind="cancelled",
+                message="export cancelled",
+            )
+        )
+
+    def _publish_task_event(self, event: TaskEvent) -> None:
+        if not event.task_id:
+            return
+        publish = getattr(self._main, "publish_task_event", None)
+        if callable(publish):
+            publish(event)
 
     def _back_to_preview(self) -> None:
         """返回预览页面。"""

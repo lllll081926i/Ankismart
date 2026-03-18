@@ -551,6 +551,34 @@ def test_show_state_tooltip_applies_adaptive_max_width(monkeypatch):
     assert tooltip.used_suitable_pos is False
     assert tooltip.shown is True
 
+
+def test_generation_warning_publishes_task_warning(monkeypatch):
+    main = _make_main_window()
+    main.config.language = "zh"
+    page = PreviewPage(main)
+    events = []
+
+    monkeypatch.setattr(
+        "ankismart.ui.preview_page.InfoBar",
+        type(
+            "_InfoBarStub",
+            (),
+            {
+                "warning": staticmethod(lambda *args, **kwargs: None),
+                "success": staticmethod(lambda *args, **kwargs: None),
+                "info": staticmethod(lambda *args, **kwargs: None),
+                "error": staticmethod(lambda *args, **kwargs: None),
+            },
+        ),
+    )
+    monkeypatch.setattr(page, "_publish_task_event", lambda event: events.append(event))
+
+    page._current_task_id = "task-preview"
+    page._on_generation_warning("partial result")
+
+    assert events[-1].kind == "warning"
+    assert events[-1].stage == "generate"
+
 def test_sample_error_marks_state_tooltip_failed(monkeypatch):
     main = _make_main_window()
     main.config.language = "zh"
