@@ -62,6 +62,7 @@ class TestAppConfig:
         assert cfg.last_strategy == ""
         assert cfg.last_update_mode == ""
         assert cfg.window_geometry == ""
+        assert cfg.generation_preset == "reading_general"
 
     def test_persistence_fields_round_trip(self):
         cfg = AppConfig(
@@ -70,6 +71,7 @@ class TestAppConfig:
             last_strategy="cloze",
             last_update_mode="update_only",
             window_geometry="01020304abcd",
+            generation_preset="exam_dense",
         )
         data = cfg.model_dump()
         restored = AppConfig(**data)
@@ -78,6 +80,7 @@ class TestAppConfig:
         assert restored.last_strategy == "cloze"
         assert restored.last_update_mode == "update_only"
         assert restored.window_geometry == "01020304abcd"
+        assert restored.generation_preset == "exam_dense"
 
 
 class TestLoadConfig:
@@ -239,6 +242,16 @@ class TestLoadConfig:
             cfg = load_config()
 
         assert cfg.llm_concurrency == 0
+
+    def test_load_invalid_generation_preset_falls_back_to_default(self, tmp_path: Path):
+        config_file = tmp_path / "config.yaml"
+        data = {"generation_preset": "unknown"}
+        config_file.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+        with patch("ankismart.core.config.CONFIG_PATH", config_file):
+            cfg = load_config()
+
+        assert cfg.generation_preset == "reading_general"
 
     def test_load_plain_config_without_touching_crypto(self, tmp_path: Path, monkeypatch):
         config_file = tmp_path / "config.yaml"
@@ -405,6 +418,7 @@ class TestSaveConfig:
             active_provider_id="p1",
             default_deck="RoundTrip",
             default_tags=["a", "b"],
+            generation_preset="exam_dense",
         )
 
         with (
@@ -417,6 +431,7 @@ class TestSaveConfig:
         assert loaded.llm_providers[0].api_key == "sk-round-trip"
         assert loaded.default_deck == "RoundTrip"
         assert loaded.default_tags == ["a", "b"]
+        assert loaded.generation_preset == "exam_dense"
 
     def test_save_plain_config_without_touching_crypto(self, tmp_path: Path, monkeypatch):
         config_dir = tmp_path / ".ankismart"

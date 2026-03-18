@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -53,6 +54,13 @@ UNUSED_DEPENDENCY_DIRS = {
 }
 
 PADDLE_RELATED_KEYWORDS = ("paddle", "paddlex", "paddleocr", "cv2")
+
+RELEASE_CHECKLIST = [
+    "task recovery smoke passed",
+    "fast e2e passed",
+    "gate real passed",
+    "portable build verified",
+]
 
 
 def _console_safe_text(msg: str, *, encoding: str | None = None) -> str:
@@ -333,6 +341,31 @@ def smoke_test_release(version: str) -> None:
     _print(f"Smoke test passed for release {version}")
 
 
+def build_release_metadata(version: str, *, channel: str = "stable") -> dict[str, object]:
+    portable_dir = PORTABLE_ROOT / f"Ankismart-Portable-{version}"
+    return {
+        "version": version,
+        "channel": channel,
+        "artifacts": {
+            "staged_app_dir": str(STAGED_APP_DIR),
+            "portable_dir": str(portable_dir),
+            "installer_dir": str(INSTALLER_ROOT),
+        },
+        "checklist": list(RELEASE_CHECKLIST),
+    }
+
+
+def write_release_metadata(version: str) -> Path:
+    metadata = build_release_metadata(version)
+    RELEASE_DIR.mkdir(parents=True, exist_ok=True)
+    metadata_path = RELEASE_DIR / f"release-metadata-{version}.json"
+    metadata_path.write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return metadata_path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="构建 Ankismart 安装版 + 便携版（不含 OCR 模型）")
     parser.add_argument("--clean", action="store_true", help="构建前清理 build/dist")
@@ -373,12 +406,14 @@ def main() -> int:
     installer_file = None if args.skip_installer else create_installer(version)
 
     smoke_test_release(version)
+    metadata_path = write_release_metadata(version)
 
     _print("构建完成")
     _print(f"应用分发目录: {STAGED_APP_DIR}")
     _print(f"便携版目录: {portable_dir}")
     if installer_file:
         _print(f"安装版文件: {installer_file}")
+    _print(f"发布元数据: {metadata_path}")
 
     return 0
 

@@ -46,9 +46,12 @@ from qfluentwidgets import (
 from ankismart import __version__
 from ankismart.core.config import (
     CONFIG_BACKUP_DIR,
+    DEFAULT_GENERATION_PRESET,
+    GENERATION_PRESET_LIBRARY,
     LLMProviderConfig,
     create_config_backup,
     list_config_backups,
+    normalize_generation_preset,
     restore_config_from_backup,
     save_config,
 )
@@ -351,6 +354,7 @@ class SettingsPage(ScrollArea):
         self._concurrency_spin.valueChanged.connect(self._schedule_auto_save)
         self._adaptive_concurrency_switch.checkedChanged.connect(self._schedule_auto_save)
         self._concurrency_max_spin.valueChanged.connect(self._schedule_auto_save)
+        self._generation_preset_combo.currentIndexChanged.connect(self._schedule_auto_save)
 
         # Anki settings
         self._anki_url_edit.textChanged.connect(self._schedule_auto_save)
@@ -613,6 +617,7 @@ class SettingsPage(ScrollArea):
         """Initialize layout and add all setting cards."""
         self.expandLayout.setSpacing(SPACING_MEDIUM)
         self.expandLayout.setContentsMargins(36, 10, 36, 0)
+        is_zh = self._main.config.language == "zh"
 
         # ── LLM Configuration Group ──
         self._llm_group = SettingCardGroup("LLM 配置", self.scrollWidget)
@@ -719,6 +724,21 @@ class SettingsPage(ScrollArea):
         self._concurrency_max_card.hBoxLayout.addWidget(self._concurrency_max_spin)
         self._concurrency_max_card.hBoxLayout.addSpacing(16)
         self._llm_group.addSettingCard(self._concurrency_max_card)
+
+        self._generation_preset_card = SettingCard(
+            FluentIcon.BOOK_SHELF,
+            "生成预设" if is_zh else "Generation Preset",
+            "按场景预填卡量与题型配比"
+            if is_zh
+            else "Pre-fill card count and strategy mix by use case",
+            self.scrollWidget,
+        )
+        self._generation_preset_combo = ComboBox(self._generation_preset_card)
+        self._generation_preset_combo.setMinimumWidth(220)
+        self._generation_preset_card.hBoxLayout.addWidget(self._generation_preset_combo)
+        self._generation_preset_card.hBoxLayout.addSpacing(16)
+        self._llm_group.addSettingCard(self._generation_preset_card)
+        self._refresh_generation_preset_combo()
 
         # ── Anki Configuration Group ──
         self._anki_group = SettingCardGroup("Anki 配置", self.scrollWidget)
@@ -1217,6 +1237,12 @@ class SettingsPage(ScrollArea):
         self._anki_key_edit.setText(config.anki_connect_key)
         self._default_deck_edit.setText(config.default_deck)
         self._default_tags_edit.setText(", ".join(config.default_tags))
+        self._set_combo_current_data(
+            self._generation_preset_combo,
+            normalize_generation_preset(
+                getattr(config, "generation_preset", DEFAULT_GENERATION_PRESET)
+            ),
+        )
 
         # Other settings
         theme_map = {"light": 0, "dark": 1, "auto": 2}
@@ -1448,6 +1474,26 @@ class SettingsPage(ScrollArea):
         if current is None:
             return fallback
         return str(current)
+
+    def _refresh_generation_preset_combo(self) -> None:
+        combo = getattr(self, "_generation_preset_combo", None)
+        if combo is None:
+            return
+
+        current = combo.currentData() if combo.count() > 0 else DEFAULT_GENERATION_PRESET
+        is_zh = self._main.config.language == "zh"
+        combo.blockSignals(True)
+        combo.clear()
+        for preset_id, meta in GENERATION_PRESET_LIBRARY.items():
+            combo.addItem(
+                str(meta["label_zh"] if is_zh else meta["label_en"]),
+                userData=preset_id,
+            )
+        self._set_combo_current_data(
+            combo,
+            normalize_generation_preset(str(current or DEFAULT_GENERATION_PRESET)),
+        )
+        combo.blockSignals(False)
 
     def _current_proxy_url(self) -> str:
         """Return effective proxy URL consistent with runtime config save logic."""
@@ -2361,6 +2407,12 @@ class SettingsPage(ScrollArea):
             update={
                 "llm_providers": self._providers,
                 "active_provider_id": self._active_provider_id,
+                "generation_preset": normalize_generation_preset(
+                    self._get_combo_current_data(
+                        self._generation_preset_combo,
+                        DEFAULT_GENERATION_PRESET,
+                    )
+                ),
                 "anki_connect_url": self._anki_url_edit.text() or "http://127.0.0.1:8765",
                 "anki_connect_key": self._anki_key_edit.text(),
                 "default_deck": self._default_deck_edit.text() or "Default",
@@ -2591,6 +2643,7 @@ class SettingsPage(ScrollArea):
         self._refresh_provider_card_chrome()
         self._replace_provider_list_card()
         self._update_provider_list()
+        self._refresh_generation_preset_combo()
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""

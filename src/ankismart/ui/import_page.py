@@ -46,7 +46,10 @@ from qfluentwidgets import (
 )
 
 from ankismart.core.config import (
+    DEFAULT_GENERATION_PRESET,
+    GENERATION_PRESET_LIBRARY,
     append_task_history,
+    normalize_generation_preset,
     record_operation_metric,
     register_cloud_ocr_usage,
     save_config,
@@ -568,11 +571,15 @@ class ImportPage(ProgressMixin, QWidget):
         self._strategy_group_init_scheduled = False
         self._strategy_group_host: QWidget | None = None
         self._strategy_sliders: list[tuple[str, Slider, BodyLabel]] = []
+        self._pending_generation_strategy_mix: dict[str, int] | None = None
 
         self.setObjectName("importPage")
 
         self._init_ui()
         self._init_shortcuts()
+        config_updated = getattr(self._main, "config_updated", None)
+        if config_updated is not None and hasattr(config_updated, "connect"):
+            config_updated.connect(self._on_main_config_updated)
 
     def _init_ui(self):
         """Initialize the user interface."""
@@ -757,6 +764,9 @@ class ImportPage(ProgressMixin, QWidget):
         strategy_group = self._create_strategy_group()
         layout.addWidget(strategy_group)
         self._strategy_group_initialized = True
+        if self._pending_generation_strategy_mix:
+            self._apply_strategy_mix(self._pending_generation_strategy_mix)
+            self._pending_generation_strategy_mix = None
 
     def _schedule_strategy_group_init(self) -> None:
         if self.__dict__.get("_strategy_group_initialized", True):
@@ -822,6 +832,30 @@ class ImportPage(ProgressMixin, QWidget):
         group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         group.setMaximumHeight(_RIGHT_CONFIG_GROUP_MAX_HEIGHT)
 
+        self._generation_preset_card = SettingCard(
+            FluentIcon.BOOK_SHELF,
+            "使用场景" if is_zh else "Usage Preset",
+            "一键套用常见制卡场景配置"
+            if is_zh
+            else "Apply common generation presets in one click",
+            group,
+        )
+        self._generation_preset_combo = ComboBox(self._generation_preset_card)
+        self._populate_generation_preset_combo()
+        self._btn_apply_generation_preset = PushButton("应用" if is_zh else "Apply")
+        self._btn_apply_generation_preset.clicked.connect(
+            lambda: self._apply_generation_preset(persist=True, show_feedback=True)
+        )
+        self._generation_preset_card.hBoxLayout.addWidget(self._generation_preset_combo)
+        self._generation_preset_card.hBoxLayout.addWidget(self._btn_apply_generation_preset)
+        self._generation_preset_card.hBoxLayout.addSpacing(16)
+        self._generation_preset_card.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Maximum,
+        )
+        self._generation_preset_card.setMaximumHeight(_RIGHT_OPTION_CARD_MAX_HEIGHT)
+        group_layout.addWidget(self._generation_preset_card)
+
         # Target count card
         self._count_card = SettingCard(
             FluentIcon.LABEL,
@@ -858,6 +892,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._total_count_mode_combo.setCurrentText("auto")
         self._total_count_mode_combo.hide()  # Hidden but accessible for tests
         self._on_auto_target_count_changed(True)
+        self._restore_generation_preset_from_config()
 
         # Deck name card
         self._deck_card = SettingCard(
@@ -917,6 +952,98 @@ class ImportPage(ProgressMixin, QWidget):
             return default_deck
 
         return "Default"
+
+    def _populate_generation_preset_combo(self) -> None:
+        is_zh = self._main.config.language == "zh"
+        current = ""
+        if (
+            hasattr(self, "_generation_preset_combo")
+            and self._generation_preset_combo.count() > 0
+        ):
+            current = str(self._generation_preset_combo.currentData() or "")
+
+        self._generation_preset_combo.blockSignals(True)
+        self._generation_preset_combo.clear()
+        for preset_id, meta in GENERATION_PRESET_LIBRARY.items():
+            self._generation_preset_combo.addItem(
+                str(meta["label_zh"] if is_zh else meta["label_en"]),
+                userData=preset_id,
+            )
+
+        target = normalize_generation_preset(
+            current or getattr(self._main.config, "generation_preset", DEFAULT_GENERATION_PRESET)
+        )
+        for index in range(self._generation_preset_combo.count()):
+            if self._generation_preset_combo.itemData(index) == target:
+                self._generation_preset_combo.setCurrentIndex(index)
+                break
+        self._generation_preset_combo.blockSignals(False)
+
+    def _restore_generation_preset_from_config(self) -> None:
+        self._apply_generation_preset(
+            getattr(self._main.config, "generation_preset", DEFAULT_GENERATION_PRESET),
+            show_feedback=False,
+            persist=False,
+        )
+
+    def _apply_generation_preset(
+        self,
+        preset_id: str | None = None,
+        *,
+        show_feedback: bool = False,
+        persist: bool = False,
+    ) -> None:
+        selected_id = normalize_generation_preset(
+            preset_id or str(self._generation_preset_combo.currentData() or "")
+        )
+        preset = GENERATION_PRESET_LIBRARY[selected_id]
+
+        for index in range(self._generation_preset_combo.count()):
+            if self._generation_preset_combo.itemData(index) == selected_id:
+                self._generation_preset_combo.setCurrentIndex(index)
+                break
+
+        auto_target_count = bool(preset.get("auto_target_count", True))
+        target_total = int(preset.get("target_total", 20))
+        strategy_mix = {
+            str(key): int(value)
+            for key, value in dict(preset.get("strategy_mix", {})).items()
+        }
+
+        self._auto_target_count_switch.blockSignals(True)
+        self._auto_target_count_switch.setChecked(auto_target_count)
+        self._auto_target_count_switch.blockSignals(False)
+        self._on_auto_target_count_changed(auto_target_count)
+        self._total_count_input.setText(str(target_total))
+
+        if self._strategy_group_initialized:
+            self._apply_strategy_mix(strategy_mix)
+        else:
+            self._pending_generation_strategy_mix = strategy_mix
+
+        if persist:
+            updated = self._main.config.model_copy(update={"generation_preset": selected_id})
+            apply_runtime = getattr(self._main, "apply_runtime_config", None)
+            if callable(apply_runtime):
+                apply_runtime(updated, persist=True, changed_fields={"generation_preset"})
+            else:
+                self._main.config = updated
+                try:
+                    save_config(updated)
+                except Exception:
+                    logger.warning("Failed to persist generation preset", exc_info=True)
+
+        if show_feedback:
+            is_zh = self._main.config.language == "zh"
+            InfoBar.success(
+                title="已应用预设" if is_zh else "Preset Applied",
+                content=str(preset["label_zh"] if is_zh else preset["label_en"]),
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2200,
+                parent=self,
+            )
 
     def _create_strategy_group(self) -> SettingCardGroup:
         """Create strategy configuration group with RangeSettingCards."""
@@ -2900,6 +3027,12 @@ class ImportPage(ProgressMixin, QWidget):
                 slider.setValue(ratio)
                 value_label.setText(f"{ratio}%")
 
+    def _on_main_config_updated(self, changed_fields: list[str]) -> None:
+        if "generation_preset" not in {str(item) for item in changed_fields}:
+            return
+        self._populate_generation_preset_combo()
+        self._restore_generation_preset_from_config()
+
     def retranslate_ui(self):
         """Retranslate UI elements when language changes."""
         is_zh = self._main.config.language == "zh"
@@ -2918,6 +3051,12 @@ class ImportPage(ProgressMixin, QWidget):
 
         if hasattr(self, "_btn_apply_strategy_template"):
             self._btn_apply_strategy_template.setText("应用" if is_zh else "Apply")
+
+        if hasattr(self, "_btn_apply_generation_preset"):
+            self._btn_apply_generation_preset.setText("应用" if is_zh else "Apply")
+
+        if hasattr(self, "_generation_preset_combo"):
+            self._populate_generation_preset_combo()
 
         if hasattr(self, "_strategy_template_combo"):
             current = self._strategy_template_combo.currentData()

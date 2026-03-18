@@ -97,6 +97,19 @@ def test_create_portable_package_writes_portable_marker(tmp_path, monkeypatch) -
     assert (portable_dir / ".portable").exists()
 
 
+def test_build_release_metadata_uses_stable_channel_and_gate_checklist() -> None:
+    build = _load_build_module()
+
+    metadata = build.build_release_metadata("9.9.9")
+
+    assert metadata["version"] == "9.9.9"
+    assert metadata["channel"] == "stable"
+    assert "task recovery smoke passed" in metadata["checklist"]
+    assert "fast e2e passed" in metadata["checklist"]
+    assert "gate real passed" in metadata["checklist"]
+    assert "portable build verified" in metadata["checklist"]
+
+
 def test_console_safe_text_replaces_unencodable_characters() -> None:
     build = _load_build_module()
 

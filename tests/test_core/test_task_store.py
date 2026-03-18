@@ -30,3 +30,17 @@ def test_task_store_lists_resumable_tasks_only(tmp_path) -> None:
     resumable = store.list_resumable()
 
     assert [task.task_id for task in resumable] == ["a"]
+
+
+def test_task_store_ignores_corrupt_json_payload(tmp_path) -> None:
+    path = tmp_path / "tasks.json"
+    path.write_text('{"broken": true} trailing', encoding="utf-8")
+    store = JsonTaskStore(path)
+
+    assert store.list_all() == []
+
+    store.save(TaskRun(task_id="fresh", flow="full_pipeline", status=TaskStatus.RUNNING))
+
+    restored = store.get("fresh")
+    assert restored is not None
+    assert restored.task_id == "fresh"

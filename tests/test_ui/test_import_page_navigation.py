@@ -220,6 +220,24 @@ def test_build_generation_config_initializes_strategy_group_when_needed() -> Non
     page.close()
 
 
+def test_import_page_applies_exam_dense_preset() -> None:
+    page = ImportPage(DummyMain())
+
+    page._apply_generation_preset("exam_dense")
+
+    assert page._total_count_input.text() == "24"
+    assert page._auto_target_count_switch.isChecked() is False
+
+    page.show()
+    _APP.processEvents()
+    _APP.processEvents()
+
+    ratios = {strategy_id: slider.value() for strategy_id, slider, _ in page._strategy_sliders}
+    assert ratios["single_choice"] > 0
+    assert ratios["multiple_choice"] > 0
+    page.close()
+
+
 def test_batch_convert_done_shows_errors(monkeypatch):
     page = make_page()
     warnings_shown = []

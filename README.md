@@ -136,6 +136,15 @@ GitHub Actions 已配置自动构建 Windows 两种安装包：
 uv run python packaging/build.py --clean --skip-installer
 ```
 
+发布脚本会同时生成 `dist/release/release-metadata-<version>.json`，用于记录发布通道、产物路径与门禁清单。
+
+### 3.2 发布门禁清单
+
+- `task recovery smoke passed`
+- `fast e2e passed`
+- `gate real passed`
+- `portable build verified`
+
 ## 4. 开发命令
 
 安装依赖：

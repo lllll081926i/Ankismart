@@ -16,7 +16,10 @@ class JsonTaskStore:
         raw = self._path.read_text(encoding="utf-8").strip()
         if not raw:
             return {}
-        data = json.loads(raw)
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
         return data if isinstance(data, dict) else {}
 
     def save(self, task: TaskRun) -> None:

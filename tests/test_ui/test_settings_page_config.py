@@ -72,6 +72,25 @@ def test_load_config_populates_ocr_controls(_qapp) -> None:
     assert page._ocr_cloud_limit_card.isHidden() is False
 
 
+def test_load_config_populates_generation_preset(_qapp) -> None:
+    provider = LLMProviderConfig(
+        id="p1",
+        name="OpenAI",
+        api_key="test-key",
+        base_url="https://api.openai.com/v1",
+        model="gpt-4o",
+    )
+    cfg = AppConfig(
+        llm_providers=[provider],
+        active_provider_id="p1",
+        generation_preset="exam_dense",
+    )
+    main, _ = make_main(cfg)
+    page = SettingsPage(main)
+
+    assert page._generation_preset_combo.currentData() == "exam_dense"
+
+
 def test_ocr_cloud_limit_card_visibility_follows_mode(_qapp) -> None:
     main, _ = make_main()
     page = SettingsPage(main)
@@ -307,6 +326,33 @@ def test_save_config_persists_adaptive_concurrency_and_update_flags(_qapp, monke
     assert captured["cfg"].llm_concurrency_max == 4
     assert captured["cfg"].llm_adaptive_concurrency is False
     assert captured["cfg"].auto_check_updates is False
+
+
+def test_save_config_persists_generation_preset(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    captured: dict[str, AppConfig] = {}
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c)
+    )
+    monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+
+    for index in range(page._generation_preset_combo.count()):
+        if page._generation_preset_combo.itemData(index) == "language_vocab":
+            page._generation_preset_combo.setCurrentIndex(index)
+            break
+
+    page._save_config()
+
+    assert "cfg" in captured
+    assert captured["cfg"].generation_preset == "language_vocab"
 
 
 def test_settings_page_uses_llm_group_as_top_content(_qapp) -> None:
