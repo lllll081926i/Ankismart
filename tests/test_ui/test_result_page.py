@@ -204,10 +204,16 @@ def test_retry_failed_returns_when_worker_running(_qapp, monkeypatch) -> None:
     )
     page._worker = _ThreadLikeWorker(running=True)
 
-    info_calls = []
+    info_calls: list[tuple[tuple, dict]] = []
+    monkeypatch.setattr(
+        ResultPage,
+        "_show_info_bar",
+        lambda *args, **kwargs: info_calls.append((args, kwargs)),
+        raising=False,
+    )
     monkeypatch.setattr(
         "ankismart.ui.result_page.InfoBar.info",
-        lambda *args, **kwargs: info_calls.append(kwargs),
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected direct infobar")),
     )
 
     def _fail_push_worker(*args, **kwargs):
@@ -218,6 +224,7 @@ def test_retry_failed_returns_when_worker_running(_qapp, monkeypatch) -> None:
     page._retry_failed()
 
     assert len(info_calls) == 1
+    assert info_calls[0][0][2] == "请稍候"
 
 
 def test_repush_all_returns_when_worker_running(_qapp, monkeypatch) -> None:
@@ -301,16 +308,48 @@ def test_load_result_only_shows_top_feedback_once(_qapp, monkeypatch) -> None:
         trace_id="trace-feedback-once",
     )
 
-    success_calls = []
+    success_calls: list[tuple[tuple, dict]] = []
+    monkeypatch.setattr(
+        ResultPage,
+        "_show_info_bar",
+        lambda *args, **kwargs: success_calls.append((args, kwargs)),
+        raising=False,
+    )
     monkeypatch.setattr(
         "ankismart.ui.result_page.InfoBar.success",
-        lambda *args, **kwargs: success_calls.append(kwargs),
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected direct infobar")),
     )
 
     page.load_result(result, cards)
     page._refresh()
 
     assert len(success_calls) == 1
+    assert success_calls[0][0][1] == "success"
+
+
+def test_export_selected_apkg_without_selection_uses_page_infobar_helper(
+    _qapp, monkeypatch
+) -> None:
+    page = ResultPage(_FakeMainWindow())
+    page._cards = [_make_card()]
+    page._selected_indices = set()
+    calls: list[tuple[tuple, dict]] = []
+
+    monkeypatch.setattr(
+        ResultPage,
+        "_show_info_bar",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.result_page.InfoBar.info",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected direct infobar")),
+    )
+
+    page._export_selected_apkg()
+
+    assert len(calls) == 1
+    assert calls[0][0][1] == "info"
 
 
 def test_export_apkg_uses_export_worker(monkeypatch, _qapp, tmp_path) -> None:
@@ -440,7 +479,11 @@ def test_retry_failed_updates_persistent_push_status(monkeypatch, _qapp) -> None
     monkeypatch.setattr("ankismart.ui.result_page.AnkiConnectClient", lambda **kwargs: object())
     monkeypatch.setattr("ankismart.ui.result_page.AnkiGateway", lambda client: object())
     monkeypatch.setattr("ankismart.ui.result_page.PushWorker", _PushWorkerStub)
-    monkeypatch.setattr("ankismart.ui.result_page.InfoBar.info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ResultPage, "_show_info_bar", lambda *args, **kwargs: None, raising=False)
+    monkeypatch.setattr(
+        "ankismart.ui.result_page.InfoBar.info",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected direct infobar")),
+    )
 
     page._retry_failed()
 

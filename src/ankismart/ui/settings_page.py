@@ -254,12 +254,16 @@ class LLMProviderDialog(QDialog):
         self._provider.rpm_limit = self._rpm_spin.value()
 
         if not self._provider.name:
-            QMessageBox.warning(
-                self,
-                "错误" if self._is_zh else "Error",
-                "提供商名称为必填项"
+            InfoBar.warning(
+                title="错误" if self._is_zh else "Error",
+                content="提供商名称为必填项"
                 if self._is_zh
                 else "Provider name is required.",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2600,
+                parent=self,
             )
             return
 

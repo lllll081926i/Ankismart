@@ -554,14 +554,11 @@ class ResultPage(QWidget):
         is_zh = getattr(self._main.config, "language", "zh") == "zh"
 
         if not self._selected_indices:
-            InfoBar.info(
-                title="提示" if is_zh else "Info",
-                content="请先选择要导出的卡片" if is_zh else "Please select cards to export",
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
+            self._show_info_bar(
+                "info",
+                "提示" if is_zh else "Info",
+                "请先选择要导出的卡片" if is_zh else "Please select cards to export",
                 duration=2000,
-                parent=self,
             )
             return
 
@@ -572,16 +569,13 @@ class ResultPage(QWidget):
             return
 
         if self._export_worker and self._export_worker.isRunning():
-            InfoBar.info(
-                title="请稍候" if is_zh else "Please Wait",
-                content="已有导出任务进行中"
+            self._show_info_bar(
+                "info",
+                "请稍候" if is_zh else "Please Wait",
+                "已有导出任务进行中"
                 if is_zh
                 else "Another export task is already running.",
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
                 duration=2000,
-                parent=self,
             )
             return
 
@@ -710,29 +704,23 @@ class ResultPage(QWidget):
         feedback_key = (result.trace_id or "", result.total, result.succeeded, result.failed)
         should_show_feedback = show_feedback and self._result_feedback_key != feedback_key
         if should_show_feedback and result.succeeded == result.total:
-            InfoBar.success(
-                title="推送成功" if is_zh else "Push Success",
-                content=f"成功推送 {result.succeeded} 张卡片"
+            self._show_info_bar(
+                "success",
+                "推送成功" if is_zh else "Push Success",
+                f"成功推送 {result.succeeded} 张卡片"
                 if is_zh
                 else f"Successfully pushed {result.succeeded} cards",
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
                 duration=3000,
-                parent=self,
             )
             self._result_feedback_key = feedback_key
         elif should_show_feedback and result.failed > 0:
-            InfoBar.warning(
-                title="部分失败" if is_zh else "Partial Failure",
-                content=f"成功 {result.succeeded} 张，失败 {result.failed} 张"
+            self._show_info_bar(
+                "warning",
+                "部分失败" if is_zh else "Partial Failure",
+                f"成功 {result.succeeded} 张，失败 {result.failed} 张"
                 if is_zh
                 else f"Success {result.succeeded}, Failed {result.failed}",
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
                 duration=5000,
-                parent=self,
             )
             self._result_feedback_key = feedback_key
 
@@ -882,14 +870,11 @@ class ResultPage(QWidget):
         if not self._push_result or not self._cards:
             return
         if self._worker and self._worker.isRunning():
-            InfoBar.info(
-                title="请稍候" if is_zh else "Please Wait",
-                content="已有推送任务进行中" if is_zh else "Another push task is already running.",
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
+            self._show_info_bar(
+                "info",
+                "请稍候" if is_zh else "Please Wait",
+                "已有推送任务进行中" if is_zh else "Another push task is already running.",
                 duration=2000,
-                parent=self,
             )
             return
 
@@ -900,14 +885,11 @@ class ResultPage(QWidget):
                 failed_cards.append(self._cards[status.index])
 
         if not failed_cards:
-            InfoBar.info(
-                title="提示" if is_zh else "Info",
-                content="没有失败的卡片需要重试" if is_zh else "No failed cards to retry",
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
+            self._show_info_bar(
+                "info",
+                "提示" if is_zh else "Info",
+                "没有失败的卡片需要重试" if is_zh else "No failed cards to retry",
                 duration=2000,
-                parent=self,
             )
             return
 
@@ -938,16 +920,13 @@ class ResultPage(QWidget):
         )
         worker.start()
 
-        InfoBar.info(
-            title="重试中" if is_zh else "Retrying",
-            content=f"正在重试 {len(failed_cards)} 张失败卡片..."
+        self._show_info_bar(
+            "info",
+            "重试中" if is_zh else "Retrying",
+            f"正在重试 {len(failed_cards)} 张失败卡片..."
             if is_zh
             else f"Retrying {len(failed_cards)} failed cards...",
-            orient=Qt.Orientation.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP,
             duration=2000,
-            parent=self,
         )
 
     def _on_retry_done(self, result: PushResult) -> None:

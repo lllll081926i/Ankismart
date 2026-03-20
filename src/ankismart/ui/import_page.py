@@ -2396,8 +2396,7 @@ class ImportPage(ProgressMixin, QWidget):
             if page_status_text != getattr(self, "_last_ocr_page_status_message", ""):
                 self._last_ocr_page_status_message = page_status_text
                 self._status_label.setText(file_text)
-                self._show_info_bar(
-                    "info",
+                self._show_progress_info_bar(
                     "页进度" if self._main.config.language == "zh" else "Page Progress",
                     page_status_text,
                     duration=1800,

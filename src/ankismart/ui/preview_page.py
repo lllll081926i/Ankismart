@@ -4,7 +4,7 @@ import re
 import time
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QPoint, Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
 from PyQt6.QtWidgets import QHBoxLayout, QListWidget, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -15,7 +15,6 @@ from qfluentwidgets import (
     PlainTextEdit,
     PrimaryPushButton,
     PushButton,
-    StateToolTip,
     isDarkTheme,
 )
 
@@ -148,7 +147,6 @@ class PreviewPage(ProgressMixin, QWidget):
         self._generate_worker = None
         self._push_worker = None
         self._sample_worker = None
-        self._state_tooltip = None
         self._progress_info_bar = None
         self._converting_info_bar = None  # InfoBar for conversion status
         self._pending_files_count = 0  # Track pending files
@@ -1074,88 +1072,6 @@ class PreviewPage(ProgressMixin, QWidget):
         if current is not None and hasattr(current, "close"):
             current.close()
 
-    def _show_state_tooltip(self, title: str, content: str) -> None:
-        """Show or update workflow state tooltip."""
-        if self._state_tooltip is None:
-            self._state_tooltip = StateToolTip(title, content, self.window())
-            self._configure_state_tooltip(self._state_tooltip)
-            self._state_tooltip.show()
-            return
-
-        self._state_tooltip.setContent(content)
-        self._configure_state_tooltip(self._state_tooltip)
-
-    def _configure_state_tooltip(self, tooltip: StateToolTip) -> None:
-        window = self.window() or self
-        base_width = max(window.width(), self.width())
-        max_width = min(960, max(420, base_width - 72))
-        preferred_width = min(max_width, max(560, int(base_width * 0.6)))
-        min_height = 96
-
-        set_max_width = getattr(tooltip, "setMaximumWidth", None)
-        if callable(set_max_width):
-            set_max_width(max_width)
-
-        set_min_width = getattr(tooltip, "setMinimumWidth", None)
-        if callable(set_min_width):
-            set_min_width(preferred_width)
-
-        set_min_height = getattr(tooltip, "setMinimumHeight", None)
-        if callable(set_min_height):
-            set_min_height(min_height)
-
-        title_label = getattr(tooltip, "titleLabel", None)
-        if title_label is not None:
-            set_word_wrap = getattr(title_label, "setWordWrap", None)
-            if callable(set_word_wrap):
-                set_word_wrap(False)
-            label_set_max_width = getattr(title_label, "setMaximumWidth", None)
-            if callable(label_set_max_width):
-                label_set_max_width(max_width - 32)
-
-        content_label = getattr(tooltip, "contentLabel", None)
-        if content_label is not None:
-            set_word_wrap = getattr(content_label, "setWordWrap", None)
-            if callable(set_word_wrap):
-                set_word_wrap(True)
-            label_set_max_width = getattr(content_label, "setMaximumWidth", None)
-            if callable(label_set_max_width):
-                label_set_max_width(max_width - 32)
-            font_metrics = getattr(content_label, "fontMetrics", None)
-            set_max_height = getattr(content_label, "setMaximumHeight", None)
-            if callable(font_metrics) and callable(set_max_height):
-                set_max_height(font_metrics().lineSpacing() * 2 + 6)
-
-        adjust_size = getattr(tooltip, "adjustSize", None)
-        if callable(adjust_size):
-            adjust_size()
-
-        tooltip_width = preferred_width
-        size_hint = getattr(tooltip, "sizeHint", None)
-        if callable(size_hint):
-            hint = size_hint()
-            hint_width = getattr(hint, "width", None)
-            if callable(hint_width):
-                tooltip_width = min(max_width, max(preferred_width, hint_width()))
-
-        move = getattr(tooltip, "move", None)
-        if callable(move):
-            x = max(24, window.width() - tooltip_width - 56)
-            move(QPoint(x, 36))
-
-    def _finish_state_tooltip(self, success: bool, content: str) -> None:
-        """Finish workflow state tooltip and clear reference."""
-        if self._state_tooltip is None:
-            return
-
-        tooltip = self._state_tooltip
-        tooltip.setContent(content)
-        self._configure_state_tooltip(tooltip)
-        tooltip.setState(success)
-        self._state_tooltip = None
-        if hasattr(tooltip, "deleteLater"):
-            tooltip.deleteLater()
-
     def _normalize_generation_message(self, message: str) -> str:
         """Localize strategy IDs and wrap long tooltip messages."""
         is_zh = self._main.config.language == "zh"
@@ -1779,7 +1695,4 @@ class PreviewPage(ProgressMixin, QWidget):
         self._cleanup_sample_worker()
         self._clear_progress_info_bar()
         self._hide_converting_info_bar()
-        if self._state_tooltip is not None and hasattr(self._state_tooltip, "deleteLater"):
-            self._state_tooltip.deleteLater()
-            self._state_tooltip = None
         super().closeEvent(event)

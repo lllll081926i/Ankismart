@@ -3,7 +3,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QMessageBox
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
-from ankismart.ui.settings_page import SettingsPage
+from ankismart.ui.settings_page import LLMProviderDialog, SettingsPage
 
 from .settings_page_test_utils import make_main
 
@@ -258,6 +258,27 @@ def test_save_config_prefers_runtime_apply_when_available(_qapp, monkeypatch) ->
     assert applied["persist"] is True
     assert isinstance(applied["config"], AppConfig)
     assert applied["config"].language == "en"
+
+
+def test_provider_dialog_required_name_uses_non_blocking_infobar(_qapp, monkeypatch) -> None:
+    dialog = LLMProviderDialog(language="zh")
+    calls: list[tuple[tuple, dict]] = []
+
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.InfoBar.warning",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected modal warning")),
+    )
+
+    dialog._name_edit.setText("   ")
+    dialog._save()
+
+    assert len(calls) == 1
+    assert calls[0][1]["content"] == "提供商名称为必填项"
 
 
 def test_save_config_persists_non_llm_settings_without_providers(_qapp, monkeypatch) -> None:

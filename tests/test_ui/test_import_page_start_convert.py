@@ -384,13 +384,27 @@ def test_ocr_download_progress_shows_infobar_and_deduplicates(monkeypatch):
 def test_on_page_progress_shows_file_page_infobar_and_deduplicates(monkeypatch):
     page = make_page()
     page._last_ocr_page_status_message = ""
-    infobar_calls = patch_infobar(monkeypatch)
+    calls: list[tuple[tuple, dict]] = []
+    monkeypatch.setattr(
+        ImportPage,
+        "_show_progress_info_bar",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ImportPage,
+        "_show_info_bar",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("unexpected standard infobar")
+        ),
+        raising=False,
+    )
 
     ImportPage._on_page_progress(page, "讲义.pdf", 3, 12)
     ImportPage._on_page_progress(page, "讲义.pdf", 3, 12)
 
-    assert len(infobar_calls["info"]) == 1
-    assert infobar_calls["info"][0]["content"] == "讲义.pdf 3/12"
+    assert len(calls) == 1
+    assert calls[0][0][2] == "讲义.pdf 3/12"
 
 
 def test_create_right_panel_does_not_include_startup_precheck_card():
