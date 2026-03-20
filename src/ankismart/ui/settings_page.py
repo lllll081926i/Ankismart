@@ -1765,10 +1765,11 @@ class SettingsPage(ScrollArea):
     def _delete_provider(self, provider: LLMProviderConfig) -> None:
         """Delete a provider."""
         if len(self._providers) <= 1:
-            QMessageBox.warning(
-                self,
+            self._show_info_bar(
+                "warning",
                 self._provider_text("delete_blocked_title"),
                 self._provider_text("delete_blocked_desc"),
+                duration=3200,
             )
             return
 
@@ -2476,10 +2477,11 @@ class SettingsPage(ScrollArea):
             if show_feedback:
                 from ankismart.ui.i18n import t
 
-                QMessageBox.critical(
-                    self,
+                self._show_info_bar(
+                    "error",
                     t("settings.error", self._main.config.language),
                     t("settings.save_failed", self._main.config.language, error=str(exc)),
+                    duration=5000,
                 )
 
     def _reset_to_default(self) -> None:
@@ -2504,7 +2506,7 @@ class SettingsPage(ScrollArea):
                 self._main.config = default_config
                 save_config(default_config)
             self._load_config()
-            QMessageBox.information(self, "重置完成", "设置已恢复为默认值")
+            self._show_info_bar("success", "重置完成", "设置已恢复为默认值", duration=2400)
 
     def _export_logs(self) -> None:
         """Export application logs to a zip file."""

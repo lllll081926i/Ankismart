@@ -421,6 +421,26 @@ def test_build_error_display_keeps_unknown_error_detail() -> None:
     assert "export failed badly" in display["content"]
 
 
+def test_error_handler_show_error_prefers_infobar_by_default(_qapp, monkeypatch) -> None:
+    handler = ErrorHandler(language="zh")
+    calls = {"infobar": 0, "messagebox": 0}
+
+    monkeypatch.setattr(
+        handler,
+        "_show_infobar",
+        lambda parent, error_info: calls.__setitem__("infobar", calls["infobar"] + 1),
+    )
+    monkeypatch.setattr(
+        handler,
+        "_show_messagebox",
+        lambda parent, error_info: calls.__setitem__("messagebox", calls["messagebox"] + 1),
+    )
+
+    handler.show_error(SettingsPage.__new__(SettingsPage), "[E_CONFIG_INVALID] invalid api key")
+
+    assert calls == {"infobar": 1, "messagebox": 0}
+
+
 def test_check_for_updates_failure_updates_metadata_and_warns(_qapp, monkeypatch) -> None:
     main, _ = make_main()
     page = SettingsPage(main)

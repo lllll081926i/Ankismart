@@ -66,7 +66,7 @@ def test_main_window_loads_resumable_tasks(monkeypatch, tmp_path) -> None:
     window = MainWindow(config=AppConfig(language="zh", theme="light"))
 
     assert [item.task_id for item in window.resumable_tasks] == ["task-r1"]
-    assert "task-r1" in window.task_center_panel._summary_label.text()
+    assert "task-r1" in window.task_center_panel._task_widgets
     window.close()
 
 

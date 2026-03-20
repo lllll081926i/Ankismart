@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re
+import time
 from statistics import median
 from typing import TYPE_CHECKING
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QWidget
-from qfluentwidgets import InfoBar, InfoBarPosition, MessageBox
+from qfluentwidgets import InfoBar, InfoBarPosition
 
 from ankismart.core.config import AppConfig
 
@@ -13,9 +15,17 @@ if TYPE_CHECKING:
     from qfluentwidgets import ProgressBar, ProgressRing, PushButton
 
 
-def show_error(parent: QWidget, title: str, message: str) -> None:
-    """Display an error dialog."""
-    MessageBox(title, message, parent).exec()
+def show_error(parent: QWidget, title: str, message: str, duration: int = 4000) -> None:
+    """Display an error notification using InfoBar."""
+    InfoBar.error(
+        title=title,
+        content=message,
+        orient=Qt.Orientation.Horizontal,
+        isClosable=True,
+        position=InfoBarPosition.TOP,
+        duration=duration,
+        parent=parent,
+    )
 
 
 def show_success(parent: QWidget, message: str, duration: int = 2000) -> None:
@@ -23,8 +33,9 @@ def show_success(parent: QWidget, message: str, duration: int = 2000) -> None:
     InfoBar.success(
         title="成功",
         content=message,
-        orient=InfoBarPosition.TOP,
+        orient=Qt.Orientation.Horizontal,
         isClosable=True,
+        position=InfoBarPosition.TOP,
         duration=duration,
         parent=parent,
     )
@@ -35,11 +46,41 @@ def show_info(parent: QWidget, message: str, duration: int = 2000) -> None:
     InfoBar.info(
         title="提示",
         content=message,
-        orient=InfoBarPosition.TOP,
+        orient=Qt.Orientation.Horizontal,
         isClosable=True,
+        position=InfoBarPosition.TOP,
         duration=duration,
         parent=parent,
     )
+
+
+def request_infobar_confirmation(
+    parent: QWidget,
+    confirmations: dict[str, float],
+    *,
+    key: str,
+    title: str,
+    content: str,
+    timeout_seconds: float = 2.5,
+) -> bool:
+    """Require a second click within a short window instead of modal confirmation."""
+    now = time.monotonic()
+    last = float(confirmations.get(key, 0.0) or 0.0)
+    if now - last <= timeout_seconds:
+        confirmations.pop(key, None)
+        return True
+
+    confirmations[key] = now
+    InfoBar.warning(
+        title=title,
+        content=content,
+        orient=Qt.Orientation.Horizontal,
+        isClosable=True,
+        position=InfoBarPosition.TOP,
+        duration=max(1800, int(timeout_seconds * 1000)),
+        parent=parent,
+    )
+    return False
 
 
 def format_card_title(card_fields: dict[str, str], max_length: int = 50) -> str:

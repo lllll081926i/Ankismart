@@ -391,6 +391,27 @@ def test_export_error_publishes_failed_task_event(monkeypatch, _qapp) -> None:
     assert events[-1].stage == "export"
 
 
+def test_export_error_uses_page_infobar_helper(monkeypatch, _qapp) -> None:
+    page = ResultPage(_FakeMainWindow())
+    calls: list[tuple[tuple, dict]] = []
+
+    monkeypatch.setattr(
+        ResultPage,
+        "_show_info_bar",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.result_page.InfoBar.error",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()),
+    )
+
+    page._on_export_error("disk full")
+
+    assert len(calls) == 1
+    assert calls[0][0][1] == "error"
+
+
 def test_retry_failed_updates_persistent_push_status(monkeypatch, _qapp) -> None:
     page = ResultPage(_FakeMainWindow())
     page._cards = [_make_card()]

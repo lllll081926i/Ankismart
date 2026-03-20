@@ -149,6 +149,68 @@ def test_start_convert_cloud_mode_skips_local_model_check(monkeypatch):
     assert ensure_called["value"] is False
 
 
+def test_ensure_ocr_models_ready_does_not_create_state_tooltip(monkeypatch):
+    page = make_page()
+    page._model_check_in_progress = False
+    page._set_generate_actions_enabled = lambda _enabled: None
+    page._cleanup_ocr_download_worker = lambda: None
+    page._persist_ocr_config_updates = lambda **kwargs: None
+    info_calls: list[tuple[tuple, dict]] = []
+
+    monkeypatch.setattr("ankismart.ui.import_page.configure_ocr_runtime", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.get_missing_ocr_models",
+        lambda **kwargs: ["model-a"],
+    )
+    monkeypatch.setattr(
+        ImportPage,
+        "_show_info_bar",
+        lambda *args, **kwargs: info_calls.append((args, kwargs)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ImportPage,
+        "_show_progress_info_bar",
+        lambda *args, **kwargs: info_calls.append((args, kwargs)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.StateToolTip",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()),
+    )
+
+    class _DialogStub:
+        selected_tier = "lite"
+        selected_source = "official"
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec(self):
+            return import_page.QDialog.DialogCode.Accepted
+
+    class _SignalStub:
+        def connect(self, _callback):
+            return None
+
+    class _WorkerStub:
+        def __init__(self, *args, **kwargs):
+            self.progress = _SignalStub()
+            self.finished = _SignalStub()
+            self.error = _SignalStub()
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr("ankismart.ui.import_page.OCRDownloadConfigDialog", _DialogStub)
+    monkeypatch.setattr("ankismart.ui.import_page.OCRModelDownloadWorker", _WorkerStub)
+
+    result = ImportPage._ensure_ocr_models_ready(page)
+
+    assert result is False
+    assert len(info_calls) == 3
+
+
 def test_prepare_local_ocr_runtime_cloud_requires_api_key(monkeypatch):
     page = make_page()
     page._main.config.ocr_mode = "cloud"
@@ -484,3 +546,38 @@ def test_on_convert_error_does_not_record_metric_again(monkeypatch) -> None:
     ImportPage._on_convert_error(page, "boom")
 
     assert metric_calls["count"] == 0
+
+
+def test_on_convert_error_uses_page_infobar_helper(monkeypatch) -> None:
+    page = make_page()
+    page._convert_start_ts = 0.0
+    calls: list[tuple[tuple, dict]] = []
+
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.append_task_history",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.record_operation_metric",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr("ankismart.ui.import_page.save_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.build_error_display",
+        lambda error, language: {"title": "失败", "content": error},
+    )
+    monkeypatch.setattr(
+        ImportPage,
+        "_show_info_bar",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.InfoBar.error",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()),
+    )
+
+    ImportPage._on_convert_error(page, "boom")
+
+    assert len(calls) == 1
+    assert calls[0][0][1] == "error"

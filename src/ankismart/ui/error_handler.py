@@ -76,13 +76,20 @@ class ErrorHandler:
                 category=ErrorCategory.NETWORK,
                 level=ErrorLevel.ERROR,
                 title="网络连接失败" if is_zh else "Network Connection Failed",
-                message="无法连接到服务器，请检查网络连接"
+                message="无法连接到服务器，系统将自动重试"
                 if is_zh
-                else "Cannot connect to server, please check network connection",
-                suggestion="• 检查网络连接是否正常\n• 检查代理设置\n• 确认服务器地址正确"
+                else "Cannot connect to server, system will auto-retry",
+                suggestion=(
+                    "• 系统正在自动重试，最多重试3次\n"
+                    "• 检查网络连接是否正常\n"
+                    "• 检查代理设置是否正确\n"
+                    "• 确认服务器地址配置无误"
+                )
                 if is_zh
                 else (
-                    "• Check network connection\n• Verify proxy settings\n"
+                    "• System is auto-retrying (max 3 attempts)\n"
+                    "• Check network connection\n"
+                    "• Verify proxy settings\n"
                     "• Confirm server address is correct"
                 ),
                 action_button="去设置" if is_zh else "Go to Settings",
@@ -91,12 +98,22 @@ class ErrorHandler:
                 category=ErrorCategory.NETWORK,
                 level=ErrorLevel.WARNING,
                 title="请求超时" if is_zh else "Request Timeout",
-                message="服务器响应超时，请稍后重试"
+                message="服务器响应超时，系统将自动重试"
                 if is_zh
-                else "Server response timeout, please retry later",
-                suggestion="• 检查网络速度\n• 尝试使用代理\n• 稍后重试"
+                else "Server response timeout, system will auto-retry",
+                suggestion=(
+                    "• 系统正在自动重试，请耐心等待\n"
+                    "• 检查网络速度是否正常\n"
+                    "• 尝试切换代理设置\n"
+                    "• 如持续超时，联系网络管理员"
+                )
                 if is_zh
-                else "• Check network speed\n• Try using a proxy\n• Retry later",
+                else (
+                    "• System is auto-retrying, please wait\n"
+                    "• Check network speed\n"
+                    "• Try switching proxy settings\n"
+                    "• Contact network admin if persistent"
+                ),
                 action_button="重试" if is_zh else "Retry",
             ),
             "proxy": ErrorInfo(
@@ -280,17 +297,19 @@ class ErrorHandler:
                 category=ErrorCategory.LLM_PROVIDER,
                 level=ErrorLevel.WARNING,
                 title="接口限频" if is_zh else "Rate Limit Exceeded",
-                message="触发接口限频（Rate Limit），请稍后重试"
+                message="触发接口限频（Rate Limit），系统将自动重试"
                 if is_zh
-                else "API rate limit reached, please retry later",
+                else "API rate limit reached, system will auto-retry",
                 suggestion=(
-                    "• 降低并发和轮询频率后重试\n"
+                    "• 系统正在自动重试，请耐心等待\n"
+                    "• 如频繁出现，可降低并发数后重试\n"
                     "• MinerU 参考限频：提交 300 req/min，结果查询 1000 req/min\n"
                     "• 必要时升级套餐或错峰处理"
                 )
                 if is_zh
                 else (
-                    "• Reduce concurrency/polling frequency and retry\n"
+                    "• System is auto-retrying, please wait\n"
+                    "• If frequent, reduce concurrency and retry\n"
                     "• MinerU reference limits: submit 300 req/min, query 1000 req/min\n"
                     "• Upgrade plan or retry at off-peak hours"
                 ),
@@ -517,7 +536,7 @@ class ErrorHandler:
         self,
         parent: QWidget,
         error: Exception | str,
-        use_infobar: bool = False,
+        use_infobar: bool = True,
         action_callback: Callable | None = None,
     ) -> None:
         """Show error message to user with appropriate UI component.
@@ -525,7 +544,8 @@ class ErrorHandler:
         Args:
             parent: Parent widget
             error: Exception object or error message
-            use_infobar: If True, use InfoBar for non-critical errors; otherwise use MessageBox
+            use_infobar: If True, use InfoBar (default);
+                otherwise use MessageBox for critical errors
             action_callback: Optional callback for action button
         """
         error_info = self.classify_error(error)
@@ -540,8 +560,8 @@ class ErrorHandler:
         if action_callback:
             error_info.action_callback = action_callback
 
-        # Choose display method based on severity and preference
-        if use_infobar and error_info.level in (ErrorLevel.INFO, ErrorLevel.WARNING):
+        # Always use InfoBar for non-critical errors, MessageBox only for critical
+        if use_infobar or error_info.level != ErrorLevel.CRITICAL:
             self._show_infobar(parent, error_info)
         else:
             self._show_messagebox(parent, error_info)

@@ -47,6 +47,42 @@ def _format_error_for_ui(exc: Exception) -> str:
     return str(exc)
 
 
+def _is_retryable_error(exc: Exception) -> bool:
+    """Check if an error is retryable (network/timeout/rate-limit errors)."""
+    error_str = str(exc).lower()
+    retryable_patterns = [
+        "timeout",
+        "timed out",
+        "超时",
+        "connection reset",
+        "connection aborted",
+        "connection refused",
+        "网络",
+        "network",
+        "dns",
+        "502",
+        "503",
+        "504",
+        "429",
+        "rate limit",
+        "too many requests",
+        "请求频率",
+        "temporary",
+        "temporary failure",
+        "临时",
+    ]
+    return any(pattern in error_str for pattern in retryable_patterns)
+
+
+def _calculate_retry_delay(attempt: int, base_delay: float = 1.0, max_delay: float = 30.0) -> float:
+    """Calculate exponential backoff delay for retry."""
+    import random
+
+    delay = min(base_delay * (2 ** attempt), max_delay)
+    jitter = random.uniform(0, delay * 0.1)
+    return delay + jitter
+
+
 def _load_card_generator_class():
     from ankismart.card_gen.generator import CardGenerator as CardGeneratorClass
 
@@ -289,7 +325,7 @@ class GenerateWorker(QThread):
 
 
 class PushWorker(QThread):
-    """Worker thread for pushing cards to Anki."""
+    """Worker thread for pushing cards to Anki with automatic retry support."""
 
     progress = pyqtSignal(str)  # Progress message
     card_progress = pyqtSignal(int, int)  # current, total
@@ -302,74 +338,113 @@ class PushWorker(QThread):
         gateway: Any,
         cards: list[CardDraft],
         update_mode: str = "create_only",
+        max_retries: int = 3,
     ) -> None:
         super().__init__()
         self._gateway = gateway
         self._cards = cards
         self._update_mode = update_mode
+        self._max_retries = max_retries
         self._cancelled = False
 
     def cancel(self) -> None:
         """Cancel the push operation."""
         self._cancelled = True
 
-    def run(self) -> None:
+    def _do_push(self) -> Any:
+        """Execute push with progress callback."""
+        def on_progress(current: int, total: int, _status: Any) -> None:
+            if self._cancelled:
+                raise _WorkerCancelledError()
+            self.card_progress.emit(current, total)
+            self.progress.emit(f"已推送 {current}/{total} 张卡片")
+
         try:
+            return self._gateway.push(
+                self._cards,
+                update_mode=self._update_mode,
+                progress_callback=on_progress,
+            )
+        except TypeError as exc:
+            if "progress_callback" not in str(exc):
+                raise
+            return self._gateway.push(self._cards, update_mode=self._update_mode)
+
+    def run(self) -> None:
+        import time
+
+        last_error: Exception | None = None
+        for attempt in range(self._max_retries + 1):
             if self._cancelled:
                 self.cancelled.emit()
                 return
 
-            logger.info(
-                "push workflow started",
-                extra={
-                    "event": "worker.push.started",
-                    "cards_count": len(self._cards),
-                    "update_mode": self._update_mode,
-                },
-            )
-            self.progress.emit(f"正在推送 {len(self._cards)} 张卡片到 Anki")
-
-            def on_progress(current: int, total: int, _status) -> None:
-                if self._cancelled:
-                    raise _WorkerCancelledError()
-                self.card_progress.emit(current, total)
-                self.progress.emit(f"已推送 {current}/{total} 张卡片")
-
-            # Push with progress tracking
             try:
-                result = self._gateway.push(
-                    self._cards,
-                    update_mode=self._update_mode,
-                    progress_callback=on_progress,
-                )
-            except TypeError as exc:
-                if "progress_callback" not in str(exc):
-                    raise
-                result = self._gateway.push(self._cards, update_mode=self._update_mode)
+                if attempt == 0:
+                    logger.info(
+                        "push workflow started",
+                        extra={
+                            "event": "worker.push.started",
+                            "cards_count": len(self._cards),
+                            "update_mode": self._update_mode,
+                        },
+                    )
+                    self.progress.emit(f"正在推送 {len(self._cards)} 张卡片到 Anki")
+                else:
+                    delay = _calculate_retry_delay(attempt - 1)
+                    self.progress.emit(
+                        f"推送失败，{delay:.1f}秒后进行第{attempt + 1}次重试..."
+                    )
+                    time.sleep(delay)
+                    if self._cancelled:
+                        self.cancelled.emit()
+                        return
+                    self.progress.emit(f"正在重试推送 ({attempt + 1}/{self._max_retries + 1})")
 
-            if self._cancelled:
+                result = self._do_push()
+
+                if self._cancelled:
+                    self.cancelled.emit()
+                    return
+
+                logger.info(
+                    "push workflow finished",
+                    extra={
+                        "event": "worker.push.finished",
+                        "cards_count": len(self._cards),
+                        "succeeded": getattr(result, "succeeded", None),
+                        "failed": getattr(result, "failed", None),
+                        "attempts": attempt + 1,
+                    },
+                )
+                self.finished.emit(result)
+                return
+            except _WorkerCancelledError:
                 self.cancelled.emit()
                 return
+            except Exception as e:
+                last_error = e
+                if _is_retryable_error(e) and attempt < self._max_retries:
+                    logger.warning(
+                        "push attempt failed, will retry",
+                        extra={
+                            "event": "worker.push.retry",
+                            "attempt": attempt + 1,
+                            "error_detail": str(e),
+                        },
+                    )
+                    continue
+                break
 
-            logger.info(
-                "push workflow finished",
+        if not self._cancelled and last_error is not None:
+            logger.exception(
+                "push workflow failed after retries",
                 extra={
-                    "event": "worker.push.finished",
-                    "cards_count": len(self._cards),
-                    "succeeded": getattr(result, "succeeded", None),
-                    "failed": getattr(result, "failed", None),
+                    "event": "worker.push.failed",
+                    "attempts": self._max_retries + 1,
                 },
             )
-            self.finished.emit(result)
-        except _WorkerCancelledError:
-            self.cancelled.emit()
-        except Exception as e:
-            if not self._cancelled:
-                logger.exception(
-                    "push workflow failed",
-                    extra={"event": "worker.push.failed"},
-                )
-                self.error.emit(_format_error_for_ui(e))
+            self.error.emit(_format_error_for_ui(last_error))
 
 
 class ExportWorker(QThread):

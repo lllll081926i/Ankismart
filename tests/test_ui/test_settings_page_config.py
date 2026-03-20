@@ -299,6 +299,48 @@ def test_parse_version_tuple_ignores_non_numeric_suffix(_qapp) -> None:
     assert page._parse_version_tuple("2.4.beta") == (2, 4, 0)
 
 
+def test_delete_provider_uses_infobar_when_last_provider(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+    calls: list[tuple[tuple, dict]] = []
+
+    monkeypatch.setattr(
+        page, "_show_info_bar", lambda *args, **kwargs: calls.append((args, kwargs))
+    )
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError())
+    )
+
+    page._delete_provider(page._providers[0])
+
+    assert len(calls) == 1
+    assert calls[0][0][0] == "warning"
+
+
+def test_save_config_failure_uses_error_infobar(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+    calls: list[tuple[tuple, dict]] = []
+
+    monkeypatch.setattr(
+        main,
+        "apply_runtime_config",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("disk full")),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        page, "_show_info_bar", lambda *args, **kwargs: calls.append((args, kwargs))
+    )
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError())
+    )
+
+    page._save_config_silent(show_feedback=True)
+
+    assert len(calls) == 1
+    assert calls[0][0][0] == "error"
+
+
 def test_save_config_persists_adaptive_concurrency_and_update_flags(_qapp, monkeypatch) -> None:
     main, _ = make_main()
     page = SettingsPage(main)

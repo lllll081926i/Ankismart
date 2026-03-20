@@ -17,5 +17,5 @@ def test_task_center_renders_stage_statuses() -> None:
 
     panel.render_task(task)
 
-    assert panel._task_list.count() == 1
-    assert "convert" in panel._task_list.item(0).text().lower()
+    assert len(panel._task_widgets) == 1
+    assert "task-1" in panel._task_widgets

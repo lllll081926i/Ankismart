@@ -286,6 +286,32 @@ def test_cloud_ocr_page_progress_updates_progress_bar(monkeypatch):
     assert page._progress_bar.value() == 100
 
 
+def test_ocr_download_finished_uses_page_infobar_helper(monkeypatch):
+    page = make_page()
+    page._state_tooltip = None
+    page._model_check_in_progress = True
+    page._last_ocr_progress_message = ""
+    calls: list[tuple[tuple, dict]] = []
+
+    monkeypatch.setattr(page, "_set_generate_actions_enabled", lambda enabled: None)
+    monkeypatch.setattr(page, "_cleanup_ocr_download_worker", lambda: None)
+    monkeypatch.setattr(
+        ImportPage,
+        "_show_info_bar",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.InfoBar.success",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()),
+    )
+
+    ImportPage._on_ocr_download_finished(page, ["model-a"])
+
+    assert len(calls) == 1
+    assert calls[0][0][1] == "success"
+
+
 def test_cloud_ocr_message_progress_updates_status_text():
     page = make_page()
     page._main.config.ocr_mode = "cloud"

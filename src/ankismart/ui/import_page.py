@@ -68,7 +68,12 @@ from ankismart.ui.styles import (
     SPACING_SMALL,
 )
 from ankismart.ui.task_runtime import TaskEvent
-from ankismart.ui.utils import ProgressMixin, format_operation_hint, split_tags_text
+from ankismart.ui.utils import (
+    ProgressMixin,
+    format_operation_hint,
+    request_infobar_confirmation,
+    split_tags_text,
+)
 from ankismart.ui.workers import BatchConvertWorker
 from ankismart.ui.workflows import (
     ConvertWorkflowRequest,
@@ -90,7 +95,7 @@ _OCR_FILE_SUFFIXES = {
 }
 _MERGED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"}
 
-_RIGHT_OPTION_CARD_MAX_HEIGHT = 92
+_RIGHT_OPTION_CARD_MAX_HEIGHT = 72
 _RIGHT_CONFIG_GROUP_MAX_HEIGHT = 360
 _RIGHT_STRATEGY_GROUP_MAX_HEIGHT = 640
 
@@ -556,12 +561,14 @@ class ImportPage(ProgressMixin, QWidget):
         self._deck_loader: DeckLoaderWorker | None = None
         self._ocr_download_worker: OCRModelDownloadWorker | None = None
         self._state_tooltip: StateToolTip | None = None
+        self._progress_info_bar = None
         self._model_check_in_progress = False
         self._last_ocr_progress_message: str = ""
         self._last_ocr_page_status_message: str = ""
         self._last_convert_ocr_message: str = ""
         self._convert_start_ts: float = 0.0
         self._current_task_id: str = ""
+        self._confirmations: dict[str, float] = {}
 
         # Lazy-loaded heavy dependencies
         self._converter = None
@@ -1585,6 +1592,12 @@ class ImportPage(ProgressMixin, QWidget):
         if tooltip is not None and hasattr(tooltip, "deleteLater"):
             tooltip.deleteLater()
 
+    def _dispose_progress_info_bar(self) -> None:
+        info_bar = self.__dict__.get("_progress_info_bar")
+        self.__dict__["_progress_info_bar"] = None
+        if info_bar is not None and hasattr(info_bar, "close"):
+            info_bar.close()
+
     def _select_files(self):
         """Open file dialog to select files."""
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -2023,35 +2036,24 @@ class ImportPage(ProgressMixin, QWidget):
             model_source=getattr(self._main.config, "ocr_model_source", "official"),
         )
         model_list = ", ".join(missing_models)
-        confirm_message = (
-            f"检测到缺失的 OCR 模型：{model_list}\n\n是否立即下载？"
-            if is_zh
-            else f"Missing OCR models detected: {model_list}\n\nDownload now?"
+        self._show_info_bar(
+            "info",
+            "开始下载 OCR 模型" if is_zh else "Starting OCR Model Download",
+            (
+                f"检测到缺失模型：{model_list}，已自动开始下载"
+                if is_zh
+                else f"Missing models detected: {model_list}. Download started automatically"
+            ),
+            duration=2600,
         )
-
-        # For question dialogs, we'll use MessageBox from qfluentwidgets instead
-        from qfluentwidgets import MessageBox
-
-        w = MessageBox("下载 OCR 模型" if is_zh else "Download OCR Models", confirm_message, self)
-        if w.exec():
-            # User clicked Yes/OK
-            pass
-        else:
-            # User clicked No/Cancel
-            return False
 
         # Start download in background thread
         self._model_check_in_progress = True
         self._set_generate_actions_enabled(False)
-
-        # Show progress tooltip
-        self._state_tooltip = StateToolTip(
+        self._show_progress_info_bar(
             "正在下载 OCR 模型" if is_zh else "Downloading OCR Models",
             "请稍候..." if is_zh else "Please wait...",
-            self.window(),
         )
-        self._state_tooltip.move(self._state_tooltip.getSuitablePos())
-        self._state_tooltip.show()
 
         # Create and start worker
         self._cleanup_ocr_download_worker()
@@ -2064,39 +2066,29 @@ class ImportPage(ProgressMixin, QWidget):
         self._ocr_download_worker.error.connect(self._on_ocr_download_error)
         self._ocr_download_worker.start()
         self._last_ocr_progress_message = ""
-        InfoBar.info(
-            title="开始下载" if is_zh else "Download Started",
-            content="正在下载 OCR 模型，进度会在顶部通知中更新。"
+        self._show_info_bar(
+            "info",
+            "开始下载" if is_zh else "Download Started",
+            "正在下载 OCR 模型，进度会在顶部通知中更新。"
             if is_zh
             else "Downloading OCR models. Progress will be updated in top notifications.",
-            orient=Qt.Orientation.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP,
             duration=1800,
-            parent=self,
         )
 
         return False  # Return False to prevent immediate conversion start
 
     def _on_ocr_download_progress(self, current: int, total: int, message: str):
         """Handle OCR model download progress."""
-        if self._state_tooltip:
-            self._state_tooltip.setContent(message)
-
         is_zh = self._main.config.language == "zh"
         progress_text = f"[{current}/{total}] {message}" if total > 0 else message
         if progress_text == self._last_ocr_progress_message:
             return
 
         self._last_ocr_progress_message = progress_text
-        InfoBar.info(
-            title="下载中" if is_zh else "Downloading",
-            content=progress_text,
-            orient=Qt.Orientation.Horizontal,
-            isClosable=False,
-            position=InfoBarPosition.TOP,
+        self._show_progress_info_bar(
+            "下载中" if is_zh else "Downloading",
+            progress_text,
             duration=1800,
-            parent=self,
         )
 
     def _on_ocr_download_finished(self, downloaded_models: list[str]):
@@ -2105,30 +2097,16 @@ class ImportPage(ProgressMixin, QWidget):
         self._last_ocr_progress_message = ""
         self._set_generate_actions_enabled(True)
         self._cleanup_ocr_download_worker()
-
-        if self._state_tooltip:
-            is_zh = self._main.config.language == "zh"
-            success_msg = (
-                f"模型下载完成！已下载 {len(downloaded_models)} 个模型"
-                if is_zh
-                else f"Download complete! {len(downloaded_models)} model(s) downloaded"
-            )
-            self._state_tooltip.setContent(success_msg)
-            self._state_tooltip.setState(True)
-            self._dispose_state_tooltip()
+        self._dispose_progress_info_bar()
 
         # Show success message
         is_zh = self._main.config.language == "zh"
-        InfoBar.success(
-            title="下载成功" if is_zh else "Download Successful",
-            content="OCR 模型已成功下载，现在可以开始转换文件了。"
+        self._show_info_bar(
+            "success",
+            "下载成功" if is_zh else "Download Successful",
+            "OCR 模型已成功下载，现在可以开始转换文件了。"
             if is_zh
             else "OCR models downloaded successfully. You can now start converting files.",
-            orient=Qt.Orientation.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP,
-            duration=3000,
-            parent=self,
         )
 
     def _on_ocr_download_error(self, error_message: str):
@@ -2137,12 +2115,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._last_ocr_progress_message = ""
         self._set_generate_actions_enabled(True)
         self._cleanup_ocr_download_worker()
-
-        if self._state_tooltip:
-            is_zh = self._main.config.language == "zh"
-            self._state_tooltip.setContent("下载失败" if is_zh else "Download failed")
-            self._state_tooltip.setState(True)
-            self._dispose_state_tooltip()
+        self._dispose_progress_info_bar()
 
         # Show error message
         is_zh = self._main.config.language == "zh"
@@ -2154,14 +2127,11 @@ class ImportPage(ProgressMixin, QWidget):
             "or manually download the model files."
         )
 
-        InfoBar.error(
-            title="下载失败" if is_zh else "Download Failed",
-            content=error_detail,
-            orient=Qt.Orientation.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP,
+        self._show_info_bar(
+            "error",
+            "下载失败" if is_zh else "Download Failed",
+            error_detail,
             duration=5000,
-            parent=self,
         )
 
     def build_generation_config(self) -> dict:
@@ -2197,6 +2167,45 @@ class ImportPage(ProgressMixin, QWidget):
                 event="convert",
                 language=self._main.config.language,
             )
+        )
+
+    def _show_info_bar(
+        self,
+        level: str,
+        title: str,
+        content: str,
+        *,
+        duration: int = 3000,
+        is_closable: bool = True,
+    ) -> None:
+        """Show fluent InfoBar notifications consistently."""
+        level_map = {
+            "success": InfoBar.success,
+            "warning": InfoBar.warning,
+            "error": InfoBar.error,
+            "info": InfoBar.info,
+        }
+        show = level_map.get(level, InfoBar.info)
+        show(
+            title=title,
+            content=content,
+            orient=Qt.Orientation.Horizontal,
+            isClosable=is_closable,
+            position=InfoBarPosition.TOP,
+            duration=duration,
+            parent=self,
+        )
+
+    def _show_progress_info_bar(self, title: str, content: str, *, duration: int = 1800) -> None:
+        self._dispose_progress_info_bar()
+        self.__dict__["_progress_info_bar"] = InfoBar.info(
+            title=title,
+            content=content,
+            orient=Qt.Orientation.Horizontal,
+            isClosable=False,
+            position=InfoBarPosition.TOP,
+            duration=duration,
+            parent=self,
         )
 
     def _on_file_progress(self, filename: str, current: int, total: int):
@@ -2380,15 +2389,12 @@ class ImportPage(ProgressMixin, QWidget):
             page_status_text = f"{filename} {current_page}/{total_pages}"
             if page_status_text != getattr(self, "_last_ocr_page_status_message", ""):
                 self._last_ocr_page_status_message = page_status_text
-                is_zh = self._main.config.language == "zh"
-                InfoBar.info(
-                    title="OCR 识别中" if is_zh else "OCR In Progress",
-                    content=page_status_text,
-                    orient=Qt.Orientation.Horizontal,
-                    isClosable=False,
-                    position=InfoBarPosition.TOP,
-                    duration=1500,
-                    parent=self,
+                self._status_label.setText(file_text)
+                self._show_info_bar(
+                    "info",
+                    "页进度" if self._main.config.language == "zh" else "Page Progress",
+                    page_status_text,
+                    duration=1800,
                 )
 
     def _on_ocr_progress(self, message: str) -> None:
@@ -2608,35 +2614,31 @@ class ImportPage(ProgressMixin, QWidget):
                 message=error_display["content"],
             )
         )
-        InfoBar.error(
-            title=error_display["title"],
-            content=error_display["content"],
-            orient=Qt.Orientation.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP,
+        self._show_info_bar(
+            "error",
+            error_display["title"],
+            error_display["content"],
             duration=5000,
-            parent=self,
         )
 
     def _cancel_operation(self):
         """Cancel the current operation."""
         if self._worker and self._worker.isRunning():
-            from qfluentwidgets import MessageBox
-
-            w = MessageBox(
-                "确认取消" if self._main.config.language == "zh" else "Confirm Cancel",
-                "确定要取消当前操作吗？"
-                if self._main.config.language == "zh"
-                else "Are you sure you want to cancel?",
+            is_zh = self._main.config.language == "zh"
+            if not request_infobar_confirmation(
                 self,
-            )
+                self._confirmations,
+                key="cancel_convert",
+                title="再次点击取消" if is_zh else "Click Again to Cancel",
+                content="再次点击取消当前转换任务"
+                if is_zh
+                else "Click cancel again to stop the current conversion",
+            ):
+                return
 
-            if w.exec():
-                self._worker.cancel()
-                self._btn_cancel.setEnabled(False)
-                self._status_label.setText(
-                    "正在取消..." if self._main.config.language == "zh" else "Cancelling..."
-                )
+            self._worker.cancel()
+            self._btn_cancel.setEnabled(False)
+            self._status_label.setText("正在取消..." if is_zh else "Cancelling...")
 
     def _on_operation_cancelled(self):
         """Handle operation cancellation."""
@@ -2882,10 +2884,6 @@ class ImportPage(ProgressMixin, QWidget):
         # Get recommended strategy based on content type
         strategy_mix = self._get_recommended_strategy(content_type)
 
-        # Show recommendation dialog
-        dialog = MessageBox("策略推荐" if is_zh else "Strategy Recommendation", "", self)
-
-        # Build recommendation content
         type_names = {
             "math_science": ("数学/理科内容", "Math/Science Content"),
             "liberal_arts": ("文科/历史内容", "Liberal Arts/History Content"),
@@ -2915,13 +2913,7 @@ class ImportPage(ProgressMixin, QWidget):
         type_name = type_names.get(content_type, type_names["general"])
         type_desc = type_descs.get(content_type, type_descs["general"])
 
-        content = f"""
-<h3>{type_name[0] if is_zh else type_name[1]}</h3>
-<p>{type_desc[0] if is_zh else type_desc[1]}</p>
-<br>
-<h4>{"推荐策略配置：" if is_zh else "Recommended Strategy:"}</h4>
-<ul>
-"""
+        strategy_summary: list[str] = []
 
         strategy_names = {
             "basic": ("基础问答", "Basic Q&A"),
@@ -2935,29 +2927,22 @@ class ImportPage(ProgressMixin, QWidget):
         for strategy_id, ratio in strategy_mix.items():
             if ratio > 0:
                 name = strategy_names.get(strategy_id, (strategy_id, strategy_id))
-                content += f"<li>{name[0] if is_zh else name[1]}: {ratio}%</li>"
+                strategy_summary.append(f"{name[0] if is_zh else name[1]} {ratio}%")
 
-        content += "</ul>"
-
-        dialog.setText(content)
-        dialog.yesButton.setText("应用推荐" if is_zh else "Apply Recommendation")
-        dialog.cancelButton.setText("取消" if is_zh else "Cancel")
-
-        if dialog.exec():
-            # Apply recommended strategy
-            self._apply_strategy_mix(strategy_mix)
-
-            InfoBar.success(
-                title="已应用推荐策略" if is_zh else "Recommendation Applied",
-                content="已根据文档类型应用推荐的生成策略"
+        self._apply_strategy_mix(strategy_mix)
+        self._show_info_bar(
+            "success",
+            "已应用推荐策略" if is_zh else "Recommendation Applied",
+            (
+                f"{type_name[0]}：{type_desc[0]}；建议配比 {', '.join(strategy_summary)}"
                 if is_zh
-                else "Applied recommended strategy based on document type",
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=3000,
-                parent=self,
-            )
+                else (
+                    f"{type_name[1]}: {type_desc[1]}; "
+                    f"recommended mix {', '.join(strategy_summary)}"
+                )
+            ),
+            duration=3600,
+        )
 
     def _analyze_content_type(self) -> str:
         """Analyze file content to determine content type."""

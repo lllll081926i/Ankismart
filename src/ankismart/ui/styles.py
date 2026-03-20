@@ -36,7 +36,7 @@ DEFAULT_WINDOW_WIDTH = 1200
 DEFAULT_WINDOW_HEIGHT = 900
 MIN_WINDOW_WIDTH = 800
 MIN_WINDOW_HEIGHT = 540
-TITLE_BAR_HEIGHT = 30
+TITLE_BAR_HEIGHT = 36
 
 # File drag-drop area style
 DRAG_DROP_AREA_STYLE = """
@@ -404,6 +404,33 @@ MenuActionListWidget::item:selected {{
 
 #comboListWidget::item {{
     margin-top: {menu_item_margin_top}px;
+}}
+
+RoundMenu,
+FlyoutView,
+QWidget#roundMenu {{
+    background-color: {palette.SURFACE};
+    border: 1px solid {palette.BORDER};
+    border-radius: {menu_border_radius}px;
+}}
+
+RoundMenu QLabel,
+FlyoutView QLabel {{
+    color: {palette.TEXT_PRIMARY};
+    background: transparent;
+}}
+
+RoundMenu::item,
+FlyoutView::item {{
+    color: {palette.TEXT_PRIMARY};
+    background: transparent;
+    padding: 6px 12px;
+}}
+
+RoundMenu::item:selected,
+FlyoutView::item:selected {{
+    background-color: {"rgba(255, 255, 255, 0.10)" if dark else "rgba(0, 0, 0, 0.06)"};
+    color: {palette.TEXT_PRIMARY};
 }}
 
 MenuActionListWidget QScrollBar:vertical {{

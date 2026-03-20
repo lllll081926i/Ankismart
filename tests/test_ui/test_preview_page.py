@@ -440,14 +440,14 @@ def test_generation_message_wraps_long_text():
     assert len(text) < 220
 
 
-def test_push_card_progress_updates_state_tooltip(monkeypatch):
+def test_push_card_progress_updates_progress_infobar(monkeypatch):
     main = _make_main_window()
     main.config.language = "zh"
     page = PreviewPage(main)
     calls: list[tuple[str, str]] = []
     monkeypatch.setattr(
         page,
-        "_show_state_tooltip",
+        "_show_progress_info_bar",
         lambda title, content: calls.append((title, content)),
     )
 
@@ -480,6 +480,25 @@ def test_generation_warning_shows_visible_infobar(monkeypatch):
 
     assert len(warnings) == 1
     assert "超时" in warnings[0]["content"]
+
+
+def test_update_converting_status_shows_top_infobar(monkeypatch):
+    main = _make_main_window()
+    main.config.language = "zh"
+    page = PreviewPage(main)
+    page._ready_documents = []
+    page._total_expected_docs = 3
+    warning_calls: list[dict] = []
+
+    monkeypatch.setattr(
+        "ankismart.ui.preview_page.InfoBar.warning",
+        lambda *args, **kwargs: warning_calls.append(kwargs) or object(),
+    )
+
+    page.update_converting_status(2)
+
+    assert len(warning_calls) == 1
+    assert page._btn_generate.isEnabled() is False
 
 
 def test_show_state_tooltip_applies_adaptive_max_width(monkeypatch):
@@ -544,11 +563,15 @@ def test_show_state_tooltip_applies_adaptive_max_width(monkeypatch):
 
     tooltip = page._state_tooltip
     assert tooltip is not None
-    assert tooltip.max_width == 820
-    assert tooltip.min_width == 520
-    assert tooltip.min_height == 132
+    assert tooltip.max_width == 960
+    assert tooltip.min_width == 720
+    assert tooltip.min_height == 96
+    assert tooltip.titleLabel.wordWrap() is False
     assert tooltip.contentLabel.wordWrap() is True
-    assert tooltip.position == (624, 36)
+    assert tooltip.contentLabel.maximumHeight() <= (
+        tooltip.contentLabel.fontMetrics().lineSpacing() * 2
+    ) + 6
+    assert tooltip.position == (424, 36)
     assert tooltip.used_suitable_pos is False
     assert tooltip.shown is True
 
