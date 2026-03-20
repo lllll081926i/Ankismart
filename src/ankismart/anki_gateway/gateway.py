@@ -4,6 +4,7 @@ from typing import Any, Callable, Iterable, Literal
 
 from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.styling import MODERN_CARD_CSS
+from ankismart.anki_gateway.template_enhancer import TEMPLATE_ENHANCER_SCRIPT
 from ankismart.anki_gateway.validator import validate_card_draft
 from ankismart.core.errors import AnkiGatewayError
 from ankismart.core.logging import get_logger
@@ -327,7 +328,7 @@ _ANKI_BASIC_QFMT = (
     '<div class="as-block-title">问题</div>'
     '<div id="as-front-content" class="as-block-content">{{Front}}</div>'
     "</section>"
-    "</div>" + _ANKI_TEMPLATE_FORMATTER_SCRIPT
+    "</div>" + _ANKI_TEMPLATE_FORMATTER_SCRIPT + TEMPLATE_ENHANCER_SCRIPT
 )
 
 _ANKI_BASIC_AFMT = (
@@ -344,7 +345,7 @@ _ANKI_BASIC_AFMT = (
     '<div class="as-block-title">解析</div>'
     '<div id="as-back-explain" class="as-block-content as-extra">（无解析）</div>'
     "</section>"
-    "</div>" + _ANKI_TEMPLATE_FORMATTER_SCRIPT
+    "</div>" + _ANKI_TEMPLATE_FORMATTER_SCRIPT + TEMPLATE_ENHANCER_SCRIPT
 )
 
 _ANKI_CLOZE_QFMT = (
@@ -375,7 +376,7 @@ _ANKI_CLOZE_AFMT = (
     "{{#Extra}}{{Extra}}{{/Extra}}{{^Extra}}（无解析）{{/Extra}}"
     "</div>"
     "</section>"
-    "</div>" + _ANKI_TEMPLATE_FORMATTER_SCRIPT
+    "</div>" + _ANKI_TEMPLATE_FORMATTER_SCRIPT + TEMPLATE_ENHANCER_SCRIPT
 )
 
 
