@@ -7,7 +7,8 @@ _MATH_FORMAT_RULES = (
 )
 
 _CODE_FORMAT_RULES = (
-    "- If answer/explanation contains code, it MUST use Markdown code wrappers so templates can detect/highlight it\n"
+    "- If answer/explanation contains code, it MUST use Markdown code "
+    "wrappers so templates can detect/highlight it\n"
     "- Inline code must use single backticks: `code`\n"
     "- Multi-line code must use fenced code blocks: ```language\\n...\\n```\n"
     "- Never output raw code without backticks/fenced blocks\n"

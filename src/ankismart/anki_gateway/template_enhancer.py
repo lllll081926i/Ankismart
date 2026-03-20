@@ -34,7 +34,13 @@ TEMPLATE_ENHANCER_SCRIPT = r"""
   }
 
   function containsLatex(text) {
-    var latexRe = /(\$\$[\s\S]*?\$\$|\\\\\[[\s\S]*?\\\\\]|\\\\\([\s\S]*?\\\\\)|\\begin\{[a-zA-Z*]+\}[\s\S]*?\\end\{[a-zA-Z*]+\}|\$[^$\n]+\$)/;
+    var latexRe = new RegExp([
+  '(\\$\\$[\\s\\S]*?\\$\\$',                          // $$...$$
+  '|\\\\\\\\[[\\s\\S]*?\\\\\\\\]',                    // \\[...\\]
+  '|\\\\\\\\\\([\\s\\S]*?\\\\\\\\\\)',                // \\(...\\)
+  '|\\\\begin\\{[a-zA-Z*]+\\}[\\s\\S]*?\\\\end\\{[a-zA-Z*]+\\}', // \begin...\end
+  '|\\$[^$\\n]+\\$)'                                  // $...$
+].join(''));
     return latexRe.test(String(text || ""));
   }
 
@@ -84,7 +90,8 @@ TEMPLATE_ENHANCER_SCRIPT = r"""
         "constexpr", "continue", "crate", "def", "default", "delete", "do", "else", "enum",
         "export", "extern", "false", "final", "fn", "for", "function", "if", "impl", "import",
         "in", "inline", "interface", "let", "match", "module", "mut", "namespace", "new", "null",
-        "nullptr", "override", "package", "private", "protected", "public", "pub", "raise", "return",
+        "nullptr", "override", "package", "private", 
+        "protected", "public", "pub", "raise", "return",
         "self", "static", "struct", "super", "switch", "template", "this", "throw", "trait", "true",
         "try", "type", "typedef", "typename", "union", "use", "using", "var", "virtual", "void",
         "while"
@@ -168,7 +175,10 @@ TEMPLATE_ENHANCER_SCRIPT = r"""
     }
 
     var markers = [];
-    var markerRe = /(\u7B54\u6848|\u6B63\u786E\u7B54\u6848|\u89E3\u6790|answer|ans|explanation|explain)\s*[:\uFF1A]/gi;
+    var markerRe = new RegExp(
+    '(\\u7B54\\u6848|\\u6B63\\u786E\\u7B54\\u6848|\\u89E3\\u6790|' +
+    'answer|ans|explanation|explain)\\s*[:\\uFF1A]', 'gi'
+);
     var marker;
     while ((marker = markerRe.exec(text)) !== null) {
       var label = String(marker[1] || "").toLowerCase();
@@ -223,13 +233,18 @@ TEMPLATE_ENHANCER_SCRIPT = r"""
     if (!t) {
       return true;
     }
-    return /^(?:\uFF08?\s*\u65E0\u89E3\u6790\s*\uFF09?|no\s+explanation)$/i.test(t);
+    return new RegExp(
+  '^(\\uFF08?\\s*\\u65E0\\u89E3\\u6790\\s*\\uFF09?|' + 
+  'no\\s+explanation)$', 'i'
+).test(t);
   }
 
   function isRichHtmlNode(node) {
     var html = String((node && node.innerHTML) || "");
     var withoutBreak = html.replace(/<br\s*\/?>/gi, "").trim();
-    return /<(?:img|audio|video|svg|math|table|thead|tbody|tr|td|th|ul|ol|li|blockquote)\b/i.test(withoutBreak);
+    var tags = '<(?:img|audio|video|svg|math|table|thead|tbody|tr|td|th|' +
+           'ul|ol|li|blockquote)\\b';
+    return new RegExp(tags, 'i').test(withoutBreak);
   }
 
   function enhanceBackBlock() {
@@ -240,7 +255,9 @@ TEMPLATE_ENHANCER_SCRIPT = r"""
     }
 
     var answerValue = answerBlock.querySelector(".as-answer-value");
-    var answerText = answerValue ? extractText(answerValue.innerHTML) : extractText(answerBlock.innerHTML);
+    var answerText = answerValue 
+      ? extractText(answerValue.innerHTML) 
+      : extractText(answerBlock.innerHTML);
     var explainText = extractText(explainBlock.innerHTML);
 
     var parsed = parseAnswerExplanation(answerText);
