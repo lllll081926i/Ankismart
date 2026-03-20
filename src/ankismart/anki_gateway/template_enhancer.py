@@ -90,7 +90,7 @@ TEMPLATE_ENHANCER_SCRIPT = r"""
         "constexpr", "continue", "crate", "def", "default", "delete", "do", "else", "enum",
         "export", "extern", "false", "final", "fn", "for", "function", "if", "impl", "import",
         "in", "inline", "interface", "let", "match", "module", "mut", "namespace", "new", "null",
-        "nullptr", "override", "package", "private", 
+        "nullptr", "override", "package", "private",
         "protected", "public", "pub", "raise", "return",
         "self", "static", "struct", "super", "switch", "template", "this", "throw", "trait", "true",
         "try", "type", "typedef", "typename", "union", "use", "using", "var", "virtual", "void",
@@ -234,7 +234,7 @@ TEMPLATE_ENHANCER_SCRIPT = r"""
       return true;
     }
     return new RegExp(
-  '^(\\uFF08?\\s*\\u65E0\\u89E3\\u6790\\s*\\uFF09?|' + 
+  '^(\\uFF08?\\s*\\u65E0\\u89E3\\u6790\\s*\\uFF09?|' +
   'no\\s+explanation)$', 'i'
 ).test(t);
   }
@@ -255,8 +255,8 @@ TEMPLATE_ENHANCER_SCRIPT = r"""
     }
 
     var answerValue = answerBlock.querySelector(".as-answer-value");
-    var answerText = answerValue 
-      ? extractText(answerValue.innerHTML) 
+    var answerText = answerValue
+      ? extractText(answerValue.innerHTML)
       : extractText(answerBlock.innerHTML);
     var explainText = extractText(explainBlock.innerHTML);
 
