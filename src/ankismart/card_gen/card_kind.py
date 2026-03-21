@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 
 from ankismart.core.models import CardDraft
 
-from .card_format_parsers import has_valid_cloze, parse_choice_front
+from .card_format_parsers import has_valid_cloze, parse_choice_back, parse_choice_front
 
 SUPPORTED_CARD_KINDS = {
     "basic",
@@ -63,18 +63,28 @@ def detect_card_kind_from_parts(
         return "cloze"
     if "image" in normalized_note_type:
         return "image_qa"
-    if normalized_note_type.startswith("basic"):
-        return "basic"
 
     normalized_fields = {str(key): str(value or "") for key, value in (fields or {}).items()}
     if has_valid_cloze(normalized_fields.get("Text", "")):
         return "cloze"
 
     front = normalized_fields.get("Front", "") or normalized_fields.get("Question", "")
+    back = normalized_fields.get("Back", "") or normalized_fields.get("Answer", "")
     _, options = parse_choice_front(front)
     if len(options) >= 2:
+        answer_keys, _ = parse_choice_back(back)
+        if len(answer_keys) >= 2:
+            return "multiple_choice"
         return "single_choice"
 
-    if "Front" in normalized_fields or "Back" in normalized_fields:
+    if normalized_note_type.startswith("basic"):
+        return "basic"
+
+    if (
+        "Front" in normalized_fields
+        or "Back" in normalized_fields
+        or "Question" in normalized_fields
+        or "Answer" in normalized_fields
+    ):
         return "basic"
     return "generic"

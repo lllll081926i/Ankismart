@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+from PyQt6.QtWidgets import QApplication
 from qfluentwidgets import BodyLabel, ExpandGroupSettingCard, PrimaryPushButton, PushButton
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
@@ -7,7 +9,13 @@ from ankismart.ui.settings_page import SettingsPage
 
 from .settings_page_test_utils import make_main
 
-pytest_plugins = ["tests.test_ui.settings_page_test_utils"]
+
+@pytest.fixture(scope="session", name="_qapp")
+def _qapp_fixture():
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
 
 
 def _build_settings_page_with_providers(

@@ -567,3 +567,35 @@ def test_table_title_uses_question_field_only(_qapp) -> None:
     page._add_table_row(status, [card])
 
     assert page._table.item(0, 1).text().startswith("这是一条非常关键的问题文本")
+
+
+def test_result_page_shows_warning_style_for_cards_with_quality_flags(_qapp) -> None:
+    page = ResultPage(_FakeMainWindow())
+    card = _make_card("什么是事务原子性？", "答案: 原子性")
+    card.metadata.quality_flags = ["missing_explanation"]
+    status = CardPushStatus(index=0, success=True, error="")
+
+    page._add_table_row(status, [card])
+
+    assert page._table.item(0, 2).text() == "需关注"
+    assert "缺少解析" in page._table.item(0, 3).text()
+
+
+def test_result_page_displays_human_readable_blocking_reason_for_invalid_structure(
+    _qapp, monkeypatch
+) -> None:
+    page = ResultPage(_FakeMainWindow())
+    calls: list[tuple[tuple, dict]] = []
+
+    monkeypatch.setattr(
+        ResultPage,
+        "_show_info_bar",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+        raising=False,
+    )
+
+    page._on_export_error("basic_missing_answer")
+
+    assert "缺少答案内容" in page._status_label.text()
+    assert len(calls) == 1
+    assert "缺少答案内容" in calls[0][0][3]

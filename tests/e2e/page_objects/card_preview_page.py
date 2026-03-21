@@ -18,3 +18,9 @@ class CardPreviewPageObject(BasePageObject):
 
     def card_count(self) -> int:
         return len(self.page._all_cards)
+
+    def current_card_meta_text(self) -> str:
+        return self.page._note_type_label.text()
+
+    def quality_overview_text(self) -> str:
+        return self.page._quality_overview_label.text()

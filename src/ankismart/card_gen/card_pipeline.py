@@ -33,10 +33,7 @@ def normalize_card_draft(draft: CardDraft) -> CardDraft:
     )
     updated = draft.model_copy(deep=True)
     updated.fields = dict(normalized.fields)
-    updated.metadata.quality_flags = _merge_flags(
-        list(updated.metadata.quality_flags),
-        normalized.quality_flags,
-    )
+    updated.metadata.quality_flags = list(normalized.quality_flags)
     return updated
 
 
@@ -51,12 +48,3 @@ def validate_card_for_output(draft: CardDraft) -> ValidationResult:
         card_kind=detect_card_kind(normalized),
         fields=normalized.fields,
     )
-
-
-def _merge_flags(*flag_lists: list[str]) -> list[str]:
-    merged: list[str] = []
-    for values in flag_lists:
-        for value in values:
-            if value and value not in merged:
-                merged.append(value)
-    return merged

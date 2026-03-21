@@ -192,6 +192,10 @@ MODERN_CARD_CSS = """
     line-height: 1.8;
 }
 
+.as-preformatted {
+    white-space: pre-wrap;
+}
+
 .as-choice-list {
     margin-top: 10px;
 }

@@ -1,13 +1,20 @@
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QMessageBox
+import pytest
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.ui.settings_page import LLMProviderDialog, SettingsPage
 
 from .settings_page_test_utils import make_main
 
-pytest_plugins = ["tests.test_ui.settings_page_test_utils"]
+
+@pytest.fixture(scope="session", name="_qapp")
+def _qapp_fixture():
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
 
 
 def test_temperature_load_and_save_uses_slider(_qapp, monkeypatch) -> None:

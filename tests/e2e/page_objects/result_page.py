@@ -19,3 +19,14 @@ class ResultPageObject(BasePageObject):
     @property
     def push_result(self):
         return self.page._push_result
+
+    def status_label_text(self) -> str:
+        return self.page._status_label.text()
+
+    def row_status_text(self, row: int = 0) -> str:
+        item = self.page._table.item(row, 2)
+        return item.text() if item is not None else ""
+
+    def row_message_text(self, row: int = 0) -> str:
+        item = self.page._table.item(row, 3)
+        return item.text() if item is not None else ""

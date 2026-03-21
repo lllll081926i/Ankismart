@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ankismart.anki_gateway.apkg_exporter import (
-    _CHOICE_FORMATTER_SCRIPT,
     ANKISMART_BASIC_MODEL,
     ANKISMART_CLOZE_MODEL,
     ApkgExporter,
@@ -16,8 +15,10 @@ from ankismart.anki_gateway.apkg_exporter import (
     _materialize_media_file,
     _validate_media_url,
 )
+from ankismart.card_gen.card_pipeline import normalize_card_draft
 from ankismart.core.errors import AnkiGatewayError, ErrorCode
 from ankismart.core.models import CardDraft
+from ankismart.ui.card_preview_page import CardRenderer
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -65,11 +66,14 @@ class TestGetModel:
             _get_model("CustomModel")
         assert exc_info.value.code == ErrorCode.E_MODEL_NOT_FOUND
 
-    def test_choice_formatter_script_is_latex_aware(self) -> None:
-        assert "containsLatex" in _CHOICE_FORMATTER_SCRIPT
-        assert "mathRe" in _CHOICE_FORMATTER_SCRIPT
-        assert "var labeled = text.match" in _CHOICE_FORMATTER_SCRIPT
-        assert "normalizedLines.length >= 2" not in _CHOICE_FORMATTER_SCRIPT
+    def test_basic_model_template_trusts_normalized_fields_without_runtime_reparsing(self) -> None:
+        model = _get_model("Basic")
+        template = model.templates[0]
+
+        assert "<script>" not in template["qfmt"]
+        assert "<script>" not in template["afmt"]
+        assert "{{Front}}" in template["qfmt"]
+        assert "{{Back}}" in template["afmt"]
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +175,75 @@ class TestExport:
 
             _, kwargs = mock_note_cls.call_args
             assert kwargs["tags"] == ["test"]
+
+    @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
+    def test_export_uses_same_normalized_fields_as_preview_for_edited_basic_card(
+        self, mock_pkg_cls: MagicMock, tmp_path: Path
+    ) -> None:
+        mock_pkg_cls.return_value = MagicMock()
+        card = _card(
+            Front="什么是事务原子性？",
+            Back="原子性。解析：事务中的操作要么全部成功，要么全部失败。",
+        )
+        normalized = normalize_card_draft(card)
+        html = CardRenderer.render_card(card)
+
+        with patch("ankismart.anki_gateway.apkg_exporter.genanki.Note") as mock_note_cls:
+            mock_note_cls.return_value = MagicMock()
+            with patch("ankismart.anki_gateway.apkg_exporter.genanki.Deck") as mock_deck_cls:
+                mock_deck_cls.return_value = MagicMock()
+                ApkgExporter().export([card], tmp_path / "out.apkg")
+
+        _, kwargs = mock_note_cls.call_args
+        assert kwargs["fields"] == [normalized.fields["Front"], normalized.fields["Back"]]
+        assert "原子性" in html
+        assert "事务中的操作要么全部成功" in html
+
+    @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
+    def test_export_uses_normalized_single_choice_fields_without_runtime_reformatting(
+        self, mock_pkg_cls: MagicMock, tmp_path: Path
+    ) -> None:
+        mock_pkg_cls.return_value = MagicMock()
+        card = _card(
+            Front="Python 默认解释器是？ A. CPython B. JVM C. CLR D. Lua",
+            Back="答案：A CPython 是官方实现。",
+        )
+        card.metadata.strategy_id = "single_choice"
+        normalized = normalize_card_draft(card)
+
+        with patch("ankismart.anki_gateway.apkg_exporter.genanki.Note") as mock_note_cls:
+            mock_note_cls.return_value = MagicMock()
+            with patch("ankismart.anki_gateway.apkg_exporter.genanki.Deck") as mock_deck_cls:
+                mock_deck_cls.return_value = MagicMock()
+                ApkgExporter().export([card], tmp_path / "single-choice.apkg")
+
+        _, kwargs = mock_note_cls.call_args
+        assert kwargs["fields"] == [normalized.fields["Front"], normalized.fields["Back"]]
+        assert kwargs["fields"][0].splitlines()[1].startswith("A.")
+        assert kwargs["fields"][1].startswith("答案: A")
+
+    @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
+    def test_export_uses_normalized_multiple_choice_fields_without_runtime_reformatting(
+        self, mock_pkg_cls: MagicMock, tmp_path: Path
+    ) -> None:
+        mock_pkg_cls.return_value = MagicMock()
+        card = _card(
+            Front="下列哪些属于 Python 数据类型？ A. list B. tuple C. interface D. dict",
+            Back="答案：A, B, D\n解析:\nA. 对\nB. 对\nC. 错\nD. 对",
+        )
+        card.metadata.strategy_id = "multiple_choice"
+        normalized = normalize_card_draft(card)
+
+        with patch("ankismart.anki_gateway.apkg_exporter.genanki.Note") as mock_note_cls:
+            mock_note_cls.return_value = MagicMock()
+            with patch("ankismart.anki_gateway.apkg_exporter.genanki.Deck") as mock_deck_cls:
+                mock_deck_cls.return_value = MagicMock()
+                ApkgExporter().export([card], tmp_path / "multiple-choice.apkg")
+
+        _, kwargs = mock_note_cls.call_args
+        assert kwargs["fields"] == [normalized.fields["Front"], normalized.fields["Back"]]
+        assert kwargs["fields"][0].splitlines()[1].startswith("A.")
+        assert kwargs["fields"][1].startswith("答案: A, B, D")
 
     @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
     def test_export_sets_media_files_from_existing_paths(

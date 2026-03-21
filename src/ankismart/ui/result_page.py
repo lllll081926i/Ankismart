@@ -37,6 +37,7 @@ from qfluentwidgets import (
 
 from ankismart.core.models import CardDraft, CardPushStatus, PushResult
 from ankismart.ui.card_edit_widget import CardEditDialog
+from ankismart.ui.card_preview_renderer import format_quality_flags
 from ankismart.ui.error_handler import build_error_display
 from ankismart.ui.i18n import t
 from ankismart.ui.styles import (
@@ -54,6 +55,37 @@ logger = logging.getLogger(__name__)
 _REAL_APKG_EXPORTER_CLASS = None
 AnkiConnectClient = None
 AnkiGateway = None
+
+_STRUCTURE_ERROR_TEXTS = {
+    "basic_missing_front": ("缺少问题内容（Front）", "Missing question content (Front)"),
+    "basic_missing_answer": ("缺少答案内容（Back）", "Missing answer content (Back)"),
+    "choice_missing_question": ("缺少题干", "Missing question text"),
+    "invalid_option_count": ("选项数量不合法", "Invalid option count"),
+    "choice_missing_answer": ("缺少正确答案", "Missing correct answer"),
+    "choice_answer_not_in_options": ("答案不在选项中", "Answer not found in options"),
+    "insufficient_correct_options": (
+        "多选题正确答案数量不足",
+        "Not enough correct options for multiple choice",
+    ),
+    "unsupported_generic_structure": ("卡片结构暂不支持", "Unsupported card structure"),
+    "cloze_syntax_invalid": ("填空语法无效", "Invalid cloze syntax"),
+}
+
+
+def _localized_text(mapping: dict[str, tuple[str, str]], key: str, lang: str) -> str:
+    zh_text, en_text = mapping.get(key, (key, key))
+    return zh_text if lang == "zh" else en_text
+def _format_structure_error(error_key: str, lang: str) -> str:
+    return _localized_text(_STRUCTURE_ERROR_TEXTS, str(error_key or "").strip(), lang)
+
+
+def _format_status_message(message: str, lang: str) -> str:
+    text = str(message or "").strip()
+    if not text:
+        return ""
+    if text in _STRUCTURE_ERROR_TEXTS:
+        return _format_structure_error(text, lang)
+    return text
 
 
 def _load_gateway_classes():
@@ -739,15 +771,23 @@ class ResultPage(QWidget):
         # Card title (from first field)
         lang = getattr(self._main.config, "language", "zh")
         card_title = t("result.unknown_card", lang)
+        quality_text = ""
         if 0 <= status.index < len(cards):
             card = cards[status.index]
             card_title = self._extract_question_title(card, lang=lang)
+            quality_text = format_quality_flags(
+                list(getattr(card.metadata, "quality_flags", []) or []),
+                lang,
+            )
 
         title_item = QTableWidgetItem(card_title)
         self._table.setItem(row, 1, title_item)
 
         # Status with color
-        if status.success:
+        if status.success and quality_text:
+            status_text = "需关注" if lang == "zh" else "Needs Review"
+            status_color = "#E6A23C"
+        elif status.success:
             status_text = t("result.status_success", lang)
             status_color = "#67C23A"
         elif status.error:
@@ -764,7 +804,8 @@ class ResultPage(QWidget):
         self._table.setItem(row, 2, status_item)
 
         # Error message
-        error_item = QTableWidgetItem(status.error or "")
+        error_text = _format_status_message(status.error or "", lang) or quality_text
+        error_item = QTableWidgetItem(error_text)
         self._table.setItem(row, 3, error_item)
 
         # Edit button
@@ -1011,7 +1052,15 @@ class ResultPage(QWidget):
     def _on_export_error(self, msg: str) -> None:
         """导出错误回调。"""
         self._cleanup_export_worker()
-        error_display = build_error_display(msg, getattr(self._main.config, "language", "zh"))
+        lang = getattr(self._main.config, "language", "zh")
+        friendly_message = _format_status_message(msg, lang)
+        if friendly_message != str(msg or "").strip():
+            error_display = {
+                "title": "导出失败" if lang == "zh" else "Export Failed",
+                "content": friendly_message,
+            }
+        else:
+            error_display = build_error_display(msg, lang)
         self._restore_export_buttons()
         self._set_status_label(error_display["content"])
 
@@ -1090,8 +1139,19 @@ class ResultPage(QWidget):
 
             # Enable repush button if there are edited cards
             self._btn_repush_all.setEnabled(True)
-
-            self._show_info_bar("success", t("card_edit.save_success", lang), "", duration=2000)
+            quality_text = format_quality_flags(
+                list(getattr(edited_card.metadata, "quality_flags", []) or []),
+                lang,
+            )
+            if quality_text:
+                self._show_info_bar(
+                    "warning",
+                    t("card_edit.save_success", lang),
+                    quality_text,
+                    duration=2500,
+                )
+            else:
+                self._show_info_bar("success", t("card_edit.save_success", lang), "", duration=2000)
 
     def _on_select_all_changed(self, state: int) -> None:
         """Handle select all checkbox state change."""
@@ -1332,7 +1392,15 @@ class ResultPage(QWidget):
     def _on_repush_error(self, msg: str) -> None:
         """Callback when repush encounters an error."""
         self._cleanup_push_worker()
-        error_display = build_error_display(msg, getattr(self._main.config, "language", "zh"))
+        lang = getattr(self._main.config, "language", "zh")
+        friendly_message = _format_status_message(msg, lang)
+        if friendly_message != str(msg or "").strip():
+            error_display = {
+                "title": "推送失败" if lang == "zh" else "Push Failed",
+                "content": friendly_message,
+            }
+        else:
+            error_display = build_error_display(msg, lang)
         self._btn_repush_all.setEnabled(True)
         self._btn_retry.setEnabled(True)
         self._btn_export_apkg.setEnabled(True)

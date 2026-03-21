@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from PyQt6.QtCore import QUrl
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.ui.error_handler import ErrorCategory, ErrorHandler, build_error_display
@@ -12,7 +12,13 @@ from ankismart.ui.settings_page import SettingsPage, configure_ocr_runtime
 
 from .settings_page_test_utils import make_main
 
-pytest_plugins = ["tests.test_ui.settings_page_test_utils"]
+
+@pytest.fixture(scope="session", name="_qapp")
+def _qapp_fixture():
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
 
 
 class _SignalStub:

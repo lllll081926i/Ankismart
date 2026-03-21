@@ -272,7 +272,13 @@ def patch_batch_convert_worker(monkeypatch):
 
 @pytest.fixture
 def patch_batch_generate_worker(monkeypatch):
-    def _patch(*, cards_per_document: int = 2):
+    def _patch(
+        *,
+        cards_per_document: int = 2,
+        flagged_card_indices: dict[int, list[str]] | None = None,
+    ):
+        flagged = flagged_card_indices or {}
+
         class _BatchGenerateWorker:
             def __init__(
                 self,
@@ -332,6 +338,7 @@ def patch_batch_generate_worker(monkeypatch):
                                 tags=list(self._tags),
                             )
                         )
+                        cards[-1].metadata.quality_flags = list(flagged.get(len(cards) - 1, []))
                         progress_index += 1
                         self.card_progress.emit(progress_index, total)
                     self.document_completed.emit(document.file_name, cards_per_document)

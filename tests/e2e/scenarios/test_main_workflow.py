@@ -26,7 +26,10 @@ def test_e2e_main_workflow(
     expected_source_format: str,
 ):
     patch_batch_convert_worker()
-    patch_batch_generate_worker(cards_per_document=2)
+    patch_batch_generate_worker(
+        cards_per_document=2,
+        flagged_card_indices={0: ["missing_explanation"]},
+    )
     patch_push_worker(fail=False)
 
     import_page = ImportPageObject(window)
@@ -47,6 +50,8 @@ def test_e2e_main_workflow(
 
     assert len(window.cards) > 0
     assert card_preview_page.card_count() == len(window.cards)
+    assert "缺少解析" in card_preview_page.current_card_meta_text()
+    assert "质量均分" in card_preview_page.quality_overview_text()
 
     card_preview_page.push_to_anki()
 
@@ -54,3 +59,5 @@ def test_e2e_main_workflow(
     assert result_page.push_result.total == len(window.cards)
     assert result_page.push_result.succeeded == len(window.cards)
     assert result_page.push_result.failed == 0
+    assert result_page.row_status_text(0) == "需关注"
+    assert "缺少解析" in result_page.row_message_text(0)

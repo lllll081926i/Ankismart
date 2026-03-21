@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from PyQt6.QtWidgets import QApplication
 
+from ankismart.card_gen.postprocess import build_card_drafts
 from ankismart.core.models import CardDraft, CardMetadata, RegenerateRequest
 from ankismart.ui.card_preview_page import CardPreviewPage, CardRenderer
 
@@ -70,6 +71,21 @@ def test_card_preview_can_filter_only_low_quality_cards() -> None:
     assert page._card_list.count() == 1
 
 
+def test_preview_page_shows_quality_flags_for_normalized_cards() -> None:
+    page = CardPreviewPage(_make_main_window())
+    page.load_cards(
+        [
+            _make_card(
+                front="什么是事务原子性？",
+                back="答案: 原子性",
+                quality_flags=["missing_explanation"],
+            )
+        ]
+    )
+
+    assert "风险: 缺少解析" in page._note_type_label.text()
+
+
 def test_regenerate_selected_cards_reuses_source_document(monkeypatch) -> None:
     page = CardPreviewPage(_make_main_window())
     page.load_cards(
@@ -117,3 +133,26 @@ def test_preview_renders_normalized_choice_layout_from_shared_parser() -> None:
 
     assert "A." in html
     assert "答案" in html
+
+
+def test_generated_choice_card_keeps_preview_layout_after_shared_normalization() -> None:
+    draft = build_card_drafts(
+        raw_cards=[
+            {
+                "Front": "下列哪些属于 Python 数据类型？ A. list B. tuple C. interface D. dict",
+                "Back": "答案：A, B, D\n解析:\nA. 对\nB. 对\nC. 错\nD. 对",
+            }
+        ],
+        deck_name="Default",
+        note_type="Basic",
+        tags=["ankismart"],
+        trace_id="t-preview-choice",
+        strategy_id="multiple_choice",
+    )[0]
+
+    html = CardRenderer.render_card(draft)
+
+    assert draft.fields["Front"].splitlines()[1].startswith("A.")
+    assert draft.fields["Back"].startswith("答案: A, B, D")
+    assert html.count('class="flat-option-line"') == 4
+    assert html.count('class="flat-answer-item"') == 3

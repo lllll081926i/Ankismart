@@ -4,6 +4,7 @@ import os
 import subprocess
 import threading
 import time
+import warnings
 from pathlib import Path
 
 from ankismart.core.logging import get_logger
@@ -133,7 +134,13 @@ def detect_cuda_environment(*, force_refresh: bool = False) -> bool:
 
 def _cuda_available() -> bool:
     try:
-        import paddle
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r".*No ccache found.*",
+                category=UserWarning,
+            )
+            import paddle
 
         if not paddle.device.is_compiled_with_cuda():
             return False

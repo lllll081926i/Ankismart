@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -34,6 +35,48 @@ from ankismart.core.models import MarkdownResult
 
 
 class TestGetOcr:
+    def test_cuda_available_suppresses_paddle_ccache_warning(self) -> None:
+        import builtins
+
+        import ankismart.converter.ocr_device as device_mod
+
+        real_import = builtins.__import__
+
+        class _FakeCuda:
+            @staticmethod
+            def device_count() -> int:
+                return 0
+
+        class _FakeDevice:
+            cuda = _FakeCuda()
+
+            @staticmethod
+            def is_compiled_with_cuda() -> bool:
+                return False
+
+        class _FakePaddle:
+            device = _FakeDevice()
+
+        def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "paddle":
+                warnings.warn(
+                    (
+                        "No ccache found. Please be aware that recompiling all "
+                        "source files may be required."
+                    ),
+                    UserWarning,
+                    stacklevel=1,
+                )
+                return _FakePaddle()
+            return real_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=_fake_import):
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                assert device_mod._cuda_available() is False
+
+        assert not [item for item in caught if "No ccache found" in str(item.message)]
+
     def test_returns_paddle_ocr_instance(self) -> None:
         import ankismart.converter.ocr_converter as mod
 
