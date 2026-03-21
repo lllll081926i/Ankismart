@@ -39,6 +39,22 @@ from qfluentwidgets import (
     isDarkTheme,
 )
 
+from ankismart.card_gen.card_format_parsers import (
+    normalize_html_to_text as shared_normalize_html_to_text,
+)
+from ankismart.card_gen.card_format_parsers import (
+    parse_answer_block as shared_parse_answer_block,
+)
+from ankismart.card_gen.card_format_parsers import (
+    parse_choice_back as shared_parse_choice_back,
+)
+from ankismart.card_gen.card_format_parsers import (
+    parse_choice_front as shared_parse_choice_front,
+)
+from ankismart.card_gen.card_format_parsers import (
+    strip_leading_index as shared_strip_leading_index,
+)
+from ankismart.card_gen.card_kind import detect_card_kind as shared_detect_card_kind
 from ankismart.core.config import append_task_history, record_operation_metric, save_config
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft, RegenerateRequest
@@ -244,38 +260,14 @@ _CARD_KIND_LABELS = {
 class CardRenderer:
     """Generates HTML for different Anki note types."""
 
-    _OPTION_LINE_PATTERN = re.compile(r"^\s*([A-Ea-e])[\.、\):：\-]\s*(.+?)\s*$")
-    _ANSWER_LINE_PATTERN = re.compile(
-        r"^(?:答案|正确答案|answer)?\s*[:：]?\s*([A-Ea-e](?:\s*[,，、/]\s*[A-Ea-e])*)\s*$",
-        re.IGNORECASE,
-    )
     _CLOZE_PATTERN = re.compile(r"\{\{c(\d+)::(.*?)(?:::(.*?))?\}\}", re.IGNORECASE | re.DOTALL)
 
     @staticmethod
     def detect_card_kind(card: CardDraft) -> str:
         """Return normalized card kind key used by UI filtering and rendering."""
-        note_type = card.note_type
-        tags = card.tags or []
-        lower_tags = {tag.lower() for tag in tags}
-        front_preview = str(card.fields.get("Front", ""))[:80]
-
-        if "concept" in lower_tags or "概念" in front_preview:
-            return "concept"
-        if "key_terms" in lower_tags or "术语" in tags:
-            return "key_terms"
-        if "single_choice" in lower_tags or "单选" in tags:
-            return "single_choice"
-        if "multiple_choice" in lower_tags or "多选" in tags:
-            return "multiple_choice"
-        if "image" in lower_tags:
-            return "image_qa"
-        if note_type == "Basic (and reversed card)":
+        if card.note_type == "Basic (and reversed card)":
             return "basic_reversed"
-        if note_type.startswith("Cloze"):
-            return "cloze"
-        if note_type == "Basic":
-            return "basic"
-        return "generic"
+        return shared_detect_card_kind(card)
 
     @staticmethod
     def render_card(card: CardDraft) -> str:
@@ -321,7 +313,7 @@ class CardRenderer:
                 r"^(?P<label>[A-Ea-e]|C\d+)(?P<sep>[\.、\):：\-])\s*",
                 lambda match: (
                     f'<span class="flat-keyword">{match.group("label").upper()}</span>'
-                    f'{match.group("sep")} '
+                    f"{match.group('sep')} "
                 ),
                 line,
             )
@@ -329,7 +321,7 @@ class CardRenderer:
                 r"^(?P<label>[^:：<>\n]{1,10})(?P<sep>[:：])\s*",
                 lambda match: (
                     f'<span class="flat-keyword">{match.group("label").strip()}</span>'
-                    f'{match.group("sep")} '
+                    f"{match.group('sep')} "
                 ),
                 line,
             )
@@ -364,114 +356,28 @@ class CardRenderer:
     @staticmethod
     def _extract_plain_lines(text: str) -> list[str]:
         """Extract plain text lines from html/plain content."""
-        if not text:
-            return []
-        plain = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-        plain = re.sub(r"</p\s*>", "\n", plain, flags=re.IGNORECASE)
-        plain = re.sub(r"<[^>]+>", "", plain)
+        plain = shared_normalize_html_to_text(text)
         return [line.strip() for line in plain.splitlines() if line.strip()]
 
     @staticmethod
     def _strip_leading_index(text: str) -> str:
         """Remove auto-generated leading line indexes like `1. ` before content."""
-        return re.sub(r"^\s*\d+[\.、\):：\-]\s*", "", text or "").strip()
+        return shared_strip_leading_index(text)
 
     @staticmethod
     def _normalize_html_to_text(text: str) -> str:
-        if not text:
-            return ""
-        plain = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-        plain = re.sub(r"</p\s*>", "\n", plain, flags=re.IGNORECASE)
-        plain = re.sub(r"<[^>]+>", " ", plain)
-        plain = plain.replace("\r", "")
-        plain = re.sub(r"\n{3,}", "\n\n", plain)
-        return plain.strip()
-
-    @staticmethod
-    def _extract_answer_keys(raw: str) -> list[str]:
-        """Extract unique answer keys in stable order."""
-        keys: list[str] = []
-        for key in re.findall(r"[A-Ea-e]", raw):
-            key = key.upper()
-            if key not in keys:
-                keys.append(key)
-        return keys
+        return shared_normalize_html_to_text(text)
 
     @staticmethod
     def _parse_choice_front(front: str) -> tuple[str, list[tuple[str, str]]]:
         """Parse question/options from front field."""
-        plain = CardRenderer._normalize_html_to_text(front)
-        lines = [line.strip() for line in plain.splitlines() if line.strip()]
-        options: list[tuple[str, str]] = []
-        question_lines: list[str] = []
-
-        for line in lines:
-            match = CardRenderer._OPTION_LINE_PATTERN.match(line)
-            if match:
-                options.append((match.group(1).upper(), match.group(2).strip()))
-            elif not options:
-                question_lines.append(line)
-
-        if not options:
-            compact = re.sub(r"\s+", " ", plain).strip()
-            inline_matches = list(re.finditer(r"(^|\s)([A-Ea-e])[\.、\):：\-]\s*", compact))
-            if len(inline_matches) >= 2:
-                question = compact[: inline_matches[0].start(2)].strip()
-                for i, match in enumerate(inline_matches):
-                    key = match.group(2).upper()
-                    start = match.end()
-                    end = (
-                        inline_matches[i + 1].start(2)
-                        if i + 1 < len(inline_matches)
-                        else len(compact)
-                    )
-                    option_text = compact[start:end].strip(" ;；")
-                    if option_text:
-                        options.append((key, option_text))
-                if options:
-                    return question, options
-
-            return plain, []
-        question = "\n".join(question_lines) if question_lines else lines[0]
-        return question, options
+        return shared_parse_choice_front(front)
 
     @staticmethod
     def _parse_choice_back(back: str) -> tuple[list[str], str]:
         """Parse answer keys and explanation from back field."""
-        lines = CardRenderer._extract_plain_lines(back)
-        if not lines:
-            return [], ""
-
-        first = lines[0]
-        match = CardRenderer._ANSWER_LINE_PATTERN.match(first)
-        if match:
-            return CardRenderer._extract_answer_keys(match.group(1)), "\n".join(lines[1:]).strip()
-
-        if re.fullmatch(r"[A-Ea-e](?:\s*[,，、/]\s*[A-Ea-e])*", first):
-            return CardRenderer._extract_answer_keys(first), "\n".join(lines[1:]).strip()
-
-        prefixed = re.match(
-            r"^([A-Ea-e](?:\s*[,，、/]\s*[A-Ea-e])*)(?:[\.、\):：\-]\s*|\s+)(.+)$",
-            first,
-        )
-        if prefixed:
-            keys = CardRenderer._extract_answer_keys(prefixed.group(1))
-            explanation_lines = [prefixed.group(2).strip(), *lines[1:]]
-            explanation = "\n".join(line for line in explanation_lines if line).strip()
-            return keys, explanation
-
-        whole = "\n".join(lines)
-        inline = re.search(
-            r"(?:答案|正确答案|answer)\s*[:：]?\s*([A-Ea-e](?:\s*[,，、/]\s*[A-Ea-e])*)",
-            whole,
-            re.IGNORECASE,
-        )
-        if inline:
-            keys = CardRenderer._extract_answer_keys(inline.group(1))
-            explanation = whole.replace(inline.group(0), "", 1).strip(" \n:：")
-            return keys, explanation
-
-        return [], whole
+        keys, explanation_lines = shared_parse_choice_back(back)
+        return keys, "\n".join(explanation_lines).strip()
 
     @staticmethod
     def _split_explanation_sections(explanation: str) -> list[str]:
@@ -521,47 +427,7 @@ class CardRenderer:
 
     @staticmethod
     def _parse_answer_and_explanation(raw: str) -> tuple[str, str]:
-        lines = CardRenderer._extract_plain_lines(raw)
-        if not lines:
-            return "", ""
-        lines = [CardRenderer._strip_leading_index(line) for line in lines if line.strip()]
-        lines = [line for line in lines if line]
-        if not lines:
-            return "", ""
-
-        first = lines[0]
-        answer_match = re.match(r"^(?:答案|正确答案|answer)\s*[:：]\s*(.+)$", first, re.IGNORECASE)
-        if answer_match:
-            answer = answer_match.group(1).strip()
-            remaining = lines[1:]
-        else:
-            answer = first.strip()
-            remaining = lines[1:]
-
-        if remaining:
-            marker_with_text = re.match(
-                r"^(?:解析|explanation)\s*[:：]\s*(.+)$",
-                remaining[0],
-                re.IGNORECASE,
-            )
-            marker_only = re.match(
-                r"^(?:解析|explanation)\s*[:：]?\s*$", remaining[0], re.IGNORECASE
-            )
-            if marker_with_text:
-                remaining = [marker_with_text.group(1).strip(), *remaining[1:]]
-            elif marker_only:
-                remaining = remaining[1:]
-
-        explanation = "\n".join(line for line in remaining if line).strip()
-        if not explanation:
-            sentences = [
-                part.strip() for part in re.split(r"(?<=[。！？!?；;])\s*", answer) if part.strip()
-            ]
-            if len(sentences) >= 2:
-                answer = sentences[0]
-                explanation = "\n".join(sentences[1:]).strip()
-
-        return answer, explanation
+        return shared_parse_answer_block(raw)
 
     @staticmethod
     def _render_explanation_html(explanation: str) -> str:
@@ -629,8 +495,7 @@ class CardRenderer:
 
         option_map = {key.upper(): text for key, text in options}
         answer_items = [
-            (key, option_map.get(key.upper(), "（未标注选项内容）"))
-            for key in answer_keys
+            (key, option_map.get(key.upper(), "（未标注选项内容）")) for key in answer_keys
         ]
         answer_html = CardRenderer._render_answer_items(answer_items, empty_text="（未标注）")
         return CardRenderer._render_three_blocks(
@@ -1325,9 +1190,7 @@ class CardPreviewPage(QWidget):
         ):
             badges.append("[低分]" if self._main.config.language == "zh" else "[Low]")
         if self._is_duplicate_risk_card(card):
-            badges.append(
-                "[近重复]" if self._main.config.language == "zh" else "[Near Duplicate]"
-            )
+            badges.append("[近重复]" if self._main.config.language == "zh" else "[Near Duplicate]")
         if not badges:
             return question
         return f"{question} {' '.join(badges)}"
@@ -1570,11 +1433,7 @@ class CardPreviewPage(QWidget):
             self._main.config,
             event="batch_push",
             status="success" if failed == 0 else "partial",
-            summary=(
-                "推送成功 "
-                f"{succeeded} 张，"
-                f"失败 {failed} 张"
-            ),
+            summary=(f"推送成功 {succeeded} 张，失败 {failed} 张"),
             payload={
                 "cards_total": len(self._all_cards),
                 "cards_succeeded": succeeded,
@@ -2241,8 +2100,7 @@ class CardPreviewPage(QWidget):
         deck_counter = Counter((card.deck_name or "Default") for card in self._all_cards)
         top_decks = sorted(deck_counter.items(), key=lambda item: item[1], reverse=True)[:5]
         mode = (
-            getattr(self._main.config, "last_update_mode", "create_or_update")
-            or "create_or_update"
+            getattr(self._main.config, "last_update_mode", "create_or_update") or "create_or_update"
         )
 
         lines: list[str] = []

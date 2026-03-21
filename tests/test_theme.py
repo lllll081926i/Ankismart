@@ -104,12 +104,9 @@ def test_choice_preview_keeps_question_answer_structure() -> None:
         note_type="Basic",
         tags=["single_choice"],
         fields={
-            "Front": (
-                "Python 默认解释器是？ A. CPython B. JVM C. CLR D. Lua"
-            ),
+            "Front": ("Python 默认解释器是？ A. CPython B. JVM C. CLR D. Lua"),
             "Back": (
-                "答案：A CPython 是官方实现。它与解释器生态兼容性最好，"
-                "并且在多数平台具有成熟支持。"
+                "答案：A CPython 是官方实现。它与解释器生态兼容性最好，并且在多数平台具有成熟支持。"
             ),
         },
     )

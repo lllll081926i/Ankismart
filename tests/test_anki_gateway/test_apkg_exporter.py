@@ -129,11 +129,29 @@ class TestExport:
     def test_export_missing_field_defaults_empty(
         self, mock_pkg_cls: MagicMock, tmp_path: Path
     ) -> None:
-        """If a card is missing a field defined in the model, it defaults to empty string."""
-        mock_pkg_cls.return_value = MagicMock()
         card = CardDraft(fields={"Front": "Q"}, note_type="Basic", deck_name="Default")
-        # Should not raise – "Back" will be ""
-        ApkgExporter().export([card], tmp_path / "out.apkg")
+        with pytest.raises(AnkiGatewayError, match="basic_missing_answer"):
+            ApkgExporter().export([card], tmp_path / "out.apkg")
+
+    def test_apkg_export_blocks_cards_with_unrepairable_structure(self, tmp_path: Path) -> None:
+        exporter = ApkgExporter()
+        cards = [CardDraft(note_type="Basic", deck_name="Deck", fields={"Front": "Q", "Back": ""})]
+
+        with pytest.raises(AnkiGatewayError, match="basic_missing_answer"):
+            exporter.export(cards, tmp_path / "bad.apkg")
+
+    def test_apkg_export_checks_ankismart_cloze_syntax(self, tmp_path: Path) -> None:
+        exporter = ApkgExporter()
+        cards = [
+            CardDraft(
+                note_type="AnkiSmart Cloze",
+                deck_name="Deck",
+                fields={"Text": "plain text", "Extra": ""},
+            )
+        ]
+
+        with pytest.raises(AnkiGatewayError, match="cloze_syntax_invalid"):
+            exporter.export(cards, tmp_path / "bad-cloze.apkg")
 
     @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
     def test_export_tags_passed_to_note(self, mock_pkg_cls: MagicMock, tmp_path: Path) -> None:

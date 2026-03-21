@@ -150,6 +150,12 @@ def apply_compact_combo_metrics(
     set_fixed_height = getattr(combo, "setFixedHeight", None)
     if callable(set_fixed_height):
         set_fixed_height(target_control_height)
+    set_minimum_height = getattr(combo, "setMinimumHeight", None)
+    if callable(set_minimum_height):
+        set_minimum_height(target_control_height)
+    set_maximum_height = getattr(combo, "setMaximumHeight", None)
+    if callable(set_maximum_height):
+        set_maximum_height(target_control_height)
 
     base_style = getattr(combo, "_ankismart_base_stylesheet", None)
     if base_style is None:

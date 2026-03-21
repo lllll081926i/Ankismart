@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 from PyQt6.QtWidgets import QApplication
 
 from ankismart.core.models import CardDraft, CardMetadata, RegenerateRequest
-from ankismart.ui.card_preview_page import CardPreviewPage
+from ankismart.ui.card_preview_page import CardPreviewPage, CardRenderer
 
 _APP = QApplication.instance() or QApplication(sys.argv)
 
@@ -94,3 +94,26 @@ def test_regenerate_selected_cards_reuses_source_document(monkeypatch) -> None:
 
     assert captured["request"].scope == "selected_cards"
     assert captured["request"].source_documents == ["sample.md"]
+
+
+def test_preview_detects_choice_kind_from_strategy_id_not_only_tags() -> None:
+    card = CardDraft(
+        note_type="Basic",
+        fields={"Front": "题目 A. 一 B. 二 C. 三 D. 四", "Back": "答案：B 二正确"},
+        metadata=CardMetadata(strategy_id="single_choice"),
+    )
+
+    assert CardRenderer.detect_card_kind(card) == "single_choice"
+
+
+def test_preview_renders_normalized_choice_layout_from_shared_parser() -> None:
+    card = CardDraft(
+        note_type="Basic",
+        fields={"Front": "题目 A. 一 B. 二 C. 三 D. 四", "Back": "答案：B 二正确"},
+        metadata=CardMetadata(strategy_id="single_choice"),
+    )
+
+    html = CardRenderer.render_card(card)
+
+    assert "A." in html
+    assert "答案" in html

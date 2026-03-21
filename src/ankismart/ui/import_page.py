@@ -78,6 +78,7 @@ from ankismart.ui.workflows import (
 )
 
 logger = get_logger(__name__)
+QMessageBox = MessageBox
 
 _OCR_FILE_SUFFIXES = {
     ".pdf",
@@ -848,6 +849,7 @@ class ImportPage(ProgressMixin, QWidget):
             control_height=22,
             popup_item_height=24,
         )
+        self._enforce_compact_combo_height(self._generation_preset_combo, 22)
         self._populate_generation_preset_combo()
         self._generation_preset_card.hBoxLayout.addWidget(self._generation_preset_combo)
         self._generation_preset_card.hBoxLayout.addSpacing(16)
@@ -1073,6 +1075,7 @@ class ImportPage(ProgressMixin, QWidget):
             control_height=22,
             popup_item_height=24,
         )
+        self._enforce_compact_combo_height(self._strategy_template_combo, 22)
         for key, meta in _STRATEGY_TEMPLATE_LIBRARY.items():
             self._strategy_template_combo.addItem(
                 str(meta["zh"] if is_zh else meta["en"]),
@@ -3061,6 +3064,33 @@ class ImportPage(ProgressMixin, QWidget):
     def update_theme(self):
         """Update theme-dependent components when theme changes."""
         self._refresh_file_item_colors()
+
+    def _enforce_compact_combo_height(self, combo: QWidget, target_height: int) -> None:
+        def _apply_height() -> None:
+            if combo is None:
+                return
+            try:
+                for name in ("setFixedHeight", "setMinimumHeight", "setMaximumHeight"):
+                    setter = getattr(combo, name, None)
+                    if callable(setter):
+                        setter(target_height)
+                line_edit_getter = getattr(combo, "lineEdit", None)
+                if callable(line_edit_getter):
+                    editor = line_edit_getter()
+                    if editor is not None:
+                        for name in ("setFixedHeight", "setMinimumHeight", "setMaximumHeight"):
+                            setter = getattr(editor, name, None)
+                            if callable(setter):
+                                setter(target_height)
+            except RuntimeError:
+                return
+
+        _apply_height()
+        timer = QTimer(combo)
+        timer.setSingleShot(True)
+        timer.timeout.connect(_apply_height)
+        timer.start(0)
+        setattr(combo, "_ankismart_compact_height_timer", timer)
 
     @staticmethod
     def _get_pending_item_color() -> QColor:

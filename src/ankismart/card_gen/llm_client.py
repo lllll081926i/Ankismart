@@ -185,9 +185,7 @@ class LLMClient:
             proxy_url=getattr(config, "proxy_url", ""),
         )
 
-    def chat(
-        self, system_prompt: str, user_prompt: str, timeout: float | None = None
-    ) -> str:
+    def chat(self, system_prompt: str, user_prompt: str, timeout: float | None = None) -> str:
         """Send a chat completion request with retry logic."""
         trace_id = get_trace_id()
         metrics.increment("llm_requests_total")

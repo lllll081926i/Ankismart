@@ -280,9 +280,7 @@ def test_batch_convert_done_shows_errors(monkeypatch):
         type(
             "_MB",
             (),
-            {
-                "warning": staticmethod(lambda parent, title, msg: warnings_shown.append(msg))
-            },
+            {"warning": staticmethod(lambda parent, title, msg: warnings_shown.append(msg))},
         ),
     )
 

@@ -588,6 +588,7 @@ def test_build_documents_filters_pending_regenerate_source_documents():
 
     assert [doc.file_name for doc in docs] == ["b.md"]
 
+
 def test_sample_error_clears_progress_infobar(monkeypatch):
     main = _make_main_window()
     main.config.language = "zh"

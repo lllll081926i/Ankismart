@@ -282,7 +282,9 @@ def test_provider_dialog_required_name_uses_non_blocking_infobar(_qapp, monkeypa
 
 
 def test_save_config_persists_non_llm_settings_without_providers(_qapp, monkeypatch) -> None:
-    cfg = AppConfig(llm_providers=[], active_provider_id="", anki_connect_url="http://127.0.0.1:8765")
+    cfg = AppConfig(
+        llm_providers=[], active_provider_id="", anki_connect_url="http://127.0.0.1:8765"
+    )
     main, _ = make_main(cfg)
     page = SettingsPage(main)
 

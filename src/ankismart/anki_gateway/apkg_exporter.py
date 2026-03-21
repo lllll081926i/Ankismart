@@ -11,6 +11,7 @@ from urllib.parse import urljoin, urlparse
 import genanki
 import httpx
 
+from ankismart.card_gen.card_pipeline import normalize_card_draft, validate_card_for_output
 from ankismart.core.errors import AnkiGatewayError, ErrorCode
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft, MediaItem
@@ -562,27 +563,43 @@ class ApkgExporter:
                 decks_map: dict[str, genanki.Deck] = {}
                 media_files: set[str] = set()
                 for card in cards:
-                    if card.deck_name not in decks_map:
-                        deck_id = random.randrange(1 << 30, 1 << 31)
-                        decks_map[card.deck_name] = genanki.Deck(deck_id, card.deck_name)
+                    normalized_card = normalize_card_draft(card)
+                    validation = validate_card_for_output(normalized_card)
+                    if validation.status == "blocking":
+                        first_error = validation.blocking_errors[0]
+                        raise AnkiGatewayError(
+                            _structure_error_message(first_error),
+                            code=(
+                                ErrorCode.E_CLOZE_SYNTAX_INVALID
+                                if first_error == "cloze_syntax_invalid"
+                                else ErrorCode.E_REQUIRED_FIELD_MISSING
+                            ),
+                            trace_id=trace_id,
+                        )
 
-                    deck = decks_map[card.deck_name]
-                    model = _get_model(card.note_type)
+                    if normalized_card.deck_name not in decks_map:
+                        deck_id = random.randrange(1 << 30, 1 << 31)
+                        decks_map[normalized_card.deck_name] = genanki.Deck(
+                            deck_id, normalized_card.deck_name
+                        )
+
+                    deck = decks_map[normalized_card.deck_name]
+                    model = _get_model(normalized_card.note_type)
 
                     # Build field values in model field order
-                    field_values = [card.fields.get(f["name"], "") for f in model.fields]
+                    field_values = [normalized_card.fields.get(f["name"], "") for f in model.fields]
 
                     note = genanki.Note(
                         model=model,
                         fields=field_values,
-                        tags=card.tags,
+                        tags=normalized_card.tags,
                     )
                     deck.add_note(note)
 
                     for media_items in (
-                        card.media.picture,
-                        card.media.audio,
-                        card.media.video,
+                        normalized_card.media.picture,
+                        normalized_card.media.audio,
+                        normalized_card.media.video,
                     ):
                         for media in media_items:
                             media_path = _materialize_media_file(media, temp_dir_path)
@@ -607,3 +624,9 @@ class ApkgExporter:
                 },
             )
             return output_path
+
+
+def _structure_error_message(error_key: str) -> str:
+    if error_key == "basic_missing_front":
+        return "Required field missing: Front"
+    return error_key

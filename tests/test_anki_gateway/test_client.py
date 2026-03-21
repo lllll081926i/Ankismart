@@ -12,6 +12,7 @@ from ankismart.core.errors import AnkiGatewayError, ErrorCode
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _mock_response(json_data: dict, status_code: int = 200) -> httpx.Response:
     resp = httpx.Response(status_code, json=json_data, request=httpx.Request("POST", "http://test"))
     return resp
@@ -20,6 +21,7 @@ def _mock_response(json_data: dict, status_code: int = 200) -> httpx.Response:
 # ---------------------------------------------------------------------------
 # _request – basic behaviour
 # ---------------------------------------------------------------------------
+
 
 class TestRequest:
     @patch("ankismart.anki_gateway.client.httpx.post")
@@ -127,6 +129,7 @@ class TestRequest:
 # check_connection
 # ---------------------------------------------------------------------------
 
+
 class TestCheckConnection:
     @patch("ankismart.anki_gateway.client.httpx.post")
     def test_check_connection_ok(self, mock_post: MagicMock) -> None:
@@ -142,6 +145,7 @@ class TestCheckConnection:
 # ---------------------------------------------------------------------------
 # Convenience wrappers
 # ---------------------------------------------------------------------------
+
 
 class TestConvenienceMethods:
     @patch("ankismart.anki_gateway.client.httpx.post")

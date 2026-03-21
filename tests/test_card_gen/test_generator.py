@@ -28,10 +28,12 @@ def _fake_llm_basic(system_prompt: str, user_prompt: str) -> str:
 
 
 def _fake_llm_cloze(system_prompt: str, user_prompt: str) -> str:
-    return json.dumps([
-        {"Text": "The {{c1::sun}} is a star.", "Extra": ""},
-        {"Text": "{{c1::Water}} is H2O.", "Extra": "Chemistry"},
-    ])
+    return json.dumps(
+        [
+            {"Text": "The {{c1::sun}} is a star.", "Extra": ""},
+            {"Text": "{{c1::Water}} is H2O.", "Extra": "Chemistry"},
+        ]
+    )
 
 
 def _make_generator(chat_side_effect=None, chat_return_value=None) -> CardGenerator:
@@ -237,8 +239,8 @@ class TestCardGeneratorGenerate:
         )
         drafts = gen.generate(request)
 
-        # Back field should be "A1<br><img ...>"
-        assert drafts[0].fields["Back"].startswith("A1<br>")
+        # Back field should keep normalized answer block before appending the image.
+        assert drafts[0].fields["Back"].startswith("答案: A1<br>")
 
     def test_llm_called_with_markdown_content(self):
         gen = _make_generator(chat_side_effect=_fake_llm_basic)

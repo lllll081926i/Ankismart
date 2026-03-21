@@ -107,7 +107,26 @@ def test_card_editor_get_cards_returns_edited():
     assert result[1].fields["Front"] == "Q2"
 
 
+def test_get_cards_reformats_basic_back_to_answer_explanation_block():
+    card = _make_card("什么是事务原子性？", "原子性。解析：要么全成要么全败。")
+    dialog = CardEditWidget.__new__(CardEditWidget)
+    dialog._cards = [card]
+    dialog._current_index = 0
+    dialog._field_editors = {
+        "Front": _FakePlainTextEdit("什么是事务原子性？"),
+        "Back": _FakePlainTextEdit("原子性。解析：要么全成要么全败。"),
+    }
+    dialog._list = _FakeListWidget(1)
+    dialog.cards_changed = _FakeSignal()
+
+    result = dialog.get_cards()
+
+    assert result[0].fields["Back"].startswith("答案:")
+    assert "解析:" in result[0].fields["Back"]
+
+
 # --- ResultPage update-mode combo tests ---
+
 
 @pytest.fixture(scope="session")
 def _qapp():
@@ -121,16 +140,20 @@ def _qapp():
 class _FakeMainWindow:
     def __init__(self):
         self.cards = []
-        self.config = type("C", (), {
-            "anki_connect_url": "",
-            "anki_connect_key": "",
-            "proxy_url": "",
-            "last_update_mode": None,
-            "allow_duplicate": False,
-            "duplicate_scope": "deck",
-            "duplicate_check_model": True,
-            "language": "zh",
-        })()
+        self.config = type(
+            "C",
+            (),
+            {
+                "anki_connect_url": "",
+                "anki_connect_key": "",
+                "proxy_url": "",
+                "last_update_mode": None,
+                "allow_duplicate": False,
+                "duplicate_scope": "deck",
+                "duplicate_check_model": True,
+                "language": "zh",
+            },
+        )()
 
 
 def test_update_combo_has_three_items(_qapp):
@@ -366,6 +389,7 @@ def test_export_apkg_uses_export_worker(monkeypatch, _qapp, tmp_path) -> None:
         "ankismart.ui.result_page._create_apkg_exporter",
         lambda: created.__setitem__("factory_called", True) or object(),
     )
+
     class _ExportWorkerStub:
         def __init__(self, exporter, cards, output_path):
             created["exporter"] = exporter
@@ -497,8 +521,9 @@ def test_repush_all_uses_lazy_gateway_factory(monkeypatch, _qapp) -> None:
 
     monkeypatch.setattr(
         "ankismart.ui.result_page._create_push_gateway",
-        lambda config: created.__setitem__("gateway_calls", created["gateway_calls"] + 1)
-        or object(),
+        lambda config: (
+            created.__setitem__("gateway_calls", created["gateway_calls"] + 1) or object()
+        ),
     )
 
     class _PushWorkerStub:
@@ -523,6 +548,7 @@ def test_repush_all_uses_lazy_gateway_factory(monkeypatch, _qapp) -> None:
 
     assert created["gateway_calls"] == 1
     assert created["started"] is True
+
 
 def test_table_title_uses_question_field_only(_qapp) -> None:
     page = ResultPage(_FakeMainWindow())

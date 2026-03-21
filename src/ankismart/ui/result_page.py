@@ -230,9 +230,7 @@ class ResultPage(QWidget):
         self._btn_batch_edit_deck.setEnabled(False)
         all_buttons_row.addWidget(self._btn_batch_edit_deck)
 
-        self._btn_export_selected = PushButton(
-            "导出所选" if lang == "zh" else "Export Selected"
-        )
+        self._btn_export_selected = PushButton("导出所选" if lang == "zh" else "Export Selected")
         self._btn_export_selected.setMinimumHeight(34)
         self._btn_export_selected.clicked.connect(self._export_selected_apkg)
         self._btn_export_selected.setEnabled(False)
@@ -491,9 +489,7 @@ class ResultPage(QWidget):
             return
         if self._export_worker and self._export_worker.isRunning():
             wait_title = (
-                "请稍候"
-                if getattr(self._main.config, "language", "zh") == "zh"
-                else "Please Wait"
+                "请稍候" if getattr(self._main.config, "language", "zh") == "zh" else "Please Wait"
             )
             self._show_info_bar(
                 "info",
@@ -572,9 +568,7 @@ class ResultPage(QWidget):
             self._show_info_bar(
                 "info",
                 "请稍候" if is_zh else "Please Wait",
-                "已有导出任务进行中"
-                if is_zh
-                else "Another export task is already running.",
+                "已有导出任务进行中" if is_zh else "Another export task is already running.",
                 duration=2000,
             )
             return
@@ -845,9 +839,7 @@ class ResultPage(QWidget):
     def _on_push_card_progress(self, current: int, total: int) -> None:
         is_zh = getattr(self._main.config, "language", "zh") == "zh"
         self._set_status_label(
-            f"已完成 {current}/{total} 张卡片推送"
-            if is_zh
-            else f"Pushed {current}/{total} cards"
+            f"已完成 {current}/{total} 张卡片推送" if is_zh else f"Pushed {current}/{total} cards"
         )
 
     def _apply_duplicate_settings(self, cards: list[CardDraft]) -> None:
@@ -999,9 +991,7 @@ class ResultPage(QWidget):
         self._cleanup_export_worker()
         is_zh = getattr(self._main.config, "language", "zh") == "zh"
         self._restore_export_buttons()
-        self._set_status_label(
-            f"导出完成：{path}" if is_zh else f"Export completed: {path}"
-        )
+        self._set_status_label(f"导出完成：{path}" if is_zh else f"Export completed: {path}")
 
         self._show_info_bar(
             "success",
@@ -1273,9 +1263,7 @@ class ResultPage(QWidget):
         worker.finished.connect(self._on_repush_done)
         worker.error.connect(self._on_repush_error)
         self._set_status_label(
-            f"正在推送 {len(self._cards)} 张卡片"
-            if is_zh
-            else f"Pushing {len(self._cards)} cards"
+            f"正在推送 {len(self._cards)} 张卡片" if is_zh else f"Pushing {len(self._cards)} cards"
         )
         worker.start()
 

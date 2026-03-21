@@ -354,7 +354,7 @@ class TestPushOrUpdate:
 
         result = gw.push_or_update([_card(fields={"Front": "Q", "Back": "A"})])
 
-        client.update_note_fields.assert_called_once_with(777, {"Front": "Q", "Back": "A"})
+        client.update_note_fields.assert_called_once_with(777, {"Front": "Q", "Back": "答案: A"})
         client.add_note.assert_not_called()
         assert result.succeeded == 1
         assert result.results[0].note_id == 777
@@ -439,7 +439,7 @@ class TestCreateOrUpdateNote:
         status = gw.create_or_update_note(_card(fields={"Front": "Q", "Back": "A2"}))
         assert status.success is True
         assert status.note_id == 42
-        client.update_note_fields.assert_called_once_with(42, {"Front": "Q", "Back": "A2"})
+        client.update_note_fields.assert_called_once_with(42, {"Front": "Q", "Back": "答案: A2"})
         client.add_note.assert_not_called()
 
     def test_validation_error_propagates(self, monkeypatch) -> None:
@@ -502,7 +502,7 @@ class TestPushUpdateMode:
         result = gw.push([_card(fields={"Front": "Q", "Back": "A"})], update_mode="update_only")
         assert result.succeeded == 1
         assert result.results[0].note_id == 55
-        client.update_note_fields.assert_called_once_with(55, {"Front": "Q", "Back": "A"})
+        client.update_note_fields.assert_called_once_with(55, {"Front": "Q", "Back": "答案: A"})
         client.add_note.assert_not_called()
 
     def test_update_only_fails_when_not_found(self, monkeypatch) -> None:
@@ -545,7 +545,7 @@ class TestPushUpdateMode:
         )
         assert result.succeeded == 1
         assert result.results[0].note_id == 300
-        client.update_note_fields.assert_called_once_with(300, {"Front": "Q", "Back": "A"})
+        client.update_note_fields.assert_called_once_with(300, {"Front": "Q", "Back": "答案: A"})
         client.add_note.assert_not_called()
 
     def test_create_or_update_fails_when_lookup_errors(self, monkeypatch) -> None:

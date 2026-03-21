@@ -105,7 +105,7 @@ def test_save_current_writes_back_to_model():
     w._save_current()
 
     assert card.fields["Front"] == "Edited Q"
-    assert card.fields["Back"] == "Edited A"
+    assert card.fields["Back"] == "答案: Edited A"
 
 
 def test_save_current_noop_when_no_selection():
@@ -146,7 +146,7 @@ def test_cloze_card_fields():
     w._save_current()
 
     assert card.fields["Text"] == "{{c1::edited}}"
-    assert card.fields["Back Extra"] == "some note"
+    assert card.fields["Extra"] == "some note"
 
 
 def test_save_current_no_change_when_text_same():
@@ -161,7 +161,7 @@ def test_save_current_no_change_when_text_same():
     # Should not raise or break
     w._save_current()
     assert card.fields["Front"] == "Q"
-    assert card.fields["Back"] == "A"
+    assert card.fields["Back"] == "答案: A"
 
 
 def test_get_cards_after_edit_reflects_changes():
@@ -175,4 +175,28 @@ def test_get_cards_after_edit_reflects_changes():
     }
     result = w.get_cards()
     assert result[0].fields["Front"] == "New Q"
-    assert result[0].fields["Back"] == "New A"
+    assert result[0].fields["Back"] == "答案: New A"
+
+
+def test_save_current_reformats_choice_fields_after_user_edit():
+    card = CardDraft(
+        fields={
+            "Front": "题目 A. 一 B. 二 C. 三 D. 四",
+            "Back": "答案：B 二是正确项。",
+        },
+        note_type="Basic",
+        deck_name="Test",
+        tags=["test"],
+    )
+    card.metadata.strategy_id = "single_choice"
+    w = _build_widget_no_qt([card])
+    w._current_index = 0
+    w._field_editors = {
+        "Front": _FakePlainTextEdit("题目 A. 一 B. 二 C. 三 D. 四"),
+        "Back": _FakePlainTextEdit("答案：B 二是正确项。"),
+    }
+
+    w._save_current()
+
+    assert card.fields["Front"].splitlines()[1].startswith("A.")
+    assert card.fields["Back"].startswith("答案: B")

@@ -26,20 +26,18 @@ BASIC_SYSTEM_PROMPT = (
     "- Questions should be self-contained (understandable without the source text)\n"
     "- Avoid overly simple or overly broad questions; each card should test "
     "a specific, meaningful piece of knowledge\n"
-    "- If the content is in Chinese, generate cards in Chinese\n"
-    + _MATH_FORMAT_RULES
-    + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "What is photosynthesis?",\n'
     '   "Back": "Answer: The process that converts light energy into chemical energy.\\n'
-    'Explanation:\\nOccurs mainly in chloroplasts.\\n'
+    "Explanation:\\nOccurs mainly in chloroplasts.\\n"
     'Produces glucose and oxygen from CO2 and water."},\n'
     '  {"Front": "What is the Pythagorean theorem?",\n'
     '   "Back": "Answer: In a right triangle, '
-    '<anki-mathjax>a^2 + b^2 = c^2</anki-mathjax>.\\n'
-    'Explanation:\\n<anki-mathjax>c</anki-mathjax> is the hypotenuse.\\n'
-    '<anki-mathjax>a</anki-mathjax> and <anki-mathjax>b</anki-mathjax> are '
+    "<anki-mathjax>a^2 + b^2 = c^2</anki-mathjax>.\\n"
+    "Explanation:\\n<anki-mathjax>c</anki-mathjax> is the hypotenuse.\\n"
+    "<anki-mathjax>a</anki-mathjax> and <anki-mathjax>b</anki-mathjax> are "
     'the other two sides."}\n'
     "]\n"
 )
@@ -63,9 +61,7 @@ CLOZE_SYSTEM_PROMPT = (
     "test a specific, meaningful piece of knowledge\n"
     "- Extra must be a layered explanation block using multiple lines; "
     "do NOT add numbering prefixes like 1./2.\n"
-    "- If the content is in Chinese, generate cards in Chinese\n"
-    + _MATH_FORMAT_RULES
-    + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Text": "Photosynthesis converts {{c1::light energy}} into '
@@ -94,9 +90,7 @@ IMAGE_QA_SYSTEM_PROMPT = (
     "- For long explanations, split into 2+ short paragraphs on new lines "
     "(do NOT add numbering prefixes like 1./2.)\n"
     "- No explanations or extra text outside the JSON array\n"
-    "- Create 3-10 cards depending on content density\n"
-    + _MATH_FORMAT_RULES
-    + "\n"
+    "- Create 3-10 cards depending on content density\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "In the cell diagram, what organelle is responsible '
@@ -106,8 +100,8 @@ IMAGE_QA_SYSTEM_PROMPT = (
     '  {"Front": "What formula is shown in the diagram for calculating '
     'kinetic energy?",\n'
     '   "Back": "Answer: <anki-mathjax block=\\"true\\">E_k = '
-    '\\\\frac{1}{2}mv^2</anki-mathjax>.\\n'
-    'Explanation:\\n<anki-mathjax>m</anki-mathjax> is mass.\\n'
+    "\\\\frac{1}{2}mv^2</anki-mathjax>.\\n"
+    "Explanation:\\n<anki-mathjax>m</anki-mathjax> is mass.\\n"
     '<anki-mathjax>v</anki-mathjax> is velocity."}\n'
     "]\n"
 )
@@ -122,7 +116,7 @@ CONCEPT_SYSTEM_PROMPT = (
     "- Back must follow a two-part structure:\n"
     '  1) First line: "答案: <one-line concept summary>" (or "Answer: <...>")\n'
     '  2) Then "解析:" (or "Explanation:") covering principle/significance/'
-    'example in layered lines\n'
+    "example in layered lines\n"
     '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
     "- For long explanations, split into 2+ short paragraphs on new lines "
     "(do NOT add numbering prefixes like 1./2.)\n"
@@ -130,9 +124,7 @@ CONCEPT_SYSTEM_PROMPT = (
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
     "- Focus on concepts that require understanding, not simple facts\n"
-    "- If the content is in Chinese, generate cards in Chinese\n"
-    + _MATH_FORMAT_RULES
-    + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "Photosynthesis",\n'
@@ -165,9 +157,7 @@ KEY_TERMS_SYSTEM_PROMPT = (
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
     "- Prioritize domain-specific or technical terms over common vocabulary\n"
-    "- If the content is in Chinese, generate cards in Chinese\n"
-    + _MATH_FORMAT_RULES
-    + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "Chloroplast",\n'
@@ -176,9 +166,9 @@ KEY_TERMS_SYSTEM_PROMPT = (
     'Example: chloroplasts enable leaves to produce glucose from sunlight."},\n'
     '  {"Front": "Derivative",\n'
     '   "Back": "Answer: The rate of change of a function, denoted by '
-    '<anki-mathjax>\\\\frac{df}{dx}</anki-mathjax> or <anki-mathjax>f\'(x)</anki-mathjax>.\\n'
+    "<anki-mathjax>\\\\frac{df}{dx}</anki-mathjax> or <anki-mathjax>f'(x)</anki-mathjax>.\\n"
     "Explanation:\\nRepresents tangent slope at a point.\\n"
-    'Example: for <anki-mathjax>f(x)=x^2</anki-mathjax>, derivative is '
+    "Example: for <anki-mathjax>f(x)=x^2</anki-mathjax>, derivative is "
     '<anki-mathjax>2x</anki-mathjax>."}'
     "\n"
     "]\n"
@@ -202,9 +192,7 @@ SINGLE_CHOICE_SYSTEM_PROMPT = (
     "- Exactly one option should be correct\n"
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
-    "- If the content is in Chinese, generate cards in Chinese\n"
-    + _MATH_FORMAT_RULES
-    + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "What is the derivative of <anki-mathjax>f(x) = x^3</anki-mathjax>?\\n\\n'
@@ -218,7 +206,7 @@ SINGLE_CHOICE_SYSTEM_PROMPT = (
     "<anki-mathjax>\\\\frac{d}{dx}(x^n) = nx^{n-1}</anki-mathjax>，"
     "所以结果是 <anki-mathjax>3x^2</anki-mathjax>。\\n"
     "C. <anki-mathjax>x^2</anki-mathjax> 漏掉了系数 3。\\n"
-    "D. <anki-mathjax>3x</anki-mathjax> 的次数不对。\"}\n"
+    'D. <anki-mathjax>3x</anki-mathjax> 的次数不对。"}\n'
     "]\n"
 )
 
@@ -240,23 +228,21 @@ MULTIPLE_CHOICE_SYSTEM_PROMPT = (
     "- Each question should have 2 or more correct options\n"
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
-    "- If the content is in Chinese, generate cards in Chinese\n"
-    + _MATH_FORMAT_RULES
-    + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "Which of the following are solutions to '
-    '<anki-mathjax>x^2 - 5x + 6 = 0</anki-mathjax>?\\n\\n'
+    "<anki-mathjax>x^2 - 5x + 6 = 0</anki-mathjax>?\\n\\n"
     "A. <anki-mathjax>x = 1</anki-mathjax>\\n"
     "B. <anki-mathjax>x = 2</anki-mathjax>\\n"
     "C. <anki-mathjax>x = 3</anki-mathjax>\\n"
     'D. <anki-mathjax>x = 6</anki-mathjax>",\n'
     '   "Back": "答案: B, C\\n'
-    '解析:\\nA. 代入后不满足方程。\\n'
-    'B. 因式分解得到 <anki-mathjax>(x-2)(x-3) = 0</anki-mathjax>，'
-    '所以 <anki-mathjax>x = 2</anki-mathjax> 正确。\\n'
-    'C. 因式分解得到 <anki-mathjax>(x-2)(x-3) = 0</anki-mathjax>，'
-    '所以 <anki-mathjax>x = 3</anki-mathjax> 正确。\\n'
+    "解析:\\nA. 代入后不满足方程。\\n"
+    "B. 因式分解得到 <anki-mathjax>(x-2)(x-3) = 0</anki-mathjax>，"
+    "所以 <anki-mathjax>x = 2</anki-mathjax> 正确。\\n"
+    "C. 因式分解得到 <anki-mathjax>(x-2)(x-3) = 0</anki-mathjax>，"
+    "所以 <anki-mathjax>x = 3</anki-mathjax> 正确。\\n"
     'D. 代入后不满足方程。"}\n'
     "]\n"
 )

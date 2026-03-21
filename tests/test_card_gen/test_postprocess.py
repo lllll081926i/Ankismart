@@ -136,11 +136,11 @@ class TestBuildCardDrafts:
         assert drafts[0].note_type == "Basic"
         assert drafts[0].tags == ["tag1"]
         assert drafts[0].trace_id == "t-123"
-        assert drafts[0].fields == {"Front": "Q1", "Back": "A1"}
+        assert drafts[0].fields == {"Front": "Q1", "Back": "答案: A1"}
 
     def test_basic_alias_fields_are_normalized(self):
         drafts = build_card_drafts(
-            raw_cards=[{"Question": "Q1", "Answer": "A1"}],
+            raw_cards=[{"Question": "Q1", "Answer": "A1。解析：补充说明。"}],
             deck_name="TestDeck",
             note_type="Basic",
             tags=["tag1"],
@@ -148,7 +148,21 @@ class TestBuildCardDrafts:
         )
 
         assert len(drafts) == 1
-        assert drafts[0].fields == {"Front": "Q1", "Back": "A1"}
+        assert drafts[0].fields["Front"] == "Q1"
+        assert drafts[0].fields["Back"].startswith("答案:")
+        assert "解析:" in drafts[0].fields["Back"]
+
+    def test_build_card_drafts_normalizes_single_choice_using_strategy_id(self):
+        drafts = build_card_drafts(
+            raw_cards=[{"Front": "题目 A. 一 B. 二 C. 三 D. 四", "Back": "答案：B 二是正确项。"}],
+            deck_name="Deck",
+            note_type="Basic",
+            tags=["ankismart"],
+            trace_id="t-123",
+            strategy_id="single_choice",
+        )
+
+        assert drafts[0].fields["Front"].splitlines()[1].startswith("A.")
 
     def test_cloze_valid_cards(self):
         raw = [
@@ -225,7 +239,7 @@ class TestBuildCardDrafts:
             trace_id="t-7",
         )
 
-        assert drafts[0].metadata.quality_flags == ["too_short"]
+        assert drafts[0].metadata.quality_flags == ["missing_explanation", "too_short"]
 
     def test_all_cloze_invalid_returns_empty(self):
         raw = [

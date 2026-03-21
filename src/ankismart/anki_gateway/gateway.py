@@ -5,6 +5,7 @@ from typing import Any, Callable, Iterable, Literal
 from ankismart.anki_gateway.client import AnkiConnectClient
 from ankismart.anki_gateway.styling import MODERN_CARD_CSS
 from ankismart.anki_gateway.validator import validate_card_draft
+from ankismart.card_gen.card_pipeline import normalize_card_draft
 from ankismart.core.errors import AnkiGatewayError
 from ankismart.core.logging import get_logger
 from ankismart.core.models import CardDraft, CardPushStatus, PushResult
@@ -483,6 +484,7 @@ class AnkiGateway:
             and resolved_card.note_type not in available_models
         ):
             resolved_card = card
+        resolved_card = normalize_card_draft(resolved_card)
         deck_cache = self._fetch_deck_cache()
         self._ensure_deck_exists(resolved_card.deck_name, deck_cache)
         self._sync_model_styling([resolved_card])
@@ -521,6 +523,7 @@ class AnkiGateway:
                     prepared_cards=prepared_cards,
                     available_models=available_models,
                 )
+                prepared_cards = [normalize_card_draft(card) for card in prepared_cards]
                 deck_cache = self._fetch_deck_cache()
                 self._sync_model_styling(prepared_cards)
 

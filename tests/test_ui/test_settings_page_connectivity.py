@@ -399,9 +399,7 @@ def test_error_handler_maps_cloud_ocr_file_size_limit_code() -> None:
 def test_error_handler_maps_cloud_ocr_page_limit_code() -> None:
     handler = ErrorHandler(language="zh")
 
-    info = handler.classify_error(
-        "[E_CONFIG_INVALID] Cloud OCR PDF pages exceed 600-page limit"
-    )
+    info = handler.classify_error("[E_CONFIG_INVALID] Cloud OCR PDF pages exceed 600-page limit")
 
     assert info.category == ErrorCategory.FILE_FORMAT
     assert "600" in info.message

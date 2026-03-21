@@ -10,6 +10,7 @@ from ankismart.core.models import CardDraft, MediaAttachments, MediaItem
 # Fake client that returns configurable data
 # ---------------------------------------------------------------------------
 
+
 class _FakeClient:
     def __init__(
         self,
@@ -35,6 +36,7 @@ class _FakeClient:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _basic_card(**overrides) -> CardDraft:
     defaults = {
         "fields": {"Front": "Q", "Back": "A"},
@@ -48,6 +50,7 @@ def _basic_card(**overrides) -> CardDraft:
 # ---------------------------------------------------------------------------
 # 1. Deck validation
 # ---------------------------------------------------------------------------
+
 
 class TestDeckValidation:
     def test_valid_deck_passes(self) -> None:
@@ -64,6 +67,7 @@ class TestDeckValidation:
 # 2. Model validation
 # ---------------------------------------------------------------------------
 
+
 class TestModelValidation:
     def test_valid_model_passes(self) -> None:
         validate_card_draft(_basic_card(), _FakeClient())
@@ -78,6 +82,7 @@ class TestModelValidation:
 # ---------------------------------------------------------------------------
 # 3. Required field validation
 # ---------------------------------------------------------------------------
+
 
 class TestFieldValidation:
     def test_first_field_present_passes(self) -> None:
@@ -94,14 +99,17 @@ class TestFieldValidation:
         with pytest.raises(AnkiGatewayError, match="Required field missing"):
             validate_card_draft(card, _FakeClient())
 
-    def test_second_field_empty_is_ok(self) -> None:
+    def test_validate_card_draft_requires_normalized_back_for_basic_cards(self) -> None:
         card = _basic_card(fields={"Front": "Q", "Back": ""})
-        validate_card_draft(card, _FakeClient())  # should not raise
+        with pytest.raises(AnkiGatewayError, match="basic_missing_answer") as exc_info:
+            validate_card_draft(card, _FakeClient())
+        assert exc_info.value.code == ErrorCode.E_REQUIRED_FIELD_MISSING
 
 
 # ---------------------------------------------------------------------------
 # 4. Cloze syntax validation
 # ---------------------------------------------------------------------------
+
 
 class TestClozeValidation:
     def test_valid_cloze(self) -> None:
@@ -119,6 +127,16 @@ class TestClozeValidation:
         )
         client = _FakeClient(fields=["Text", "Extra"])
         with pytest.raises(AnkiGatewayError, match="(?i)cloze") as exc_info:
+            validate_card_draft(card, client)
+        assert exc_info.value.code == ErrorCode.E_CLOZE_SYNTAX_INVALID
+
+    def test_validate_card_draft_checks_ankismart_cloze_syntax(self) -> None:
+        card = _basic_card(
+            note_type="AnkiSmart Cloze",
+            fields={"Text": "plain text", "Extra": ""},
+        )
+        client = _FakeClient(models=["AnkiSmart Cloze"], fields=["Text", "Extra"])
+        with pytest.raises(AnkiGatewayError, match="cloze_syntax_invalid") as exc_info:
             validate_card_draft(card, client)
         assert exc_info.value.code == ErrorCode.E_CLOZE_SYNTAX_INVALID
 
@@ -145,6 +163,7 @@ class TestClozeValidation:
 # 5. Media validation
 # ---------------------------------------------------------------------------
 
+
 class TestMediaValidation:
     def test_media_with_url_passes(self) -> None:
         media = MediaAttachments(
@@ -154,23 +173,17 @@ class TestMediaValidation:
         validate_card_draft(card, _FakeClient())
 
     def test_media_with_path_passes(self) -> None:
-        media = MediaAttachments(
-            picture=[MediaItem(filename="img.png", path="/tmp/img.png")]
-        )
+        media = MediaAttachments(picture=[MediaItem(filename="img.png", path="/tmp/img.png")])
         card = _basic_card(media=media)
         validate_card_draft(card, _FakeClient())
 
     def test_media_with_data_passes(self) -> None:
-        media = MediaAttachments(
-            video=[MediaItem(filename="v.mp4", data="base64data")]
-        )
+        media = MediaAttachments(video=[MediaItem(filename="v.mp4", data="base64data")])
         card = _basic_card(media=media)
         validate_card_draft(card, _FakeClient())
 
     def test_media_no_source_raises(self) -> None:
-        media = MediaAttachments(
-            audio=[MediaItem(filename="a.mp3")]
-        )
+        media = MediaAttachments(audio=[MediaItem(filename="a.mp3")])
         card = _basic_card(media=media)
         with pytest.raises(AnkiGatewayError, match="no source") as exc_info:
             validate_card_draft(card, _FakeClient())
@@ -193,6 +206,7 @@ class TestMediaValidation:
 # ---------------------------------------------------------------------------
 # 6. trace_id propagation
 # ---------------------------------------------------------------------------
+
 
 class TestTraceIdPropagation:
     def test_trace_id_from_draft(self) -> None:

@@ -12,6 +12,7 @@ from qfluentwidgets import (
     SubtitleLabel,
 )
 
+from ankismart.card_gen.card_pipeline import normalize_card_draft
 from ankismart.core.models import CardDraft
 from ankismart.ui.i18n import t
 
@@ -91,6 +92,7 @@ class CardEditDialog(MessageBoxBase):
             if deck_name:
                 self._card.deck_name = deck_name
 
+        self._card = normalize_card_draft(self._card)
         return self._card
 
 
@@ -121,6 +123,9 @@ class CardEditWidget(QWidget):
 
         card = self._cards[self._current_index]
         changed = False
+        normalized_before = normalize_card_draft(card)
+        previous_fields = dict(normalized_before.fields)
+        previous_flags = list(normalized_before.metadata.quality_flags)
         for field_name, editor in self._field_editors.items():
             if not hasattr(editor, "toPlainText"):
                 continue
@@ -129,7 +134,16 @@ class CardEditWidget(QWidget):
                 card.fields[field_name] = text
                 changed = True
 
-        if not changed:
+        normalized_card = normalize_card_draft(card)
+        normalized_changed = (
+            dict(normalized_card.fields) != previous_fields
+            or list(normalized_card.metadata.quality_flags) != previous_flags
+        )
+        card.fields = dict(normalized_card.fields)
+        card.metadata = normalized_card.metadata
+        self._cards[self._current_index] = card
+
+        if not changed and not normalized_changed:
             return
 
         item = (
