@@ -79,6 +79,25 @@ def test_load_config_populates_ocr_controls(_qapp) -> None:
     assert page._ocr_cloud_limit_card.isHidden() is False
 
 
+def test_load_config_populates_doc_convert_backend(_qapp) -> None:
+    provider = LLMProviderConfig(
+        id="p1",
+        name="OpenAI",
+        api_key="test-key",
+        base_url="https://api.openai.com/v1",
+        model="gpt-4o",
+    )
+    cfg = AppConfig(
+        llm_providers=[provider],
+        active_provider_id="p1",
+        doc_convert_backend="markitdown",
+    )
+    main, _ = make_main(cfg)
+    page = SettingsPage(main)
+
+    assert page._doc_convert_backend_combo.currentData() == "markitdown"
+
+
 def test_load_config_populates_generation_preset(_qapp) -> None:
     provider = LLMProviderConfig(
         id="p1",
@@ -201,6 +220,33 @@ def test_save_config_persists_ocr_settings(_qapp, monkeypatch) -> None:
     assert captured["cfg"].ocr_mode == "local"
     assert captured["cfg"].ocr_model_tier == "standard"
     assert captured["cfg"].ocr_model_locked_by_user is True
+
+
+def test_save_config_persists_doc_convert_backend(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+
+    captured: dict[str, AppConfig] = {}
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c)
+    )
+    monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+
+    for index in range(page._doc_convert_backend_combo.count()):
+        if page._doc_convert_backend_combo.itemData(index) == "markitdown":
+            page._doc_convert_backend_combo.setCurrentIndex(index)
+            break
+
+    page._save_config()
+
+    assert "cfg" in captured
+    assert captured["cfg"].doc_convert_backend == "markitdown"
 
 
 def test_save_config_does_not_override_theme(_qapp, monkeypatch) -> None:

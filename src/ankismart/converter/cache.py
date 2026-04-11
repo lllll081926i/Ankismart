@@ -79,6 +79,8 @@ def get_file_hash(path: Path) -> str:
 def build_conversion_cache_key(
     path: Path,
     *,
+    file_type: str = "",
+    doc_convert_backend: str = "native",
     ocr_mode: str = "local",
     cloud_provider: str = "",
     cloud_endpoint: str = "",
@@ -86,7 +88,14 @@ def build_conversion_cache_key(
 ) -> str:
     """Build a cache key that includes conversion-affecting runtime options."""
     file_hash = get_file_hash(path)
+    normalized_file_type = str(file_type or "").strip().lower()
+    normalized_doc_backend = ""
+    if normalized_file_type in {"docx", "pptx"}:
+        normalized_doc_backend = str(doc_convert_backend or "native").strip().lower()
+
     context = {
+        "file_type": normalized_file_type,
+        "doc_convert_backend": normalized_doc_backend,
         "ocr_mode": str(ocr_mode or "local").strip().lower(),
         "cloud_provider": str(cloud_provider or "").strip().lower(),
         "cloud_endpoint": str(cloud_endpoint or "").strip().rstrip("/"),

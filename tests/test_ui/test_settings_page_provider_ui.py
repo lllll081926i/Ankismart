@@ -365,6 +365,24 @@ def test_retranslate_ui_refreshes_provider_copy(_qapp) -> None:
     assert action_widget.layout().itemAt(1).widget().text() == "Edit"
 
 
+def test_retranslate_ui_refreshes_doc_convert_backend_copy(_qapp) -> None:
+    cfg = AppConfig(language="zh", doc_convert_backend="markitdown")
+    main, _ = make_main(cfg)
+    page = SettingsPage(main)
+
+    assert page._doc_convert_backend_card.titleLabel.text() == "非 OCR 文档转 Markdown 后端"
+    assert "DOCX / PPTX" in page._doc_convert_backend_card.contentLabel.text()
+    assert page._doc_convert_backend_combo.currentText() == "MarkItDown（实验）"
+
+    main.config = main.config.model_copy(update={"language": "en"})
+    page._main.config = main.config
+    page.retranslate_ui()
+
+    assert page._doc_convert_backend_card.titleLabel.text() == "Non-OCR Markdown Backend"
+    assert "PDFs and images still use OCR." in page._doc_convert_backend_card.contentLabel.text()
+    assert page._doc_convert_backend_combo.currentText() == "MarkItDown (Experimental)"
+
+
 def test_save_first_provider_refreshes_summary_and_group_list(_qapp, monkeypatch) -> None:
     cfg = AppConfig(llm_providers=[], active_provider_id="")
     main, _ = make_main(cfg)

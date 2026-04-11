@@ -16,6 +16,7 @@ from ankismart.converter.cache import (
     save_cache_by_hash,
 )
 from ankismart.converter.detector import detect_file_type
+from ankismart.converter.markitdown_converter import convert as markitdown_convert
 from ankismart.core.errors import ConvertError, ErrorCode
 from ankismart.core.logging import get_logger
 from ankismart.core.models import MarkdownResult
@@ -32,6 +33,10 @@ _CONVERTERS: dict[str, Callable[[Path, str], MarkdownResult]] = {
 }
 
 
+def _convert_with_markitdown(file_path: Path, trace_id: str) -> MarkdownResult:
+    return markitdown_convert(file_path, trace_id)
+
+
 def _update_cache_hit_ratio_metric() -> None:
     total = metrics.cache_hits + metrics.cache_misses
     ratio = float(metrics.cache_hits / total) if total else 0.0
@@ -44,6 +49,7 @@ class DocumentConverter:
     def __init__(
         self,
         *,
+        doc_convert_backend: str = "native",
         ocr_correction_fn: Callable[[str], str] | None = None,
         ocr_mode: str = "local",
         ocr_cloud_provider: str = "",
@@ -51,6 +57,7 @@ class DocumentConverter:
         ocr_cloud_api_key: str = "",
         proxy_url: str = "",
     ) -> None:
+        self._doc_convert_backend = str(doc_convert_backend or "native").strip().lower()
         self._ocr_correction_fn = ocr_correction_fn
         self._ocr_mode = ocr_mode
         self._ocr_cloud_provider = ocr_cloud_provider
@@ -58,7 +65,7 @@ class DocumentConverter:
         self._ocr_cloud_api_key = ocr_cloud_api_key
         self._proxy_url = proxy_url
 
-    def _get_cache_key(self, file_path: Path) -> str:
+    def _get_cache_key(self, file_path: Path, *, file_type: str) -> str:
         correction_fn = self._ocr_correction_fn
         correction_fingerprint = ""
         if correction_fn is not None:
@@ -77,18 +84,22 @@ class DocumentConverter:
 
         return build_conversion_cache_key(
             file_path,
+            file_type=file_type,
+            doc_convert_backend=self._doc_convert_backend,
             ocr_mode=self._ocr_mode,
             cloud_provider=self._ocr_cloud_provider,
             cloud_endpoint=self._ocr_cloud_endpoint,
             ocr_correction_fingerprint=correction_fingerprint,
         )
 
-    @staticmethod
-    def _resolve_converter(file_type: str, trace_id: str) -> Callable:
+    def _resolve_converter(self, file_type: str, trace_id: str) -> Callable:
         """Resolve converter function lazily.
 
         OCR converter is imported on demand so packaging can exclude OCR runtime.
         """
+        if file_type in {"docx", "pptx"} and self._doc_convert_backend == "markitdown":
+            return _convert_with_markitdown
+
         converter_fn = _CONVERTERS.get(file_type)
         if converter_fn is not None:
             return converter_fn
@@ -128,8 +139,10 @@ class DocumentConverter:
                         trace_id=trace_id,
                     )
 
+                file_type = detect_file_type(file_path)
+
                 # Check file-hash cache first
-                file_hash = self._get_cache_key(file_path)
+                file_hash = self._get_cache_key(file_path, file_type=file_type)
                 cached = get_cached_by_hash(file_hash)
                 if cached is not None:
                     metrics.record_cache_hit()
@@ -143,7 +156,6 @@ class DocumentConverter:
                     cached.trace_id = trace_id
                     return cached
 
-                file_type = detect_file_type(file_path)
                 logger.info(
                     "Starting conversion",
                     extra={"file_type": file_type, "path": str(file_path), "trace_id": trace_id},

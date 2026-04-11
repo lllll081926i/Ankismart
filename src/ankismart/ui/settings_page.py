@@ -75,6 +75,11 @@ _OCR_MODE_CHOICES = (
     ("cloud", "云端模型", "Cloud Model"),
 )
 
+_DOC_CONVERT_BACKEND_CHOICES = (
+    ("native", "内置转换器", "Native Converter"),
+    ("markitdown", "MarkItDown（实验）", "MarkItDown (Experimental)"),
+)
+
 _OCR_MODEL_TIER_CHOICES = (
     ("lite", "轻量", "Lite"),
     ("standard", "标准", "Standard"),
@@ -374,6 +379,7 @@ class SettingsPage(ScrollArea):
         self._proxy_mode_combo.currentIndexChanged.connect(self._schedule_auto_save)
         self._proxy_edit.textChanged.connect(self._schedule_auto_save)
         self._ocr_correction_switch.checkedChanged.connect(self._schedule_auto_save)
+        self._doc_convert_backend_combo.currentIndexChanged.connect(self._schedule_auto_save)
 
         # OCR settings
         self._ocr_mode_combo.currentIndexChanged.connect(self._schedule_auto_save)
@@ -956,6 +962,23 @@ class SettingsPage(ScrollArea):
         self._ocr_mode_card.hBoxLayout.addSpacing(16)
         self._ocr_group.addSettingCard(self._ocr_mode_card)
 
+        self._doc_convert_backend_card = SettingCard(
+            FluentIcon.DOCUMENT,
+            "非 OCR 文档转 Markdown 后端" if is_zh else "Non-OCR Markdown Backend",
+            (
+                "控制 DOCX / PPTX 的 Markdown 转换后端；PDF 和图片仍走现有 OCR 链。"
+                if is_zh
+                else "Controls the DOCX / PPTX Markdown backend; PDFs and images still use OCR."
+            ),
+            self.scrollWidget,
+        )
+        self._doc_convert_backend_combo = ComboBox(self._doc_convert_backend_card)
+        for key, zh_text, en_text in _DOC_CONVERT_BACKEND_CHOICES:
+            self._doc_convert_backend_combo.addItem(zh_text if is_zh else en_text, userData=key)
+        self._doc_convert_backend_card.hBoxLayout.addWidget(self._doc_convert_backend_combo)
+        self._doc_convert_backend_card.hBoxLayout.addSpacing(16)
+        self._ocr_group.addSettingCard(self._doc_convert_backend_card)
+
         self._ocr_cloud_provider_card = SettingCard(
             FluentIcon.CLOUD,
             "云 OCR 提供商",
@@ -1269,6 +1292,10 @@ class SettingsPage(ScrollArea):
         self._proxy_edit.setVisible(proxy_mode == "manual")
 
         self._ocr_correction_switch.setChecked(config.ocr_correction)
+        self._set_combo_current_data(
+            self._doc_convert_backend_combo,
+            getattr(config, "doc_convert_backend", "native"),
+        )
 
         self._set_combo_current_data(self._ocr_mode_combo, getattr(config, "ocr_mode", "local"))
         self._set_combo_current_data(
@@ -1499,6 +1526,30 @@ class SettingsPage(ScrollArea):
             combo,
             normalize_generation_preset(str(current or DEFAULT_GENERATION_PRESET)),
         )
+        combo.blockSignals(False)
+
+    def _refresh_doc_convert_backend_copy(self) -> None:
+        card = getattr(self, "_doc_convert_backend_card", None)
+        combo = getattr(self, "_doc_convert_backend_combo", None)
+        if card is None or combo is None:
+            return
+
+        is_zh = self._main.config.language == "zh"
+        card.setTitle("非 OCR 文档转 Markdown 后端" if is_zh else "Non-OCR Markdown Backend")
+        card.setContent(
+            (
+                "控制 DOCX / PPTX 的 Markdown 转换后端；PDF 和图片仍走现有 OCR 链。"
+                if is_zh
+                else "Controls the DOCX / PPTX Markdown backend; PDFs and images still use OCR."
+            )
+        )
+
+        current = combo.currentData() if combo.count() > 0 else "native"
+        combo.blockSignals(True)
+        combo.clear()
+        for key, zh_text, en_text in _DOC_CONVERT_BACKEND_CHOICES:
+            combo.addItem(zh_text if is_zh else en_text, userData=key)
+        self._set_combo_current_data(combo, str(current or "native"))
         combo.blockSignals(False)
 
     def _current_proxy_url(self) -> str:
@@ -2400,6 +2451,9 @@ class SettingsPage(ScrollArea):
         proxy_url = self._proxy_edit.text().strip() if proxy_mode == "manual" else ""
 
         ocr_mode = self._get_combo_current_data(self._ocr_mode_combo, "local")
+        doc_convert_backend = self._get_combo_current_data(
+            self._doc_convert_backend_combo, "native"
+        )
         ocr_model_tier = self._get_combo_current_data(self._ocr_model_tier_combo, "lite")
         ocr_model_source = self._get_combo_current_data(self._ocr_source_combo, "official")
         ocr_cloud_provider = self._get_combo_current_data(self._ocr_cloud_provider_combo, "mineru")
@@ -2424,6 +2478,7 @@ class SettingsPage(ScrollArea):
                 "anki_connect_key": self._anki_key_edit.text(),
                 "default_deck": self._default_deck_edit.text() or "Default",
                 "default_tags": tags,
+                "doc_convert_backend": doc_convert_backend,
                 "ocr_correction": self._ocr_correction_switch.isChecked(),
                 "ocr_mode": ocr_mode,
                 "ocr_model_tier": ocr_model_tier,
@@ -2652,6 +2707,7 @@ class SettingsPage(ScrollArea):
         self._replace_provider_list_card()
         self._update_provider_list()
         self._refresh_generation_preset_combo()
+        self._refresh_doc_convert_backend_copy()
 
     def update_theme(self):
         """Update theme-dependent components when theme changes."""

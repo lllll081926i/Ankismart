@@ -892,6 +892,9 @@ class BatchConvertWorker(QThread):
             proxy_url = ""
 
         return converter_class(
+            doc_convert_backend=str(
+                getattr(self._config, "doc_convert_backend", "native")
+            ).strip().lower(),
             ocr_correction_fn=self._resolve_ocr_correction_fn(),
             ocr_mode=ocr_mode,
             ocr_cloud_provider=ocr_cloud_provider,

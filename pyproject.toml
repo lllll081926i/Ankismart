@@ -4,12 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ankismart"
-version = "0.2.5"
+version = "0.2.6-rc1"
 description = "Intelligent Anki flashcard generation from documents"
 requires-python = ">=3.11"
 dependencies = [
     "pyqt6==6.10.2",
     "openai>=1.0",
+    "markitdown>=0.1.0",
     "python-docx>=1.0",
     "python-pptx>=0.6",
     "paddleocr>=2.7",

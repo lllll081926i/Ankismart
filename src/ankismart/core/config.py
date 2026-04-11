@@ -155,6 +155,7 @@ class AppConfig(BaseModel):
     anki_connect_key: str = ""
     default_deck: str = "Default"
     default_tags: list[str] = ["ankismart"]
+    doc_convert_backend: str = "native"
     ocr_correction: bool = False
     ocr_mode: str = "local"  # "local" or "cloud"
     ocr_model_tier: str = "lite"  # "lite" | "standard" | "accuracy"
@@ -383,6 +384,8 @@ def load_config() -> AppConfig:
         config = AppConfig(**data)
         if config.theme not in {"light", "dark", "auto"}:
             config.theme = "light"
+        if config.doc_convert_backend not in {"native", "markitdown"}:
+            config.doc_convert_backend = "native"
         if config.ocr_mode not in {"local", "cloud"}:
             config.ocr_mode = "local"
         config.generation_preset = normalize_generation_preset(

@@ -581,6 +581,31 @@ def test_build_converter_keeps_manual_proxy_for_non_mineru_cloud(monkeypatch) ->
     assert captured["proxy_url"] == "http://proxy.local:8080"
 
 
+def test_build_converter_passes_doc_convert_backend(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeConverter:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr("ankismart.ui.workers.DocumentConverter", _FakeConverter)
+
+    config = SimpleNamespace(
+        ocr_correction=False,
+        proxy_mode="system",
+        proxy_url="",
+        ocr_mode="local",
+        ocr_cloud_provider="mineru",
+        ocr_cloud_endpoint="https://mineru.net",
+        ocr_cloud_api_key="token",
+        doc_convert_backend="markitdown",
+    )
+    worker = BatchConvertWorker([Path("demo.docx")], config=config)
+    worker._build_converter()
+
+    assert captured["doc_convert_backend"] == "markitdown"
+
+
 def test_batch_convert_worker_emits_ocr_progress(monkeypatch) -> None:
     captured_messages: list[str] = []
 

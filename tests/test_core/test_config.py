@@ -29,6 +29,7 @@ class TestAppConfig:
         assert cfg.anki_connect_key == ""
         assert cfg.default_deck == "Default"
         assert cfg.default_tags == ["ankismart"]
+        assert cfg.doc_convert_backend == "native"
         assert cfg.log_level == "INFO"
 
     def test_active_provider_returns_matching(self):
@@ -209,6 +210,15 @@ class TestLoadConfig:
         with patch("ankismart.core.config.CONFIG_PATH", config_file):
             cfg = load_config()
         assert cfg.ocr_mode == "local"
+
+    def test_invalid_doc_convert_backend_falls_back_to_native(self, tmp_path: Path):
+        config_file = tmp_path / "config.yaml"
+        data = {"doc_convert_backend": "unsupported-backend"}
+        config_file.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+        with patch("ankismart.core.config.CONFIG_PATH", config_file):
+            cfg = load_config()
+        assert cfg.doc_convert_backend == "native"
 
     def test_load_clamps_runtime_bounds(self, tmp_path: Path):
         config_file = tmp_path / "config.yaml"
