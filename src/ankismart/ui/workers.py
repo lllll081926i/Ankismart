@@ -47,6 +47,18 @@ def _format_error_for_ui(exc: Exception) -> str:
     return str(exc)
 
 
+def _close_client_safely(client: object, *, context: str) -> None:
+    if client is None:
+        return
+    close = getattr(client, "close", None)
+    if not callable(close):
+        return
+    try:
+        close()
+    except Exception:
+        logger.debug("failed to close client during %s", context, exc_info=True)
+
+
 def _is_retryable_error(exc: Exception) -> bool:
     """Check if an error is retryable (network/timeout/rate-limit errors)."""
     error_str = str(exc).lower()
@@ -540,6 +552,7 @@ class ProviderConnectionWorker(QThread):
         self._max_tokens = max_tokens
 
     def run(self) -> None:
+        client = None
         try:
             from ankismart.card_gen.llm_client import LLMClient
 
@@ -556,6 +569,8 @@ class ProviderConnectionWorker(QThread):
             self.finished.emit(ok, "")
         except Exception as exc:
             self.finished.emit(False, _format_error_for_ui(exc))
+        finally:
+            _close_client_safely(client, context="provider connection check")
 
 
 class OCRCloudConnectionWorker(QThread):
@@ -615,6 +630,7 @@ class BatchConvertWorker(QThread):
         self._last_file_error_message: str | None = None
         self._ocr_correction_fn = None
         self._ocr_correction_fn_ready = False
+        self._ocr_correction_client = None
         self._quality_warnings: list[str] = []
         self._ocr_quality_min_chars = int(getattr(config, "ocr_quality_min_chars", 80))
 
@@ -810,6 +826,7 @@ class BatchConvertWorker(QThread):
                     save_config(self._config)
                 self.error.emit(_format_error_for_ui(exc))
         finally:
+            self._close_ocr_correction_client()
             self._release_ocr_runtime()
 
     @staticmethod
@@ -860,8 +877,16 @@ class BatchConvertWorker(QThread):
             proxy_url=proxy_url,
         )
         generator = CardGenerator(llm_client)
+        self._ocr_correction_client = llm_client
         self._ocr_correction_fn = generator.correct_ocr_text
         return self._ocr_correction_fn
+
+    def _close_ocr_correction_client(self) -> None:
+        client = self.__dict__.get("_ocr_correction_client")
+        self.__dict__["_ocr_correction_client"] = None
+        self._ocr_correction_fn = None
+        self._ocr_correction_fn_ready = False
+        _close_client_safely(client, context="ocr correction cleanup")
 
     def _check_ocr_quality(self, file_name: str, result: MarkdownResult) -> None:
         warning = _ocr_markdown_quality_warning(
@@ -1147,7 +1172,6 @@ class BatchGenerateWorker(QThread):
     def run(self) -> None:
         import concurrent.futures
         import time
-
 
         try:
             self._start_time = time.time()
@@ -1440,6 +1464,8 @@ class BatchGenerateWorker(QThread):
                     error_code="worker_exception",
                 )
             self.error.emit(_format_error_for_ui(e))
+        finally:
+            self._close_llm_client()
 
     def _mark_runtime_error(self, exc: Exception) -> None:
         message = _format_error_for_ui(exc).lower()
@@ -1447,6 +1473,11 @@ class BatchGenerateWorker(QThread):
             self._throttle_events += 1
         if "timeout" in message or "timed out" in message:
             self._timeout_events += 1
+
+    def _close_llm_client(self) -> None:
+        client = self.__dict__.get("_llm_client")
+        self.__dict__["_llm_client"] = None
+        _close_client_safely(client, context="batch generation cleanup")
 
     def _estimate_auto_target_total(self) -> int:
         valid_strategies = [

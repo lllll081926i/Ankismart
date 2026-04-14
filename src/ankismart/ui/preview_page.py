@@ -690,49 +690,73 @@ class PreviewPage(ProgressMixin, QWidget):
         self._set_sample_preview_enabled(False)
         self._progress_bar.show()
 
-        # Create LLM client
-        from ankismart.card_gen.llm_client import LLMClient
+        llm_client = None
+        try:
+            # Create LLM client
+            from ankismart.card_gen.llm_client import LLMClient
 
-        llm_client = LLMClient(
-            api_key=provider.api_key,
-            base_url=provider.base_url,
-            model=provider.model,
-            rpm_limit=provider.rpm_limit,
-            proxy_url=self._main.config.proxy_url,
-        )
-
-        # Start generation worker
-        self._cleanup_generate_worker()
-        self._generation_start_ts = time.monotonic()
-        self._current_task_id = str(
-            getattr(self._main, "active_task_id", "") or self._current_task_id
-        )
-        self._publish_task_event(
-            TaskEvent(
-                task_id=self._current_task_id,
-                stage="generate",
-                kind="started",
-                message="generation started",
+            llm_client = LLMClient(
+                api_key=provider.api_key,
+                base_url=provider.base_url,
+                model=provider.model,
+                rpm_limit=provider.rpm_limit,
+                proxy_url=self._main.config.proxy_url,
             )
-        )
-        self._generate_worker = BatchGenerateWorker(
-            documents=documents,
-            generation_config=generation_config,
-            llm_client=llm_client,
-            deck_name=deck_name,
-            tags=tags,
-            enable_auto_split=self._main.config.enable_auto_split,
-            split_threshold=self._main.config.split_threshold,
-            config=self._main.config,
-        )
-        self._generate_worker.progress.connect(self._on_generation_progress)
-        self._generate_worker.warning.connect(self._on_generation_warning)
-        self._generate_worker.card_progress.connect(self._on_card_progress)
-        self._generate_worker.document_completed.connect(self._on_document_completed)
-        self._generate_worker.finished.connect(self._on_generation_finished)
-        self._generate_worker.error.connect(self._on_generation_error)
-        self._generate_worker.cancelled.connect(self._on_generation_cancelled)
-        self._generate_worker.start()
+
+            # Start generation worker
+            self._cleanup_generate_worker()
+            self._generation_start_ts = time.monotonic()
+            self._current_task_id = str(
+                getattr(self._main, "active_task_id", "") or self._current_task_id
+            )
+            self._publish_task_event(
+                TaskEvent(
+                    task_id=self._current_task_id,
+                    stage="generate",
+                    kind="started",
+                    message="generation started",
+                )
+            )
+            self._generate_worker = BatchGenerateWorker(
+                documents=documents,
+                generation_config=generation_config,
+                llm_client=llm_client,
+                deck_name=deck_name,
+                tags=tags,
+                enable_auto_split=self._main.config.enable_auto_split,
+                split_threshold=self._main.config.split_threshold,
+                config=self._main.config,
+            )
+            self._generate_worker.progress.connect(self._on_generation_progress)
+            self._generate_worker.warning.connect(self._on_generation_warning)
+            self._generate_worker.card_progress.connect(self._on_card_progress)
+            self._generate_worker.document_completed.connect(self._on_document_completed)
+            self._generate_worker.finished.connect(self._on_generation_finished)
+            self._generate_worker.error.connect(self._on_generation_error)
+            self._generate_worker.cancelled.connect(self._on_generation_cancelled)
+            self._generate_worker.start()
+        except Exception as e:
+            worker = self.__dict__.get("_generate_worker")
+            if llm_client is not None:
+                self._close_llm_client_safely(llm_client, context="generation worker startup")
+                if worker is not None and getattr(worker, "_llm_client", None) is llm_client:
+                    worker._llm_client = None
+            self._cleanup_generate_worker()
+            self._hide_progress()
+            self._btn_generate.setEnabled(True)
+            self._btn_save.setEnabled(True)
+            self._set_sample_preview_enabled(True)
+            InfoBar.error(
+                title="错误" if is_zh else "Error",
+                content=f"卡片生成初始化失败：{e}"
+                if is_zh
+                else f"Failed to initialize card generation: {e}",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=5000,
+                parent=self,
+            )
 
     @staticmethod
     def _normalize_card_field(text: str) -> str:
@@ -891,6 +915,7 @@ class PreviewPage(ProgressMixin, QWidget):
                 except Exception as e:
                     self.error.emit(str(e))
 
+        llm_client = None
         try:
             # Create LLM client
             llm_client = LLMClient(
@@ -921,6 +946,12 @@ class PreviewPage(ProgressMixin, QWidget):
             self._set_sample_preview_enabled(False)
             self._sample_worker.start()
         except Exception as e:
+            worker = self.__dict__.get("_sample_worker")
+            if llm_client is not None:
+                self._close_llm_client_safely(llm_client, context="sample worker startup")
+                if worker is not None and getattr(worker, "llm_client", None) is llm_client:
+                    worker.llm_client = None
+            self._cleanup_sample_worker()
             self._update_ui_state()
             self._set_sample_preview_enabled(True)
             self._clear_progress_info_bar()
@@ -1074,6 +1105,17 @@ class PreviewPage(ProgressMixin, QWidget):
         if current is not None and hasattr(current, "close"):
             current.close()
 
+    def _close_llm_client_safely(self, llm_client, *, context: str) -> None:
+        if llm_client is None:
+            return
+        close = getattr(llm_client, "close", None)
+        if not callable(close):
+            return
+        try:
+            close()
+        except Exception:
+            logger.debug("failed to close llm client during %s", context, exc_info=True)
+
     def _normalize_generation_message(self, message: str) -> str:
         """Localize strategy IDs and wrap long tooltip messages."""
         is_zh = self._main.config.language == "zh"
@@ -1115,6 +1157,10 @@ class PreviewPage(ProgressMixin, QWidget):
             worker.wait(200)
             if worker.isRunning():
                 return
+        llm_client = getattr(worker, "_llm_client", None)
+        self._close_llm_client_safely(llm_client, context="generate worker cleanup")
+        if llm_client is not None and hasattr(worker, "_llm_client"):
+            worker._llm_client = None
         self.__dict__["_generate_worker"] = None
         if hasattr(worker, "deleteLater"):
             worker.deleteLater()
@@ -1141,6 +1187,10 @@ class PreviewPage(ProgressMixin, QWidget):
             worker.wait(200)
             if worker.isRunning():
                 return
+        llm_client = getattr(worker, "llm_client", None)
+        self._close_llm_client_safely(llm_client, context="sample worker cleanup")
+        if llm_client is not None and hasattr(worker, "llm_client"):
+            worker.llm_client = None
         self.__dict__["_sample_worker"] = None
         if hasattr(worker, "deleteLater"):
             worker.deleteLater()

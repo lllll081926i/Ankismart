@@ -57,7 +57,7 @@ class _ThreadLikeWorker:
         self.cancel_called = False
         self.deleted = False
 
-    def isRunning(self) -> bool:  # noqa: N802
+    def isRunning(self) -> bool:
         return self._running
 
     def wait(self, timeout: int) -> None:
@@ -66,7 +66,7 @@ class _ThreadLikeWorker:
     def cancel(self) -> None:
         self.cancel_called = True
 
-    def deleteLater(self) -> None:  # noqa: N802
+    def deleteLater(self) -> None:
         self.deleted = True
 
 
@@ -259,7 +259,7 @@ class TestMarkdownHighlighter:
         hl = MarkdownHighlighter()
         assert len(hl._rules) > 0
         # Each rule is (pattern, format)
-        for pattern, fmt in hl._rules:
+        for pattern, _fmt in hl._rules:
             assert hasattr(pattern, "finditer")
 
     def test_highlighter_uses_theme_accent_for_heading_link_and_list(self, monkeypatch):
@@ -427,12 +427,14 @@ class TestPreviewPageWorkerCleanup:
         main = _make_main_window()
         page = PreviewPage(main)
         worker = _ThreadLikeWorker(running=False)
+        worker.llm_client = SimpleNamespace(close=lambda: setattr(worker, "client_closed", True))
         page._sample_worker = worker
 
         page._cleanup_sample_worker()
 
         assert page._sample_worker is None
         assert worker.deleted is True
+        assert getattr(worker, "client_closed", False) is True
 
 
 def test_generation_message_localizes_strategy_for_zh():
@@ -549,6 +551,77 @@ def test_preview_sample_uses_progress_infobar_not_state_tooltip(monkeypatch):
 
     assert not hasattr(page, "_show_state_tooltip")
     assert calls == [("正在生成样本卡片", "正在调用模型，请稍候")]
+
+
+def test_preview_sample_closes_llm_client_when_worker_start_fails(monkeypatch):
+    main = _make_main_window()
+    main.config.language = "zh"
+    main.config.active_provider = SimpleNamespace(
+        api_key="key",
+        base_url="https://api.test",
+        model="demo-model",
+        rpm_limit=60,
+    )
+    main.import_page.build_generation_config.return_value = {
+        "strategy_mix": [{"strategy": "basic", "ratio": 100}]
+    }
+    page = PreviewPage(main)
+    page._documents = [_make_doc("a.md", "# A")]
+
+    closed = {"value": False}
+    fake_client = SimpleNamespace(close=lambda: closed.__setitem__("value", True))
+
+    monkeypatch.setattr(page, "_cleanup_sample_worker", lambda: None)
+    monkeypatch.setattr(page, "_set_sample_preview_enabled", lambda enabled: None)
+    monkeypatch.setattr(page, "_update_ui_state", lambda: None)
+    monkeypatch.setattr(page, "_clear_progress_info_bar", lambda: None)
+    monkeypatch.setattr(page, "_show_progress_info_bar", lambda *args, **kwargs: None)
+    monkeypatch.setattr("ankismart.ui.preview_page.InfoBar.error", lambda *args, **kwargs: None)
+    monkeypatch.setattr("ankismart.card_gen.llm_client.LLMClient", lambda **kwargs: fake_client)
+    monkeypatch.setattr(
+        "PyQt6.QtCore.QThread.start",
+        lambda self: (_ for _ in ()).throw(RuntimeError("start failed")),
+    )
+
+    page._on_preview_sample()
+
+    assert closed["value"] is True
+
+
+def test_generate_cards_closes_llm_client_when_worker_start_fails(monkeypatch):
+    main = _make_main_window()
+    main.config.language = "zh"
+    main.config.active_provider = SimpleNamespace(
+        api_key="key",
+        base_url="https://api.test",
+        model="demo-model",
+        rpm_limit=60,
+    )
+    main.import_page.build_generation_config.return_value = {
+        "target_total": 1,
+        "strategy_mix": [{"strategy": "basic", "ratio": 100}],
+    }
+    page = PreviewPage(main)
+
+    closed = {"value": False}
+    fake_client = SimpleNamespace(close=lambda: closed.__setitem__("value", True))
+
+    monkeypatch.setattr(page, "_build_documents", lambda: [_make_doc("a.md", "# A")])
+    monkeypatch.setattr(page, "_cleanup_generate_worker", lambda: None)
+    monkeypatch.setattr(page, "_set_sample_preview_enabled", lambda enabled: None)
+    monkeypatch.setattr(page, "_hide_progress", lambda: None)
+    monkeypatch.setattr(page, "_publish_task_event", lambda event: None)
+    monkeypatch.setattr("ankismart.ui.preview_page.InfoBar.error", lambda *args, **kwargs: None)
+    monkeypatch.setattr("ankismart.card_gen.llm_client.LLMClient", lambda **kwargs: fake_client)
+    monkeypatch.setattr(
+        "PyQt6.QtCore.QThread.start",
+        lambda self: (_ for _ in ()).throw(RuntimeError("start failed")),
+    )
+
+    page._on_generate_cards()
+
+    assert closed["value"] is True
+    assert page._btn_generate.isEnabled() is True
 
 
 def test_preview_page_removes_state_tooltip_popup_api():

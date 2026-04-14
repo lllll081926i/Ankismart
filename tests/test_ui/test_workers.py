@@ -470,6 +470,31 @@ def test_provider_connection_worker_success(monkeypatch) -> None:
     assert captured["proxy_url"] == "http://127.0.0.1:7890"
 
 
+def test_provider_connection_worker_closes_client(monkeypatch) -> None:
+    finished: list[tuple[bool, str]] = []
+    closed = {"value": False}
+
+    class _FakeLLMClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def validate_connection(self):
+            return True
+
+        def close(self):
+            closed["value"] = True
+
+    monkeypatch.setattr("ankismart.card_gen.llm_client.LLMClient", _FakeLLMClient)
+
+    provider = LLMProviderConfig(name="OpenAI", api_key="k", model="gpt-4o-mini")
+    worker = ProviderConnectionWorker(provider)
+    worker.finished.connect(lambda ok, message: finished.append((ok, message)))
+    worker.run()
+
+    assert finished == [(True, "")]
+    assert closed["value"] is True
+
+
 def test_provider_connection_worker_error_emits_structured_message(monkeypatch) -> None:
     finished: list[tuple[bool, str]] = []
 
@@ -736,6 +761,81 @@ def test_batch_convert_worker_file_error_emitted_on_final_failure(monkeypatch) -
     assert "permanent error" in file_errors[0]
 
 
+def test_batch_convert_worker_closes_ocr_correction_client(monkeypatch) -> None:
+    closed = {"value": False}
+
+    class _FakeLLMClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def close(self):
+            closed["value"] = True
+
+    class _FakeGenerator:
+        def __init__(self, llm_client):
+            self._llm_client = llm_client
+
+        def correct_ocr_text(self, text: str) -> str:
+            return text
+
+    class _FakeConverter:
+        def __init__(self, **kwargs):
+            self._ocr_correction_fn = kwargs["ocr_correction_fn"]
+
+        def convert(self, path, *, progress_callback=None):
+            return MarkdownResult(
+                content="ok",
+                source_path=str(path),
+                source_format="pdf",
+                trace_id="trace-ocr-correction",
+            )
+
+    monkeypatch.setattr("ankismart.card_gen.llm_client.LLMClient", _FakeLLMClient)
+    monkeypatch.setattr("ankismart.ui.workers.CardGenerator", _FakeGenerator)
+    monkeypatch.setattr("ankismart.ui.workers.DocumentConverter", _FakeConverter)
+    monkeypatch.setattr(
+        "ankismart.ui.workers.record_operation_metric",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "ankismart.core.config.record_operation_metric",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr("ankismart.core.config.save_config", lambda config: None)
+    monkeypatch.setattr(
+        "ankismart.ui.workers.BatchConvertWorker._release_ocr_runtime",
+        staticmethod(lambda: None),
+    )
+
+    config = SimpleNamespace(
+        ocr_correction=True,
+        active_provider=SimpleNamespace(
+            name="OpenAI",
+            api_key="k",
+            model="gpt-4o-mini",
+            base_url="https://api.openai.com/v1",
+            rpm_limit=10,
+        ),
+        proxy_mode="system",
+        proxy_url="",
+        llm_temperature=0.2,
+        llm_max_tokens=128,
+        ocr_mode="local",
+        ocr_cloud_provider="",
+        ocr_cloud_endpoint="",
+        ocr_cloud_api_key="",
+        doc_convert_backend="native",
+        total_files_processed=0,
+        total_conversion_time=0.0,
+        ops_error_counters={},
+    )
+    worker = BatchConvertWorker([Path("demo.pdf")], config=config)
+
+    worker.run()
+
+    assert closed["value"] is True
+
+
 def test_batch_generate_worker_has_cancel() -> None:
     worker = BatchGenerateWorker.__new__(BatchGenerateWorker)
     worker._cancelled = False
@@ -794,6 +894,41 @@ def test_batch_generate_worker_zero_concurrency_uses_document_count(monkeypatch)
     worker.run()
 
     assert captured["max_workers"] == len(docs)
+
+
+def test_batch_generate_worker_closes_llm_client_after_run(monkeypatch) -> None:
+    doc = ConvertedDocument(
+        result=MarkdownResult(
+            content="demo",
+            source_path="demo.md",
+            source_format="markdown",
+            trace_id="trace-close-llm",
+        ),
+        file_name="demo.md",
+    )
+    closed = {"value": False}
+    finished: list[list[CardDraft]] = []
+
+    class _FakeLLMClient:
+        def close(self):
+            closed["value"] = True
+
+    monkeypatch.setattr("ankismart.ui.workers.CardGenerator.generate", lambda _self, _request: [])
+
+    worker = BatchGenerateWorker(
+        documents=[doc],
+        generation_config={"target_total": 1, "strategy_mix": [{"strategy": "basic", "ratio": 1}]},
+        llm_client=_FakeLLMClient(),
+        deck_name="Default",
+        tags=[],
+        config=SimpleNamespace(language="zh", llm_concurrency=1),
+    )
+    worker.finished.connect(finished.append)
+
+    worker.run()
+
+    assert finished == [[]]
+    assert closed["value"] is True
 
 
 def test_batch_generate_worker_estimates_auto_target_total_from_document_size() -> None:
