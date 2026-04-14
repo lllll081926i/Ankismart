@@ -660,19 +660,21 @@ class AnkiGateway:
         prepared_cards: list[CardDraft],
         available_models: set[str],
     ) -> list[CardDraft]:
+        if len(original_cards) != len(prepared_cards):
+            raise ValueError("prepared card count mismatch")
         if not prepared_cards:
             return []
         if not available_models:
             return [
                 original if prepared.note_type in _STYLEABLE_MODELS else prepared
-                for original, prepared in zip(original_cards, prepared_cards)
+                for original, prepared in zip(original_cards, prepared_cards, strict=True)
             ]
         return [
             original
             if prepared.note_type in _STYLEABLE_MODELS
             and prepared.note_type not in available_models
             else prepared
-            for original, prepared in zip(original_cards, prepared_cards)
+            for original, prepared in zip(original_cards, prepared_cards, strict=True)
         ]
 
     def _ensure_ankismart_models(self, cards: list[CardDraft]) -> set[str]:

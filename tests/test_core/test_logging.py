@@ -209,6 +209,24 @@ class TestSetupLogging:
         # Handlers were cleared and re-added (stream + file = 2)
         assert len(root.handlers) <= 2
 
+    def test_closes_existing_handlers_before_reconfiguring(self):
+        root = logging.getLogger("ankismart")
+        old_handler = logging.StreamHandler()
+        old_handler.close = lambda: setattr(old_handler, "_closed_by_setup", True)
+        root.addHandler(old_handler)
+
+        with (
+            patch("ankismart.core.logging._resolve_log_dir") as mock_log_dir,
+            patch("ankismart.core.logging.logging.FileHandler") as mock_fh,
+        ):
+            mock_log_dir.return_value = Path("/fake/app/logs")
+            mock_fh_instance = mock_fh.return_value
+            mock_fh_instance.setFormatter = lambda f: None
+
+            setup_logging()
+
+        assert getattr(old_handler, "_closed_by_setup", False) is True
+
     def test_file_handler_oserror_is_silent(self):
         """If FileHandler raises OSError, setup_logging should not raise."""
         with patch("ankismart.core.logging.logging.FileHandler", side_effect=OSError("disk full")):

@@ -189,7 +189,11 @@ def _configure_external_loggers() -> None:
 def setup_logging(level: int = logging.INFO) -> None:
     root_logger = logging.getLogger("ankismart")
     root_logger.setLevel(level)
-    root_logger.handlers.clear()
+    for handler in list(root_logger.handlers):
+        try:
+            handler.close()
+        finally:
+            root_logger.removeHandler(handler)
     root_logger.propagate = False
 
     _configure_external_loggers()

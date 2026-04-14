@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import socket
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -91,7 +92,10 @@ class TestExport:
         result = ApkgExporter().export([_card()], out)
 
         assert result == out
-        mock_pkg.write_to_file.assert_called_once_with(str(out))
+        written_target = Path(mock_pkg.write_to_file.call_args[0][0])
+        assert written_target.parent == out.parent
+        assert written_target.suffix == ".tmp"
+        assert out.exists()
 
     @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
     def test_export_multiple_decks(self, mock_pkg_cls: MagicMock, tmp_path: Path) -> None:
@@ -128,6 +132,27 @@ class TestExport:
         nested = tmp_path / "a" / "b" / "out.apkg"
         ApkgExporter().export([_card()], nested)
         assert nested.parent.exists()
+
+    @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
+    def test_export_preserves_existing_apkg_when_write_fails(
+        self, mock_pkg_cls: MagicMock, tmp_path: Path
+    ) -> None:
+        mock_pkg = MagicMock()
+        mock_pkg_cls.return_value = mock_pkg
+
+        output_path = tmp_path / "out.apkg"
+        output_path.write_bytes(b"stable-apkg")
+
+        def _partial_write_then_fail(target: str) -> None:
+            Path(target).write_bytes(b"partial-apkg")
+            raise OSError("write interrupted")
+
+        mock_pkg.write_to_file.side_effect = _partial_write_then_fail
+
+        with pytest.raises(OSError, match="write interrupted"):
+            ApkgExporter().export([_card()], output_path)
+
+        assert output_path.read_bytes() == b"stable-apkg"
 
     @patch("ankismart.anki_gateway.apkg_exporter.genanki.Package")
     def test_export_missing_field_defaults_empty(
@@ -350,6 +375,14 @@ class TestExport:
 def test_validate_media_url_rejects_loopback() -> None:
     with pytest.raises(ValueError, match="disallowed network"):
         _validate_media_url("https://127.0.0.1/media.mp3")
+
+
+def test_validate_media_url_wraps_dns_resolution_failures() -> None:
+    with patch("ankismart.anki_gateway.apkg_exporter.socket.getaddrinfo") as mock_getaddrinfo:
+        mock_getaddrinfo.side_effect = socket.gaierror("dns failed")
+
+        with pytest.raises(ValueError, match="invalid media URL host"):
+            _validate_media_url("https://not-a-real-host.invalid/media.mp3")
 
 
 def test_materialize_media_file_skips_disallowed_url(tmp_path: Path) -> None:

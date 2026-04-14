@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import threading
 import uuid
 from datetime import datetime
@@ -330,6 +331,42 @@ def _update_config_cache(path: Path, exists: bool, mtime_ns: int | None, config:
         _CONFIG_CACHE["config"] = config.model_copy(deep=True)
 
 
+def _write_text_atomic(path: Path, content: str, *, encoding: str = "utf-8") -> None:
+    """Write text atomically to avoid corrupting existing files on partial writes."""
+    fd, temp_path_raw = tempfile.mkstemp(
+        prefix=f"{path.stem}.",
+        suffix=".tmp",
+        dir=path.parent,
+        text=True,
+    )
+    temp_path = Path(temp_path_raw)
+    os.close(fd)
+    try:
+        temp_path.write_text(content, encoding=encoding)
+        os.replace(temp_path, path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+
+def _copy_file_atomic(source: Path, destination: Path) -> None:
+    """Copy a file atomically into place to preserve the previous file on failure."""
+    fd, temp_path_raw = tempfile.mkstemp(
+        prefix=f"{destination.stem}.",
+        suffix=".tmp",
+        dir=destination.parent,
+        text=False,
+    )
+    temp_path = Path(temp_path_raw)
+    os.close(fd)
+    try:
+        shutil.copy2(source, temp_path)
+        os.replace(temp_path, destination)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+
 def load_config() -> AppConfig:
     """Load configuration from YAML file.
 
@@ -435,7 +472,8 @@ def save_config(config: AppConfig) -> None:
         config_path = CONFIG_PATH
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(
+        _write_text_atomic(
+            config_path,
             yaml.safe_dump(data, default_flow_style=False, sort_keys=False),
             encoding="utf-8",
         )
@@ -617,5 +655,11 @@ def restore_config_from_backup(backup_path: Path) -> AppConfig:
 
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(backup, CONFIG_PATH)
+    try:
+        _copy_file_atomic(backup, CONFIG_PATH)
+    except OSError as exc:
+        raise ConfigError(
+            f"Failed to restore config file: {exc}",
+            code=ErrorCode.E_CONFIG_INVALID,
+        ) from exc
     return load_config()

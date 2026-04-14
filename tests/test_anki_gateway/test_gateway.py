@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from ankismart.anki_gateway.gateway import (
     _ANKI_TEMPLATE_FORMATTER_SCRIPT,
     ANKISMART_BASIC_MODEL,
@@ -311,6 +313,14 @@ class TestPush:
         client.get_model_templates.assert_not_called()
         client.update_model_templates.assert_not_called()
         client.update_model_styling.assert_not_called()
+
+    def test_fallback_cards_without_models_rejects_length_mismatch(self) -> None:
+        with pytest.raises(ValueError, match="prepared card count mismatch"):
+            AnkiGateway._fallback_cards_without_models(
+                original_cards=[_card(), _card()],
+                prepared_cards=[_card()],
+                available_models=set(),
+            )
 
 
 class TestPushOrUpdate:

@@ -1,6 +1,7 @@
 """Tests for ankismart.core.config module."""
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,6 +16,7 @@ from ankismart.core.config import (
     load_config,
     record_cloud_pages_daily,
     record_operation_metric,
+    restore_config_from_backup,
     save_config,
 )
 from ankismart.core.errors import ConfigError
@@ -474,6 +476,34 @@ class TestSaveConfig:
             mock_path.write_text = MagicMock(side_effect=OSError("disk full"))
             save_config(cfg)
 
+    def test_preserves_existing_config_when_write_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config_dir = tmp_path / ".ankismart"
+        config_file = config_dir / "config.yaml"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_file.write_text("default_deck: StableDeck\n", encoding="utf-8")
+
+        original_write_text = Path.write_text
+
+        def flaky_write_text(self: Path, data: str, *args, **kwargs) -> int:
+            if "NewDeck" in data:
+                original_write_text(self, "default_deck: ", *args, **kwargs)
+                raise OSError("disk full")
+            return original_write_text(self, data, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", flaky_write_text)
+
+        with (
+            patch("ankismart.core.config.CONFIG_DIR", config_dir),
+            patch("ankismart.core.config.CONFIG_PATH", config_file),
+            pytest.raises(ConfigError, match="Failed to save config file"),
+        ):
+            save_config(AppConfig(default_deck="NewDeck"))
+
+        restored = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+        assert restored["default_deck"] == "StableDeck"
+
 
 class TestObservabilityHelpers:
     def test_record_operation_metric_tracks_duration_and_error(self):
@@ -505,3 +535,37 @@ class TestObservabilityHelpers:
             {"date": "2026-02-21", "pages": 25},
             {"date": "2026-02-22", "pages": 8},
         ]
+
+
+class TestConfigRestore:
+    def test_restore_preserves_existing_config_when_copy_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config_dir = tmp_path / ".ankismart"
+        config_file = config_dir / "config.yaml"
+        backup_file = config_dir / "backup.yaml"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_file.write_text("default_deck: StableDeck\n", encoding="utf-8")
+        backup_file.write_text("default_deck: RestoredDeck\n", encoding="utf-8")
+
+        original_copy2 = shutil.copy2
+
+        def flaky_copy2(src, dst, *args, **kwargs):
+            dst_path = Path(dst)
+            result = original_copy2(src, dst, *args, **kwargs)
+            if dst_path.parent == config_dir and dst_path.suffix == ".tmp":
+                Path(dst).write_text("default_deck: ", encoding="utf-8")
+                raise OSError("copy interrupted")
+            return result
+
+        monkeypatch.setattr(shutil, "copy2", flaky_copy2)
+
+        with (
+            patch("ankismart.core.config.CONFIG_DIR", config_dir),
+            patch("ankismart.core.config.CONFIG_PATH", config_file),
+            pytest.raises(ConfigError, match="Failed to restore config file"),
+        ):
+            restore_config_from_backup(backup_file)
+
+        restored = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+        assert restored["default_deck"] == "StableDeck"

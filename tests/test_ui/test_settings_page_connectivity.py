@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from ankismart.core.config import AppConfig, LLMProviderConfig
 from ankismart.ui.error_handler import ErrorCategory, ErrorHandler, build_error_display
+from ankismart.ui.log_exporter import LogExporter
 from ankismart.ui.settings_page import SettingsPage, configure_ocr_runtime
 
 from .settings_page_test_utils import make_main
@@ -39,13 +41,13 @@ class _ThreadLikeWorker:
         self.wait_calls: list[int] = []
         self.deleted = False
 
-    def isRunning(self) -> bool:  # noqa: N802
+    def isRunning(self) -> bool:
         return self._running
 
     def wait(self, timeout: int) -> None:
         self.wait_calls.append(timeout)
 
-    def deleteLater(self) -> None:  # noqa: N802
+    def deleteLater(self) -> None:
         self.deleted = True
 
 
@@ -630,7 +632,7 @@ def test_show_update_available_info_bar_can_open_release_page(_qapp, monkeypatch
         def __init__(self) -> None:
             self.widgets = []
 
-        def addWidget(self, widget, stretch=0):  # noqa: N802
+        def addWidget(self, widget, stretch=0):
             self.widgets.append(widget)
 
     info_bar_stub = _InfoBarStub()
@@ -721,3 +723,35 @@ def test_restore_config_backup_applies_runtime_config(_qapp, monkeypatch) -> Non
     assert load_calls == [True]
     assert len(infobar_calls) == 1
     assert infobar_calls[0][0][0] == "success"
+
+
+def test_log_export_preserves_existing_archive_when_export_fails(
+    _qapp, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "ankismart.log").write_text("new log", encoding="utf-8")
+
+    output_path = tmp_path / "logs.zip"
+    with zipfile.ZipFile(output_path, "w") as archive:
+        archive.writestr("old.txt", "stable")
+
+    original_write = zipfile.ZipFile.write
+
+    def flaky_write(self, filename, arcname=None, compress_type=None, compresslevel=None):
+        result = original_write(self, filename, arcname, compress_type, compresslevel)
+        if Path(self.filename).parent == tmp_path:
+            raise OSError("zip interrupted")
+        return result
+
+    monkeypatch.setattr(zipfile.ZipFile, "write", flaky_write)
+
+    exporter = LogExporter()
+    exporter.log_dir = log_dir
+
+    with pytest.raises(OSError, match="zip interrupted"):
+        exporter.export_logs(output_path)
+
+    with zipfile.ZipFile(output_path) as archive:
+        assert archive.namelist() == ["old.txt"]
+        assert archive.read("old.txt") == b"stable"

@@ -6,6 +6,8 @@ Provides functionality to collect and export application logs for troubleshootin
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -91,8 +93,17 @@ class LogExporter:
             raise FileNotFoundError("No log files found")
 
         try:
-            # Create zip archive
-            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temp_path_raw = tempfile.mkstemp(
+                prefix=f"{output_path.stem}.",
+                suffix=".tmp",
+                dir=output_path.parent,
+            )
+            os.close(fd)
+            temp_path = Path(temp_path_raw)
+
+            with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 for log_file in log_files:
                     # Add file to zip with relative name
                     arcname = log_file.name
@@ -102,6 +113,7 @@ class LogExporter:
                 metadata = self._generate_metadata(log_files)
                 zipf.writestr("export_info.txt", metadata)
 
+            os.replace(temp_path, output_path)
             logger.info(f"Logs exported successfully to {output_path}")
             return True
 
@@ -112,6 +124,10 @@ class LogExporter:
         except Exception as e:
             logger.error(f"Failed to export logs: {e}")
             raise
+        finally:
+            temp_path_value = locals().get("temp_path")
+            if isinstance(temp_path_value, Path) and temp_path_value.exists():
+                temp_path_value.unlink(missing_ok=True)
 
     def _generate_metadata(self, log_files: list[Path]) -> str:
         """Generate metadata information for the export.

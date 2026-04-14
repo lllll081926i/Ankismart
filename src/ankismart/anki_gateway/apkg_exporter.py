@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import base64
 import ipaddress
+import os
 import random
 import socket
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkstemp
 from urllib.parse import urljoin, urlparse
 
 import genanki
@@ -163,7 +164,10 @@ def _validate_media_url(url: str) -> str:
         ip_obj = ipaddress.ip_address(host)
         ip_list = [ip_obj]
     except ValueError:
-        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+        try:
+            infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+        except OSError as exc:
+            raise ValueError("invalid media URL host") from exc
         ip_list = []
         for info in infos:
             address = info[4][0]
@@ -172,7 +176,7 @@ def _validate_media_url(url: str) -> str:
             except ValueError:
                 continue
         if not ip_list:
-            raise ValueError("media URL host resolve returned no IP")
+            raise ValueError("media URL host resolve returned no IP") from None
 
     for ip_obj in ip_list:
         if _is_disallowed_remote_ip(ip_obj):
@@ -324,10 +328,22 @@ class ApkgExporter:
                 # Write to .apkg
                 output_path = Path(output_path)
                 output_path.parent.mkdir(parents=True, exist_ok=True)
+                fd, temp_output_raw = mkstemp(
+                    prefix=f"{output_path.stem}.",
+                    suffix=".tmp",
+                    dir=output_path.parent,
+                )
+                os.close(fd)
+                temp_output_path = Path(temp_output_raw)
 
                 package = genanki.Package(list(decks_map.values()))
                 package.media_files = sorted(media_files)
-                package.write_to_file(str(output_path))
+                try:
+                    package.write_to_file(str(temp_output_path))
+                    os.replace(temp_output_path, output_path)
+                finally:
+                    if temp_output_path.exists():
+                        temp_output_path.unlink(missing_ok=True)
 
             logger.info(
                 "APKG exported",
