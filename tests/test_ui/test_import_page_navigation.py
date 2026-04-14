@@ -26,7 +26,7 @@ class _ThreadLikeWorker:
         self.cancel_called = False
         self.deleted = False
 
-    def isRunning(self) -> bool:  # noqa: N802
+    def isRunning(self) -> bool:
         return self._running
 
     def wait(self, timeout: int) -> None:
@@ -35,7 +35,7 @@ class _ThreadLikeWorker:
     def cancel(self) -> None:
         self.cancel_called = True
 
-    def deleteLater(self) -> None:  # noqa: N802
+    def deleteLater(self) -> None:
         self.deleted = True
 
 

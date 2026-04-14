@@ -182,14 +182,14 @@ def test_strategy_template_change_updates_sliders_immediately(monkeypatch):
         def value(self) -> int:
             return self._value
 
-        def setValue(self, value: int) -> None:  # noqa: N802
+        def setValue(self, value: int) -> None:
             self._value = value
 
     class Label:
         def __init__(self) -> None:
             self.text = ""
 
-        def setText(self, text: str) -> None:  # noqa: N802
+        def setText(self, text: str) -> None:
             self.text = text
 
     page._strategy_sliders = [
@@ -221,7 +221,7 @@ def test_generation_preset_change_applies_immediately_without_feedback(monkeypat
     persisted: dict[str, object] = {}
 
     class SwitchStub(DummySwitch):
-        def blockSignals(self, _blocked: bool) -> None:  # noqa: N802
+        def blockSignals(self, _blocked: bool) -> None:
             return None
 
     class PresetCombo:
@@ -238,7 +238,7 @@ def test_generation_preset_change_applies_immediately_without_feedback(monkeypat
         def itemData(self, index: int) -> str:
             return self._data[index]
 
-        def setCurrentIndex(self, index: int) -> None:  # noqa: N802
+        def setCurrentIndex(self, index: int) -> None:
             self._current = index
 
     page._generation_preset_combo = PresetCombo()
@@ -276,14 +276,14 @@ def test_strategy_template_change_keeps_no_feedback(monkeypatch):
         def value(self) -> int:
             return self._value
 
-        def setValue(self, value: int) -> None:  # noqa: N802
+        def setValue(self, value: int) -> None:
             self._value = value
 
     class Label:
         def __init__(self) -> None:
             self.text = ""
 
-        def setText(self, text: str) -> None:  # noqa: N802
+        def setText(self, text: str) -> None:
             self.text = text
 
     page._strategy_sliders = [
@@ -315,7 +315,7 @@ def test_cloud_ocr_page_progress_updates_progress_bar(monkeypatch):
         def __init__(self) -> None:
             self._value = 0
 
-        def setValue(self, value: int) -> None:  # noqa: N802
+        def setValue(self, value: int) -> None:
             self._value = value
 
         def value(self) -> int:
@@ -325,7 +325,7 @@ def test_cloud_ocr_page_progress_updates_progress_bar(monkeypatch):
         def __init__(self) -> None:
             self.text = ""
 
-        def setText(self, text: str) -> None:  # noqa: N802
+        def setText(self, text: str) -> None:
             self.text = text
 
     page._progress_bar = Progress()
@@ -434,7 +434,7 @@ def test_cloud_ocr_message_progress_updates_status_text():
         def __init__(self) -> None:
             self.text = ""
 
-        def setText(self, text: str) -> None:  # noqa: N802
+        def setText(self, text: str) -> None:
             self.text = text
 
     page._progress_bar = Progress()
@@ -505,7 +505,7 @@ def test_import_page_refresh_conversion_hint_uses_metrics() -> None:
         def __init__(self) -> None:
             self.text = ""
 
-        def setText(self, text: str) -> None:  # noqa: N802
+        def setText(self, text: str) -> None:
             self.text = text
 
     page._performance_hint_label = _Label()

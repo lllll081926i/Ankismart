@@ -36,7 +36,7 @@ class DummyLineEdit:
     def setText(self, text: str) -> None:
         self._text = text
 
-    def setEnabled(self, enabled: bool) -> None:  # noqa: N802
+    def setEnabled(self, enabled: bool) -> None:
         self.enabled = enabled
 
 
@@ -86,13 +86,13 @@ class DummySwitch:
         self._checked = checked
         self.enabled = True
 
-    def isChecked(self) -> bool:  # noqa: N802
+    def isChecked(self) -> bool:
         return self._checked
 
-    def setChecked(self, checked: bool) -> None:  # noqa: N802
+    def setChecked(self, checked: bool) -> None:
         self._checked = checked
 
-    def setEnabled(self, enabled: bool) -> None:  # noqa: N802
+    def setEnabled(self, enabled: bool) -> None:
         self.enabled = enabled
 
 

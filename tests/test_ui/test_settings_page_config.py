@@ -528,7 +528,7 @@ def test_clear_cache_confirmation_dialog_uses_custom_clean_styles(_qapp, monkeyp
 
     dialog = shown_dialog["dialog"]
     assert dialog.windowTitle() == "确认清空缓存"
-    assert "确认要清空所有缓存文件吗？" == dialog.text()
+    assert dialog.text() == "确认要清空所有缓存文件吗？"
     assert "988" in dialog.informativeText()
     assert "1.29" in dialog.informativeText()
     style = dialog.styleSheet()

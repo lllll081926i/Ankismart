@@ -329,7 +329,7 @@ def test_download_missing_ocr_models_forwards_progress_callback(monkeypatch):
 
     monkeypatch.setattr(import_page, "_get_ocr_converter_module", lambda: _StubModule())
 
-    def callback(current, total, msg):  # noqa: ANN001, ANN201
+    def callback(current, total, msg):
         return None
 
     result = import_page.download_missing_ocr_models(

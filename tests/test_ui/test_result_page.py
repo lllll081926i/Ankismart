@@ -62,7 +62,7 @@ class _ThreadLikeWorker:
         self.terminate_called = False
         self.deleted = False
 
-    def isRunning(self) -> bool:  # noqa: N802
+    def isRunning(self) -> bool:
         return self._running
 
     def wait(self, timeout: int) -> None:
@@ -74,7 +74,7 @@ class _ThreadLikeWorker:
     def terminate(self) -> None:
         self.terminate_called = True
 
-    def deleteLater(self) -> None:  # noqa: N802
+    def deleteLater(self) -> None:
         self.deleted = True
 
 
@@ -303,10 +303,10 @@ def test_retry_failed_sync_finished_worker_is_cleaned_up(_qapp, monkeypatch) -> 
                 )
             )
 
-        def isRunning(self) -> bool:  # noqa: N802
+        def isRunning(self) -> bool:
             return False
 
-        def deleteLater(self) -> None:  # noqa: N802
+        def deleteLater(self) -> None:
             self.deleted = True
 
     monkeypatch.setattr("ankismart.ui.result_page.AnkiConnectClient", lambda **kwargs: object())
@@ -498,7 +498,7 @@ def test_retry_failed_updates_persistent_push_status(monkeypatch, _qapp) -> None
         def start(self) -> None:
             self.card_progress.emit(1, 1)
 
-        def isRunning(self) -> bool:  # noqa: N802
+        def isRunning(self) -> bool:
             return True
 
     monkeypatch.setattr("ankismart.ui.result_page.AnkiConnectClient", lambda **kwargs: object())
@@ -539,7 +539,7 @@ def test_repush_all_uses_lazy_gateway_factory(monkeypatch, _qapp) -> None:
         def start(self) -> None:
             created["started"] = True
 
-        def isRunning(self) -> bool:  # noqa: N802
+        def isRunning(self) -> bool:
             return True
 
     monkeypatch.setattr("ankismart.ui.result_page.PushWorker", _PushWorkerStub)
