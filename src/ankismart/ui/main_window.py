@@ -75,8 +75,6 @@ class MainWindow(FluentWindow):
         self.task_runtime = TaskRuntime(store=self._task_store, on_event=self._on_task_event)
         self._active_task_id = ""
         self._resumable_tasks: list[TaskRun] = load_resumable_tasks(self._task_store)
-        for task in self._resumable_tasks:
-            self.task_runtime.register(task)
 
         # Set initial language
         set_language(self.config.language)

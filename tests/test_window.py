@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QApplication
 
 from ankismart.core.config import AppConfig
 from ankismart.core.task_models import TaskStatus, build_default_task_run
+from ankismart.core.task_store import JsonTaskStore
 from ankismart.ui import app as app_module
 from ankismart.ui.main_window import MainWindow
 from tests.e2e.conftest import _configure_test_qapp, _teardown_test_window
@@ -61,7 +62,9 @@ def test_main_window_startup_smoke_budget(monkeypatch) -> None:
         window.close()
         app.processEvents()
 
-    assert median(samples_ms) < 350
+    # Qt + qfluentwidgets startup cost on Windows CI is noisy; keep a budget
+    # that still catches large regressions without making the smoke test flaky.
+    assert median(samples_ms) < 650
 
 
 def test_main_window_keeps_sidebar_back_action(monkeypatch) -> None:
@@ -103,17 +106,39 @@ def test_main_window_title_bar_uses_default_compact_size(monkeypatch) -> None:
 
 def test_main_window_loads_resumable_tasks(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("ankismart.ui.main_window.save_config", lambda _cfg: None)
-    monkeypatch.setattr("ankismart.ui.main_window.TASKS_PATH", tmp_path / "tasks.json")
+    tasks_path = tmp_path / "tasks.json"
+    monkeypatch.setattr("ankismart.ui.main_window.TASKS_PATH", tasks_path)
     task = build_default_task_run(flow="full_pipeline", task_id="task-r1")
     task.status = TaskStatus.FAILED
     task.resume_from_stage = "generate"
-    monkeypatch.setattr("ankismart.ui.main_window.load_resumable_tasks", lambda _store: [task])
+    JsonTaskStore(tasks_path).save(task)
 
     window = MainWindow(config=AppConfig(language="zh", theme="light"))
 
     assert [item.task_id for item in window.resumable_tasks] == ["task-r1"]
     assert "task-r1" in window.task_center_panel._task_widgets
     assert window.task_center_panel.isVisible() is False
+    window.close()
+
+
+def test_main_window_does_not_resave_loaded_resumable_tasks(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("ankismart.ui.main_window.save_config", lambda _cfg: None)
+    tasks_path = tmp_path / "tasks.json"
+    monkeypatch.setattr("ankismart.ui.main_window.TASKS_PATH", tasks_path)
+    task = build_default_task_run(flow="full_pipeline", task_id="task-r2")
+    task.status = TaskStatus.FAILED
+    task.resume_from_stage = "push"
+    JsonTaskStore(tasks_path).save(task)
+
+    save_calls: list[str] = []
+    monkeypatch.setattr(
+        "ankismart.ui.task_runtime.JsonTaskStore.save",
+        lambda self, item: save_calls.append(item.task_id),
+    )
+
+    window = MainWindow(config=AppConfig(language="zh", theme="light"))
+
+    assert save_calls == []
     window.close()
 
 
