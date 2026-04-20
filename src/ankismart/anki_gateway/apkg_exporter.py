@@ -18,6 +18,7 @@ from ankismart.core.models import CardDraft, MediaItem
 from ankismart.core.tracing import get_trace_id, timed
 
 from .styling import MODERN_CARD_CSS
+from .template_enhancer import TEMPLATE_ENHANCER_SCRIPT
 
 logger = get_logger("anki_gateway.apkg_exporter")
 
@@ -38,7 +39,7 @@ _BASIC_MODEL = genanki.Model(
                 '<div class="as-block-title">问题</div>'
                 '<div class="as-block-content as-preformatted">{{Front}}</div>'
                 "</section>"
-                "</div>"
+                "</div>" + _CHOICE_FORMATTER_SCRIPT + TEMPLATE_ENHANCER_SCRIPT
             ),
             "afmt": (
                 '<div class="as-card as-card-back">'
@@ -50,7 +51,11 @@ _BASIC_MODEL = genanki.Model(
                 '<div class="as-block-title">答案</div>'
                 '<div class="as-block-content as-answer-box as-preformatted">{{Back}}</div>'
                 "</section>"
-                "</div>"
+                '<section class="as-block as-extra-block">'
+                '<div class="as-block-title">解析</div>'
+                '<div id="as-back-explain" class="as-block-content as-extra">（无解析）</div>'
+                "</section>"
+                "</div>" + _CHOICE_FORMATTER_SCRIPT + TEMPLATE_ENHANCER_SCRIPT
             ),
         },
     ],

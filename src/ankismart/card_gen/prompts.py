@@ -6,6 +6,14 @@ _MATH_FORMAT_RULES = (
     "- Use standard LaTeX syntax; Anki will render formulas with MathJax\n"
 )
 
+_CODE_FORMAT_RULES = (
+    "- If answer/explanation contains code, it MUST use Markdown code "
+    "wrappers so templates can detect/highlight it\n"
+    "- Inline code must use single backticks: `code`\n"
+    "- Multi-line code must use fenced code blocks: ```language\\n...\\n```\n"
+    "- Never output raw code without backticks/fenced blocks\n"
+)
+
 BASIC_SYSTEM_PROMPT = (
     "You are an expert flashcard creator. Given Markdown content, "
     "extract the most important concepts and create question-answer "
@@ -26,7 +34,10 @@ BASIC_SYSTEM_PROMPT = (
     "- Questions should be self-contained (understandable without the source text)\n"
     "- Avoid overly simple or overly broad questions; each card should test "
     "a specific, meaningful piece of knowledge\n"
-    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n"
+    + _MATH_FORMAT_RULES
+    + _CODE_FORMAT_RULES
+    + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "What is photosynthesis?",\n'
@@ -61,7 +72,10 @@ CLOZE_SYSTEM_PROMPT = (
     "test a specific, meaningful piece of knowledge\n"
     "- Extra must be a layered explanation block using multiple lines; "
     "do NOT add numbering prefixes like 1./2.\n"
-    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n"
+    + _MATH_FORMAT_RULES
+    + _CODE_FORMAT_RULES
+    + "\n"
     "Example output:\n"
     "[\n"
     '  {"Text": "Photosynthesis converts {{c1::light energy}} into '
@@ -90,7 +104,10 @@ IMAGE_QA_SYSTEM_PROMPT = (
     "- For long explanations, split into 2+ short paragraphs on new lines "
     "(do NOT add numbering prefixes like 1./2.)\n"
     "- No explanations or extra text outside the JSON array\n"
-    "- Create 3-10 cards depending on content density\n" + _MATH_FORMAT_RULES + "\n"
+    "- Create 3-10 cards depending on content density\n"
+    + _MATH_FORMAT_RULES
+    + _CODE_FORMAT_RULES
+    + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "In the cell diagram, what organelle is responsible '
@@ -124,7 +141,10 @@ CONCEPT_SYSTEM_PROMPT = (
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
     "- Focus on concepts that require understanding, not simple facts\n"
-    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n"
+    + _MATH_FORMAT_RULES
+    + _CODE_FORMAT_RULES
+    + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "Photosynthesis",\n'
@@ -157,7 +177,10 @@ KEY_TERMS_SYSTEM_PROMPT = (
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
     "- Prioritize domain-specific or technical terms over common vocabulary\n"
-    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n"
+    + _MATH_FORMAT_RULES
+    + _CODE_FORMAT_RULES
+    + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "Chloroplast",\n'
@@ -192,7 +215,10 @@ SINGLE_CHOICE_SYSTEM_PROMPT = (
     "- Exactly one option should be correct\n"
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
-    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n"
+    + _MATH_FORMAT_RULES
+    + _CODE_FORMAT_RULES
+    + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "What is the derivative of <anki-mathjax>f(x) = x^3</anki-mathjax>?\\n\\n'
@@ -228,7 +254,10 @@ MULTIPLE_CHOICE_SYSTEM_PROMPT = (
     "- Each question should have 2 or more correct options\n"
     "- No explanations or extra text outside the JSON array\n"
     "- Create 3-10 cards depending on content density\n"
-    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n"
+    + _MATH_FORMAT_RULES
+    + _CODE_FORMAT_RULES
+    + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "Which of the following are solutions to '

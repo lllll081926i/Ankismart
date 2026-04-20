@@ -402,6 +402,70 @@ hr#answer {
     color: var(--as-text-soft);
 }
 
+
+/* ===== Scripted Code Highlight ===== */
+.as-code {
+    font-family: "JetBrains Mono", "Consolas", "Courier New", monospace;
+}
+
+.as-inline-code {
+    border: 1px solid var(--as-border);
+    background: var(--as-primary-soft);
+    border-radius: 6px;
+    padding: 2px 6px;
+}
+
+.as-code-block {
+    margin: 0.9em 0;
+    border: 1px solid var(--as-border);
+    background: #f7faff;
+    border-radius: 10px;
+    padding: 10px 12px;
+    overflow-x: auto;
+}
+
+.as-code-kw {
+    color: #0f6ad9;
+    font-weight: 700;
+}
+
+.as-code-string {
+    color: #0b8f53;
+}
+
+.as-code-comment {
+    color: #6a7488;
+    font-style: italic;
+}
+
+.as-code-num {
+    color: #a64b00;
+}
+
+.card.nightMode .as-code-block,
+.nightMode .as-code-block {
+    background: rgba(50, 50, 50, 0.88);
+}
+
+.card.nightMode .as-code-kw,
+.nightMode .as-code-kw {
+    color: #78b8ff;
+}
+
+.card.nightMode .as-code-string,
+.nightMode .as-code-string {
+    color: #8edab2;
+}
+
+.card.nightMode .as-code-comment,
+.nightMode .as-code-comment {
+    color: #9ca8bd;
+}
+
+.card.nightMode .as-code-num,
+.nightMode .as-code-num {
+    color: #ffbf7a;
+}
 /* ===== Mobile ===== */
 @media (max-width: 600px) {
     .card {
