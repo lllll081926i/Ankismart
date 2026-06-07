@@ -88,36 +88,19 @@ pyproject_path = project_root / "pyproject.toml"
 version_data = tomllib.loads(pyproject_path.read_text(encoding='utf-8'))
 app_version = version_data['project']['version']
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name="Ankismart",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=str(icon_path) if icon_path.exists() else None,
-    # 嵌入版本信息到可执行文件属性
-    version='version_info.txt',
-)
-
 # 创建版本信息文件
+version_info_path = project_root / 'version_info.txt'
+version_parts = app_version.replace('-rc', '.').replace('-alpha', '.').replace('-beta', '.').split('.')
+version_tuple = ','.join(version_parts[:4] if len(version_parts) >= 4 else version_parts + ['0'] * (4 - len(version_parts)))
+
 version_info_content = f'''# UTF-8
 #
 # Version Information
 #
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=({app_version.replace('.', ',').replace('-rc', ',')},0),
-    prodvers=({app_version.replace('.', ',').replace('-rc', ',')},0),
+    filevers=({version_tuple}),
+    prodvers=({version_tuple}),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -143,7 +126,27 @@ VSVersionInfo(
   ]
 )
 '''
-(project_root / 'version_info.txt').write_text(version_info_content, encoding='utf-8')
+version_info_path.write_text(version_info_content, encoding='utf-8')
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="Ankismart",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=str(icon_path) if icon_path.exists() else None,
+    version=str(version_info_path),
+)
 
 coll = COLLECT(
     exe,
