@@ -55,26 +55,17 @@ VersionInfoProductName={#MyAppName}
 VersionInfoProductVersion={#MyAppVersion}
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "{#ProjectRoot}\packaging\languages\ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
-chinesesimplified.CreateDesktopShortcutOnFinish=创建桌面快捷方式
-chinesesimplified.LaunchAppOnFinish=启动 Ankismart
-chinesesimplified.WelcomeHeadline=安装 Ankismart
-chinesesimplified.WelcomeBody=Ankismart 会把文档转换、卡片生成与推送流程集中到一个桌面工具里。安装程序将把应用文件放在当前目录，配置保存在 %LOCALAPPDATA%\\ankismart，日志保存在安装目录下的 logs 文件夹中。
-chinesesimplified.SelectDirBody=请选择 Ankismart 的安装位置。程序文件会写入这里，配置仍保存在 %LOCALAPPDATA%\\ankismart，日志写入安装目录下的 logs 文件夹。
-chinesesimplified.FinishedHeadline=Ankismart 已准备就绪
-chinesesimplified.FinishedBody=安装已经完成。你现在可以立即启动 Ankismart，开始导入文档、生成卡片并推送到 Anki。
-chinesesimplified.RemoveUserDataOnUninstall=卸载时删除此用户的配置与本地数据（%LOCALAPPDATA%\\ankismart）
 english.CreateDesktopShortcutOnFinish=Create desktop shortcut
 english.LaunchAppOnFinish=Launch Ankismart
 english.WelcomeHeadline=Install Ankismart
-english.WelcomeBody=Ankismart brings document conversion, card generation, review, and Anki delivery into one desktop app. The installer keeps app files here, stores configuration in %LOCALAPPDATA%\\ankismart, and writes logs to the local logs folder beside the executable.
-english.SelectDirBody=Choose where Ankismart should be installed. App files will be written here, configuration stays in %LOCALAPPDATA%\\ankismart, and logs are stored in the local logs folder beside the executable.
+english.WelcomeBody=Ankismart brings document conversion, card generation, review, and Anki delivery into one desktop app. The installer keeps app files here, stores configuration in %LOCALAPPDATA%\ankismart, and writes logs to the local logs folder beside the executable.
+english.SelectDirBody=Choose where Ankismart should be installed. App files will be written here, configuration stays in %LOCALAPPDATA%\ankismart, and logs are stored in the local logs folder beside the executable.
 english.FinishedHeadline=Ankismart is ready
 english.FinishedBody=Setup has finished. You can launch Ankismart now to import documents, generate cards, and send them to Anki.
-english.RemoveUserDataOnUninstall=Remove this user's configuration and local data during uninstall (%LOCALAPPDATA%\\ankismart)
+english.RemoveUserDataOnUninstall=Remove this user's configuration and local data during uninstall (%LOCALAPPDATA%\ankismart)
 
 [Files]
 Source: "{#SourceDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
