@@ -7,10 +7,26 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (optional)'
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version to build'
+        required: false
+        type: string
+      upload_to_release:
+        description: 'Upload to GitHub Release'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: build-packages-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}  # Don't cancel tag builds
 
 permissions:
   contents: write
@@ -75,7 +91,24 @@ jobs:
         id: version
         shell: powershell
         run: |
-          $version = uv run python -c "import tomllib, pathlib; data = tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8')); print(data['project']['version'])"
+          # Use input version if provided, otherwise read from pyproject.toml
+          $inputVersion = "${{ inputs.version }}"
+          if ($inputVersion) {
+            $version = $inputVersion
+          } else {
+            $version = uv run python -c "import tomllib, pathlib; data = tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8')); print(data['project']['version'])"
+          }
+
+          # Verify tag matches version if this is a tag push
+          $gitRef = "${{ github.ref }}"
+          if ($gitRef -match '^refs/tags/v(.+)$') {
+            $tagVersion = $matches[1]
+            if ($tagVersion -ne $version) {
+              Write-Error "Tag version ($tagVersion) does not match pyproject.toml version ($version)"
+              exit 1
+            }
+          }
+
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "artifact_name=ankismart-windows-packages-$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
@@ -90,10 +123,11 @@ jobs:
           if-no-files-found: error
 
       - name: Publish Release Assets
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: (startsWith(github.ref, 'refs/tags/v') || inputs.upload_to_release == true) && success()
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', steps.version.outputs.version) }}
           files: |
             dist/release/portable/*.zip
             dist/release/installer/*.exe
+          fail_on_unmatched_files: true

@@ -1,0 +1,126 @@
+name: Auto Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.2.6, 0.2.6-rc2)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
+      is_prerelease: ${{ steps.check.outputs.is_prerelease }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if version changed
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+            IS_PRERELEASE="${{ inputs.prerelease }}"
+          else
+            VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+
+            # Check if version tag already exists
+            if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+              echo "Version v$VERSION already exists"
+              echo "should_release=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            # Detect if it's a pre-release (contains -rc, -alpha, -beta)
+            if [[ "$VERSION" =~ -(rc|alpha|beta) ]]; then
+              IS_PRERELEASE="true"
+            else
+              IS_PRERELEASE="false"
+            fi
+          fi
+
+          echo "Version: $VERSION"
+          echo "Is pre-release: $IS_PRERELEASE"
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+
+  create-release:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate Release Notes
+        id: notes
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+
+          # Extract changelog for this version if exists
+          if [ -f "docs/changelog.md" ] || [ -f "CHANGELOG.md" ]; then
+            CHANGELOG_FILE=$([ -f "CHANGELOG.md" ] && echo "CHANGELOG.md" || echo "docs/changelog.md")
+            # Extract section for this version
+            NOTES=$(sed -n "/## \[${VERSION}\]/,/## \[/p" "$CHANGELOG_FILE" | sed '$d' || echo "")
+          fi
+
+          # If no changelog or empty, generate from commits
+          if [ -z "$NOTES" ]; then
+            NOTES="## What's Changed\n\n"
+            NOTES+=$(git log --oneline --pretty=format:"- %s (%h)" $(git describe --tags --abbrev=0 2>/dev/null || echo "")..HEAD || echo "- Initial release")
+          fi
+
+          # Save to file for multiline handling
+          echo "$NOTES" > release_notes.txt
+          echo "notes_file=release_notes.txt" >> $GITHUB_OUTPUT
+
+      - name: Create Git Tag
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.check-version.outputs.version }}
+          name: Release v${{ needs.check-version.outputs.version }}
+          body_path: release_notes.txt
+          draft: false
+          prerelease: ${{ needs.check-version.outputs.is_prerelease == 'true' }}
+
+  build-and-upload:
+    needs: [check-version, create-release]
+    uses: ./.github/workflows/build-packages.yml
+    with:
+      version: ${{ needs.check-version.outputs.version }}
+      upload_to_release: true
+    secrets: inherit

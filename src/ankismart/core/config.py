@@ -102,33 +102,105 @@ KNOWN_PROVIDERS: dict[str, str] = {
     "Ollama (本地)": "http://localhost:11434/v1",
 }
 
-DEFAULT_GENERATION_PRESET = "reading_general"
+DEFAULT_GENERATION_PRESET = "balanced"
+
+# 卡片数量等级定义
+CARD_COUNT_LEVELS = {
+    "minimal": {
+        "label_zh": "精简",
+        "label_en": "Minimal",
+        "multiplier": 0.5,
+        "description_zh": "只提取最核心的知识点",
+        "description_en": "Extract only the most essential points",
+    },
+    "balanced": {
+        "label_zh": "适中（推荐）",
+        "label_en": "Balanced (Recommended)",
+        "multiplier": 1.0,
+        "description_zh": "平衡覆盖率与数量",
+        "description_en": "Balance coverage and quantity",
+    },
+    "comprehensive": {
+        "label_zh": "全面",
+        "label_en": "Comprehensive",
+        "multiplier": 1.5,
+        "description_zh": "详尽覆盖所有重要知识点",
+        "description_en": "Thorough coverage of all important points",
+    },
+    "exhaustive": {
+        "label_zh": "详尽",
+        "label_en": "Exhaustive",
+        "multiplier": 2.0,
+        "description_zh": "最大化卡片数量，不遗漏任何细节",
+        "description_en": "Maximize card count, ensure no detail is missed",
+    },
+}
+
 GENERATION_PRESET_LIBRARY: dict[str, dict[str, object]] = {
-    "reading_general": {
-        "label_zh": "通用阅读",
-        "label_en": "General Reading",
+    "balanced": {
+        "label_zh": "平衡学习",
+        "label_en": "Balanced Learning",
+        "description_zh": "适合日常阅读和学习，问答与填空结合",
+        "description_en": "For daily reading and learning, mix of Q&A and cloze",
         "target_total": 20,
         "auto_target_count": True,
-        "strategy_mix": {"basic": 100},
+        "strategy_mix": {"basic": 60, "cloze": 40},
     },
-    "exam_dense": {
-        "label_zh": "考试冲刺",
-        "label_en": "Exam Dense",
-        "target_total": 24,
-        "auto_target_count": False,
+    "exam_prep": {
+        "label_zh": "考试备考",
+        "label_en": "Exam Preparation",
+        "description_zh": "针对考试，以选择题为主，含多选和填空",
+        "description_en": "Exam-focused, primarily multiple choice with cloze",
+        "target_total": 30,
+        "auto_target_count": True,
         "strategy_mix": {
-            "single_choice": 35,
-            "multiple_choice": 25,
+            "single_choice": 40,
+            "multiple_choice": 30,
             "cloze": 20,
-            "basic": 20,
+            "basic": 10,
         },
     },
-    "language_vocab": {
-        "label_zh": "词汇记忆",
-        "label_en": "Language Vocab",
-        "target_total": 18,
-        "auto_target_count": False,
-        "strategy_mix": {"cloze": 40, "key_terms": 35, "basic": 25},
+    "concept_mastery": {
+        "label_zh": "概念理解",
+        "label_en": "Concept Mastery",
+        "description_zh": "深入理解核心概念，适合理论学习",
+        "description_en": "Deep understanding of core concepts, ideal for theoretical learning",
+        "target_total": 15,
+        "auto_target_count": True,
+        "strategy_mix": {"concept": 60, "basic": 40},
+    },
+    "vocabulary": {
+        "label_zh": "词汇积累",
+        "label_en": "Vocabulary Building",
+        "description_zh": "专注术语和关键词，适合语言学习",
+        "description_en": "Focus on terms and keywords, perfect for language learning",
+        "target_total": 25,
+        "auto_target_count": True,
+        "strategy_mix": {"key_terms": 50, "cloze": 30, "basic": 20},
+    },
+    "quick_review": {
+        "label_zh": "快速复习",
+        "label_en": "Quick Review",
+        "description_zh": "简洁高效，快速抓住要点",
+        "description_en": "Concise and efficient, quickly grasp key points",
+        "target_total": 10,
+        "auto_target_count": True,
+        "strategy_mix": {"basic": 70, "cloze": 30},
+    },
+    "deep_study": {
+        "label_zh": "深度学习",
+        "label_en": "Deep Study",
+        "description_zh": "全面深入，多种题型混合",
+        "description_en": "Comprehensive and in-depth, mixed question types",
+        "target_total": 40,
+        "auto_target_count": True,
+        "strategy_mix": {
+            "concept": 25,
+            "basic": 25,
+            "single_choice": 20,
+            "cloze": 20,
+            "key_terms": 10,
+        },
     },
 }
 

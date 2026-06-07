@@ -82,6 +82,12 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 icon_path = project_root / "src" / "ankismart" / "ui" / "assets" / "icon.ico"
 
+# 读取版本号用于嵌入文件属性
+import tomllib
+pyproject_path = project_root / "pyproject.toml"
+version_data = tomllib.loads(pyproject_path.read_text(encoding='utf-8'))
+app_version = version_data['project']['version']
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -99,7 +105,45 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=str(icon_path) if icon_path.exists() else None,
+    # 嵌入版本信息到可执行文件属性
+    version='version_info.txt',
 )
+
+# 创建版本信息文件
+version_info_content = f'''# UTF-8
+#
+# Version Information
+#
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=({app_version.replace('.', ',').replace('-rc', ',')},0),
+    prodvers=({app_version.replace('.', ',').replace('-rc', ',')},0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+      StringTable(
+        '040904B0',
+        [StringStruct('CompanyName', 'AnkiSmart Team'),
+        StringStruct('FileDescription', 'AnkiSmart - Intelligent Anki Flashcard Generator'),
+        StringStruct('FileVersion', '{app_version}'),
+        StringStruct('InternalName', 'Ankismart'),
+        StringStruct('LegalCopyright', 'Copyright (C) 2024-2026 AnkiSmart Team'),
+        StringStruct('OriginalFilename', 'Ankismart.exe'),
+        StringStruct('ProductName', 'AnkiSmart'),
+        StringStruct('ProductVersion', '{app_version}')])
+      ]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+'''
+(project_root / 'version_info.txt').write_text(version_info_content, encoding='utf-8')
 
 coll = COLLECT(
     exe,

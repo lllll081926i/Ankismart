@@ -22,11 +22,15 @@ BASIC_SYSTEM_PROMPT = (
     "(do NOT add numbering prefixes like 1./2.)\n"
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- No explanations or extra text outside the JSON array\n"
-    "- Create 3-10 cards depending on content density\n"
     "- Questions should be self-contained (understandable without the source text)\n"
     "- Avoid overly simple or overly broad questions; each card should test "
     "a specific, meaningful piece of knowledge\n"
-    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
+    "- IMPORTANT: Detect the language of the content and generate cards in THE SAME LANGUAGE\n"
+    "  * If content is in Chinese, generate cards in Chinese\n"
+    "  * If content is in English, generate cards in English\n"
+    "  * If content is in other languages, generate cards in that language\n"
+    + _MATH_FORMAT_RULES
+    + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "What is photosynthesis?",\n'
@@ -182,16 +186,22 @@ SINGLE_CHOICE_SYSTEM_PROMPT = (
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- Front must contain: question + 4 options labeled A/B/C/D\n"
     "- Each option must be on its own line; never place multiple options on one line\n"
-    "- Back must follow a strict structure:\n"
-    '  1) First line: "答案: <single option letter>"\n'
-    '  2) Then "解析:" with layered lines; each key point on a new line\n'
-    "- Each explanation line must start with its option letter (for example: A. ...)\n"
-    '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
-    "- For long explanations, split into 2+ short paragraphs on new lines "
-    "(do NOT add numbering prefixes like 1./2.)\n"
+    "- Back must follow this exact structure:\n"
+    '  Line 1: "答案: <single letter>" (or "Answer: <letter>")\n'
+    '  Line 2+: "解析:" (or "Explanation:") analyzing each option\n'
+    "- In the explanation section:\n"
+    "  * Analyze each option (A./B./C./D.) explaining why it's correct or wrong\n"
+    "  * Use clear reasoning, not just 'correct' or 'incorrect'\n"
+    "  * Each option analysis starts with its letter followed by a period (e.g., 'A. reason')\n"
+    "  * This is the ONLY place where letters with periods are allowed\n"
     "- Exactly one option should be correct\n"
-    "- No explanations or extra text outside the JSON array\n"
-    "- Create 3-10 cards depending on content density\n"
+    "- Card count guidance (aim to capture ALL important knowledge):\n"
+    "  * For short content (<500 words): create 5-8 cards\n"
+    "  * For medium content (500-1500 words): create 10-15 cards\n"
+    "  * For long content (>1500 words): create 15-25 cards\n"
+    "  * IMPORTANT: Cover ALL key concepts - better to have more cards than miss important points\n"
+    "- Questions should be specific and test understanding, not memorization\n"
+    "- Distractors (wrong options) should be plausible but clearly distinguishable with proper reasoning\n"
     "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
@@ -201,12 +211,11 @@ SINGLE_CHOICE_SYSTEM_PROMPT = (
     "C. <anki-mathjax>x^2</anki-mathjax>\\n"
     'D. <anki-mathjax>3x</anki-mathjax>",\n'
     '   "Back": "答案: B\\n'
-    "解析:\\nA. <anki-mathjax>2x^2</anki-mathjax> 少乘了系数 3。\\n"
-    "B. 使用幂函数求导法则 "
-    "<anki-mathjax>\\\\frac{d}{dx}(x^n) = nx^{n-1}</anki-mathjax>，"
-    "所以结果是 <anki-mathjax>3x^2</anki-mathjax>。\\n"
-    "C. <anki-mathjax>x^2</anki-mathjax> 漏掉了系数 3。\\n"
-    'D. <anki-mathjax>3x</anki-mathjax> 的次数不对。"}\n'
+    "解析:\\n"
+    "A. Missing coefficient - should multiply by 3.\\n"
+    "B. Correct! Apply power rule: <anki-mathjax>\\\\frac{d}{dx}(x^n) = nx^{n-1}</anki-mathjax>, giving <anki-mathjax>3x^2</anki-mathjax>.\\n"
+    "C. Missing coefficient 3.\\n"
+    'D. Wrong exponent - should be squared, not linear."}\n'
     "]\n"
 )
 
@@ -218,16 +227,20 @@ MULTIPLE_CHOICE_SYSTEM_PROMPT = (
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- Front must contain: question + 4 to 5 options labeled A/B/C/D(/E)\n"
     "- Each option must be on its own line; never place multiple options on one line\n"
-    "- Back must follow a strict structure:\n"
-    '  1) First line: "答案: <all correct option letters>"\n'
-    '  2) Then "解析:" with layered lines; each key point on a new line\n'
-    "- Each explanation line must start with its option letter (for example: A. ...)\n"
-    '- Do NOT add any leading numbering before "答案:"/"解析:" (e.g., "1. 答案:", "2. 解析:")\n'
-    "- For long explanations, split into 2+ short paragraphs on new lines "
-    "(do NOT add numbering prefixes like 1./2.)\n"
+    "- Back must follow this exact structure:\n"
+    '  Line 1: "答案: <all correct letters>" (or "Answer: <letters>")\n'
+    '  Line 2+: "解析:" (or "Explanation:") analyzing each option\n'
+    "- In the explanation section:\n"
+    "  * Analyze each option (A./B./C./D./E.) explaining why it's correct or wrong\n"
+    "  * Use clear reasoning for each option\n"
+    "  * Each option analysis starts with its letter followed by a period (e.g., 'A. reason')\n"
+    "  * This is the ONLY place where letters with periods are allowed\n"
     "- Each question should have 2 or more correct options\n"
-    "- No explanations or extra text outside the JSON array\n"
-    "- Create 3-10 cards depending on content density\n"
+    "- Card count guidance (aim to capture ALL important knowledge):\n"
+    "  * For short content (<500 words): create 5-8 cards\n"
+    "  * For medium content (500-1500 words): create 10-15 cards\n"
+    "  * For long content (>1500 words): create 15-25 cards\n"
+    "  * IMPORTANT: Cover ALL key concepts - better to have more cards than miss important points\n"
     "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
@@ -238,12 +251,11 @@ MULTIPLE_CHOICE_SYSTEM_PROMPT = (
     "C. <anki-mathjax>x = 3</anki-mathjax>\\n"
     'D. <anki-mathjax>x = 6</anki-mathjax>",\n'
     '   "Back": "答案: B, C\\n'
-    "解析:\\nA. 代入后不满足方程。\\n"
-    "B. 因式分解得到 <anki-mathjax>(x-2)(x-3) = 0</anki-mathjax>，"
-    "所以 <anki-mathjax>x = 2</anki-mathjax> 正确。\\n"
-    "C. 因式分解得到 <anki-mathjax>(x-2)(x-3) = 0</anki-mathjax>，"
-    "所以 <anki-mathjax>x = 3</anki-mathjax> 正确。\\n"
-    'D. 代入后不满足方程。"}\n'
+    "解析:\\n"
+    "A. Substituting gives 1-5+6=2, not zero.\\n"
+    "B. Correct! Factoring gives <anki-mathjax>(x-2)(x-3) = 0</anki-mathjax>, so <anki-mathjax>x = 2</anki-mathjax> works.\\n"
+    "C. Correct! Factoring gives <anki-mathjax>(x-2)(x-3) = 0</anki-mathjax>, so <anki-mathjax>x = 3</anki-mathjax> works.\\n"
+    'D. Substituting gives 36-30+6=12, not zero."}\n'
     "]\n"
 )
 

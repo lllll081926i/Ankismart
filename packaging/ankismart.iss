@@ -33,7 +33,8 @@ DefaultDirName={localappdata}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir={#OutputDir}
-OutputBaseFilename=Ankismart-Setup-{#MyAppVersion}
+; 输出文件名不带版本号
+OutputBaseFilename=Ankismart-Setup
 SetupIconFile={#ProjectRoot}\src\ankismart\ui\assets\icon.ico
 Compression=lzma
 SolidCompression=yes
@@ -45,6 +46,13 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; 版本信息嵌入到安装程序属性中
+VersionInfoVersion={#MyAppVersion}
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription={#MyAppName} Setup
+VersionInfoCopyright=Copyright (C) 2024-2026 {#MyAppPublisher}
+VersionInfoProductName={#MyAppName}
+VersionInfoProductVersion={#MyAppVersion}
 
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "{#ProjectRoot}\packaging\languages\ChineseSimplified.isl"
