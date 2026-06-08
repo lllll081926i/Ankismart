@@ -42,11 +42,9 @@ _BASIC_MODEL = genanki.Model(
                 "</div>"
             ),
             "afmt": (
+                "{{FrontSide}}"
+                '<hr id="answer">'
                 '<div class="as-card as-card-back">'
-                '<section class="as-block as-question-block">'
-                '<div class="as-block-title">问题</div>'
-                '<div class="as-block-content as-preformatted">{{Front}}</div>'
-                "</section>"
                 '<section class="as-block as-answer-block">'
                 '<div class="as-block-title">答案</div>'
                 '<div class="as-block-content as-answer-box as-preformatted">{{Back}}</div>'
@@ -74,22 +72,19 @@ _CLOZE_MODEL = genanki.Model(
                 "</div>"
             ),
             "afmt": (
+                "{{FrontSide}}"
+                '<hr id="answer">'
                 '<div class="as-card as-card-back">'
-                '<section class="as-block as-question-block">'
-                '<div class="as-block-title">问题</div>'
-                '<div class="as-block-content as-preformatted">{{cloze:Text}}</div>'
-                "</section>"
                 '<section class="as-block as-answer-block">'
                 '<div class="as-block-title">答案</div>'
                 '<div class="as-block-content as-answer-box as-preformatted">{{cloze:Text}}</div>'
                 "</section>"
+                "{{#Extra}}"
                 '<section class="as-block as-extra-block">'
                 '<div class="as-block-title">解析</div>'
-                "{{#Extra}}"
                 '<div class="as-block-content as-extra as-preformatted">{{Extra}}</div>'
-                "{{/Extra}}"
-                '{{^Extra}}<div class="as-block-content as-extra">（无解析）</div>{{/Extra}}'
                 "</section>"
+                "{{/Extra}}"
                 "</div>"
             ),
         },

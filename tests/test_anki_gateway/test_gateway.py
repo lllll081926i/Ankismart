@@ -5,8 +5,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from ankismart.anki_gateway.gateway import (
-    _ANKI_TEMPLATE_FORMATTER_SCRIPT,
+    _ANKI_BASIC_AFMT,
+    _ANKI_BASIC_QFMT,
+    _ANKI_CLOZE_AFMT,
+    _ANKI_CLOZE_QFMT,
     ANKISMART_BASIC_MODEL,
+    ANKISMART_CLOZE_MODEL,
     AnkiGateway,
     _card_to_note_params,
 )
@@ -105,11 +109,16 @@ class TestCardToNoteParams:
         assert scope_opts["checkChildren"] is True
         assert scope_opts["checkAllModels"] is True
 
-    def test_template_script_is_latex_aware(self) -> None:
-        assert "containsLatex" in _ANKI_TEMPLATE_FORMATTER_SCRIPT
-        assert "mathRe" in _ANKI_TEMPLATE_FORMATTER_SCRIPT
-        assert "var labeled = text.match" in _ANKI_TEMPLATE_FORMATTER_SCRIPT
-        assert "normalizedLines.length >= 2" not in _ANKI_TEMPLATE_FORMATTER_SCRIPT
+    def test_official_templates_do_not_depend_on_runtime_script(self) -> None:
+        joined = "\n".join([_ANKI_BASIC_QFMT, _ANKI_BASIC_AFMT, _ANKI_CLOZE_QFMT, _ANKI_CLOZE_AFMT])
+
+        assert "<script" not in joined.lower()
+        assert "document." not in joined
+        assert "{{Front}}" in _ANKI_BASIC_QFMT
+        assert "{{FrontSide}}" in _ANKI_BASIC_AFMT
+        assert "{{Back}}" in _ANKI_BASIC_AFMT
+        assert "{{cloze:Text}}" in _ANKI_CLOZE_QFMT
+        assert "{{cloze:Text}}" in _ANKI_CLOZE_AFMT
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +293,34 @@ class TestPush:
         update_args = client.update_model_templates.call_args[0]
         assert update_args[0] == ANKISMART_BASIC_MODEL
         assert "Card 1" in update_args[1]
+        template = update_args[1]["Card 1"]
+        assert "<script" not in "\n".join(template.values()).lower()
+        assert "{{FrontSide}}" in template["Back"]
+
+    def test_push_syncs_cloze_model_style_with_official_cloze_filter(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "ankismart.anki_gateway.gateway.validate_card_draft", lambda card, client: None
+        )
+        client = _fake_client()
+        client.get_model_templates.return_value = {"Cloze": {"Front": "", "Back": ""}}
+        gw = AnkiGateway(client)
+
+        result = gw.push(
+            [
+                _card(
+                    note_type="Cloze",
+                    fields={"Text": "The {{c1::sun}} is a star.", "Extra": ""},
+                )
+            ]
+        )
+
+        assert result.succeeded == 1
+        client.get_model_templates.assert_called_once_with(ANKISMART_CLOZE_MODEL)
+        update_args = client.update_model_templates.call_args[0]
+        template = update_args[1]["Cloze"]
+        assert "<script" not in "\n".join(template.values()).lower()
+        assert "{{cloze:Text}}" in template["Front"]
+        assert "{{cloze:Text}}" in template["Back"]
 
     def test_push_style_sync_failure_does_not_block_push(self, monkeypatch) -> None:
         monkeypatch.setattr(

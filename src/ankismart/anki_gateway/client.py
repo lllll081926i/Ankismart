@@ -186,7 +186,3 @@ class AnkiConnectClient:
     def update_note_fields(self, note_id: int, fields: dict[str, str]) -> None:
         """Update fields of an existing note."""
         self._request("updateNoteFields", {"note": {"id": note_id, "fields": fields}})
-
-    def notes_info(self, note_ids: list[int]) -> list[dict[str, Any]]:
-        """Get detailed info for a list of note IDs."""
-        return self._request("notesInfo", {"notes": note_ids})

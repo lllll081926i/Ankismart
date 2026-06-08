@@ -27,7 +27,7 @@ def test_push_reuses_first_card_trace_id(monkeypatch):
             def __enter__(self):
                 return trace_id or "generated"
 
-            def __exit__(self, exc_type, exc, tb):
+            def __exit__(self, _exc_type, _exc, _tb):
                 return False
 
         return _Ctx()
@@ -37,7 +37,7 @@ def test_push_reuses_first_card_trace_id(monkeypatch):
             def __enter__(self):
                 return None
 
-            def __exit__(self, exc_type, exc, tb):
+            def __exit__(self, _exc_type, _exc, _tb):
                 return False
 
         return _Ctx()

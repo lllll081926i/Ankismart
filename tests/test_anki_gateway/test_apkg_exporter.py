@@ -74,6 +74,7 @@ class TestGetModel:
         assert "<script>" not in template["qfmt"]
         assert "<script>" not in template["afmt"]
         assert "{{Front}}" in template["qfmt"]
+        assert "{{FrontSide}}" in template["afmt"]
         assert "{{Back}}" in template["afmt"]
 
 
