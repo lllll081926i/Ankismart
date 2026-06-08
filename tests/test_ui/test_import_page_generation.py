@@ -9,7 +9,6 @@ from PyQt6.QtWidgets import QApplication
 from ankismart.core.config import AppConfig
 from ankismart.core.task_models import build_default_task_run
 from ankismart.ui.import_page import _STRATEGY_TEMPLATE_LIBRARY, ImportPage
-from ankismart.ui.utils import format_operation_hint
 from ankismart.ui.workflows import (
     ConvertWorkflowRequest,
     validate_convert_request,
@@ -35,7 +34,7 @@ def test_build_generation_config_single_mode() -> None:
     config = ImportPage.build_generation_config(page)
 
     assert config["mode"] == "mixed"
-    assert config["target_total"] == 20
+    assert config["target_total"] == 0
     assert config["auto_target_count"] is True
     assert config["strategy_mix"] == [{"strategy": "basic", "ratio": 100}]
 
@@ -460,66 +459,3 @@ def test_validate_convert_request_rejects_missing_api_key_for_non_ollama() -> No
     assert issue is not None
     assert issue.focus_target == "provider"
     assert "API Key" in issue.content
-
-
-def test_format_operation_hint_includes_last_and_median() -> None:
-    config = AppConfig(language="zh")
-    config.ops_conversion_durations = [6.0, 10.0, 14.0]
-    config.task_history = [
-        {
-            "event": "batch_convert",
-            "status": "success",
-            "summary": "转换 3/3，失败 0",
-            "payload": {"duration_seconds": 14.0},
-        }
-    ]
-
-    text = format_operation_hint(config, event="convert", language="zh")
-
-    assert "最近转换 14.0 秒" in text
-    assert "P50 10.0 秒" in text
-
-
-def test_format_operation_hint_reads_batch_push_history() -> None:
-    config = AppConfig(language="zh")
-    config.ops_push_durations = [4.0, 8.0, 12.0]
-    config.task_history = [
-        {
-            "event": "batch_push",
-            "status": "success",
-            "summary": "推送成功 12 张，失败 0 张",
-            "payload": {"duration_seconds": 12.0},
-        }
-    ]
-
-    text = format_operation_hint(config, event="push", language="zh")
-
-    assert "最近推送 12.0 秒" in text
-    assert "P50 8.0 秒" in text
-
-
-def test_import_page_refresh_conversion_hint_uses_metrics() -> None:
-    page = make_page()
-
-    class _Label:
-        def __init__(self) -> None:
-            self.text = ""
-
-        def setText(self, text: str) -> None:
-            self.text = text
-
-    page._performance_hint_label = _Label()
-    page._main.config.ops_conversion_durations = [8.0, 12.0]
-    page._main.config.task_history = [
-        {
-            "event": "batch_convert",
-            "status": "success",
-            "summary": "转换 1/1，失败 0",
-            "payload": {"duration_seconds": 12.0},
-        }
-    ]
-
-    ImportPage._refresh_conversion_hint(page)
-
-    assert "最近转换 12.0 秒" in page._performance_hint_label.text
-    assert "P50 10.0 秒" in page._performance_hint_label.text

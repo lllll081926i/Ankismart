@@ -9,7 +9,6 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
-    QMessageBox,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -392,91 +391,6 @@ class ResultPage(QWidget):
         card_layout.addLayout(scope_row, 1)
         card_layout.addLayout(model_row, 1)
         card_layout.addLayout(allow_row, 1)
-
-        return card
-
-    def _create_duplicate_settings_card(self) -> SimpleCardWidget:
-        """Create duplicate check settings card following QFluentWidgets official style."""
-        card = SimpleCardWidget()
-        card.setBorderRadius(8)
-
-        card_layout = QVBoxLayout(card)
-        card_layout.setSpacing(SPACING_MEDIUM)
-        card_layout.setContentsMargins(
-            MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD
-        )
-
-        # Title
-        title_label = SubtitleLabel(t("result.duplicate_check_settings"))
-        card_layout.addWidget(title_label)
-
-        # Duplicate scope setting
-        scope_row = QHBoxLayout()
-        scope_row.setSpacing(SPACING_MEDIUM)
-
-        scope_label = BodyLabel(t("result.duplicate_scope"))
-        scope_label.setMinimumWidth(100)
-        scope_row.addWidget(scope_label)
-
-        self._duplicate_scope_combo = ComboBox()
-        self._duplicate_scope_combo.addItem(t("result.duplicate_scope_deck"), userData="deck")
-        self._duplicate_scope_combo.addItem(
-            t("result.duplicate_scope_collection"), userData="collection"
-        )
-        duplicate_scope = getattr(self._main.config, "duplicate_scope", "deck")
-        self._duplicate_scope_combo.setCurrentIndex(0 if duplicate_scope == "deck" else 1)
-        self._duplicate_scope_combo.currentIndexChanged.connect(self._on_duplicate_scope_changed)
-        self._duplicate_scope_combo.setMinimumWidth(150)
-        apply_compact_combo_metrics(self._duplicate_scope_combo)
-        scope_row.addWidget(self._duplicate_scope_combo)
-
-        scope_desc = CaptionLabel(t("result.duplicate_scope_desc"))
-        scope_row.addWidget(scope_desc)
-        scope_row.addStretch()
-
-        card_layout.addLayout(scope_row)
-
-        # Check model setting
-        model_row = QHBoxLayout()
-        model_row.setSpacing(SPACING_MEDIUM)
-
-        model_label = BodyLabel(t("result.duplicate_check_model"))
-        model_label.setMinimumWidth(100)
-        model_row.addWidget(model_label)
-
-        self._check_model_switch = SwitchButton()
-        self._check_model_switch.setChecked(
-            getattr(self._main.config, "duplicate_check_model", True)
-        )
-        self._check_model_switch.checkedChanged.connect(self._on_check_model_changed)
-        model_row.addWidget(self._check_model_switch)
-
-        model_desc = CaptionLabel(t("result.duplicate_check_model_desc"))
-        model_row.addWidget(model_desc)
-        model_row.addStretch()
-
-        card_layout.addLayout(model_row)
-
-        # Allow duplicate setting
-        allow_row = QHBoxLayout()
-        allow_row.setSpacing(SPACING_MEDIUM)
-
-        allow_label = BodyLabel(t("result.allow_duplicate"))
-        allow_label.setMinimumWidth(100)
-        allow_row.addWidget(allow_label)
-
-        self._allow_duplicate_switch = SwitchButton()
-        self._allow_duplicate_switch.setChecked(
-            getattr(self._main.config, "allow_duplicate", False)
-        )
-        self._allow_duplicate_switch.checkedChanged.connect(self._on_allow_duplicate_changed)
-        allow_row.addWidget(self._allow_duplicate_switch)
-
-        allow_desc = CaptionLabel(t("result.allow_duplicate_desc"))
-        allow_row.addWidget(allow_desc)
-        allow_row.addStretch()
-
-        card_layout.addLayout(allow_row)
 
         return card
 
@@ -1111,22 +1025,6 @@ class ResultPage(QWidget):
         publish = getattr(self._main, "publish_task_event", None)
         if callable(publish):
             publish(event)
-
-    def _back_to_preview(self) -> None:
-        """返回预览页面。"""
-        is_zh = getattr(self._main.config, "language", "zh") == "zh"
-        reply = QMessageBox.question(
-            self,
-            "确认返回" if is_zh else "Confirm Back",
-            "返回预览页面将丢失当前结果，是否继续？"
-            if is_zh
-            else "Going back to preview will lose current results. Continue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            self._main.switch_to_preview()
 
     def _edit_card(self, card_index: int) -> None:
         """Edit a card at the given index."""

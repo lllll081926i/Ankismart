@@ -153,22 +153,15 @@ class LogExporter:
             mod_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
             lines.append(f"  - {log_file.name} ({size_kb:.1f} KB, modified: {mod_time})")
 
-        lines.extend([
-            "",
-            "=" * 50,
-            "Please include this file when reporting issues.",
-        ])
+        lines.extend(
+            [
+                "",
+                "=" * 50,
+                "Please include this file when reporting issues.",
+            ]
+        )
 
         return "\n".join(lines)
-
-    def get_total_log_size(self) -> int:
-        """Get total size of all log files in bytes.
-
-        Returns:
-            Total size in bytes
-        """
-        log_files = self.get_log_files()
-        return sum(f.stat().st_size for f in log_files)
 
     def get_log_count(self) -> int:
         """Get count of available log files.

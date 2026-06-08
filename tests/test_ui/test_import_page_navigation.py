@@ -215,7 +215,7 @@ def test_build_generation_config_initializes_strategy_group_when_needed() -> Non
     config = page.build_generation_config()
 
     assert page._strategy_group_initialized is True
-    assert config["target_total"] == 20
+    assert config["target_total"] == 0
     assert config["strategy_mix"] == [{"strategy": "basic", "ratio": 100}]
     page.close()
 

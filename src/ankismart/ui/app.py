@@ -95,9 +95,7 @@ def _set_windows_app_user_model_id() -> None:
     try:
         import ctypes
 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "Ankismart.Desktop"
-        )
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Ankismart.Desktop")
     except Exception as exc:  # pragma: no cover - Windows-only best effort
         logger.warning(f"Failed to set Windows AppUserModelID: {exc}")
 
@@ -139,9 +137,7 @@ def _apply_text_clarity_profile(app: QApplication) -> None:
     """Improve glyph sharpness without changing layout/font sizing."""
     font = app.font()
     font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
-    font.setStyleStrategy(
-        QFont.StyleStrategy.PreferQuality | QFont.StyleStrategy.PreferAntialias
-    )
+    font.setStyleStrategy(QFont.StyleStrategy.PreferQuality | QFont.StyleStrategy.PreferAntialias)
     app.setFont(font)
 
 
@@ -347,8 +343,7 @@ def _notify_update_if_needed(window: MainWindow, update_result: dict[str, object
     InfoBar.info(
         title="发现新版本" if is_zh else "Update Available",
         content=(
-            f"当前版本 {__version__}，最新版本 {latest_version}。"
-            "可在设置页“版本更新”查看发布页。"
+            f"当前版本 {__version__}，最新版本 {latest_version}。可在设置页“版本更新”查看发布页。"
             if is_zh
             else (
                 f"Current version {__version__}, latest {latest_version}. "
@@ -482,8 +477,7 @@ def main() -> int:
         error_box.setText("Failed to start application")
         error_box.setInformativeText(str(e))
         error_box.setDetailedText(
-            "Please check the log files for more details.\n\n"
-            f"Error: {type(e).__name__}: {e}"
+            f"Please check the log files for more details.\n\nError: {type(e).__name__}: {e}"
         )
         error_box.exec()
 

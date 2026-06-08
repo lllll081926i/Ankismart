@@ -28,18 +28,14 @@ def validate_convert_request(request: ConvertWorkflowRequest) -> WorkflowValidat
     if not request.file_paths:
         return WorkflowValidationIssue(
             title="警告" if is_zh else "Warning",
-            content="请先选择要转换的文件"
-            if is_zh
-            else "Please select files to convert first",
+            content="请先选择要转换的文件" if is_zh else "Please select files to convert first",
             focus_target="files",
         )
 
     if not request.deck_name.strip():
         return WorkflowValidationIssue(
             title="警告" if is_zh else "Warning",
-            content="请填写有效的牌组名称。"
-            if is_zh
-            else "Please enter a valid deck name.",
+            content="请填写有效的牌组名称。" if is_zh else "Please enter a valid deck name.",
             focus_target="deck",
         )
 

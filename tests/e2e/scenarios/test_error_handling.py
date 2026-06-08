@@ -111,7 +111,9 @@ def test_e2e_error_net_006_timeout_and_429_retry_then_recover(
             response.headers = {}
             raise RateLimitError(message="rate limited", response=response, body=None)
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content='[{"Front":"Q1","Back":"A1"}]'))],
+            choices=[
+                SimpleNamespace(message=SimpleNamespace(content='[{"Front":"Q1","Back":"A1"}]'))
+            ],
             usage=None,
         )
 

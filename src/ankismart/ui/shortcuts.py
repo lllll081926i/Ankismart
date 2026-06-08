@@ -27,12 +27,8 @@ class ShortcutKeys:
     # Save operations
     SAVE_EDIT = QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_S)
 
-    # Export operations
-    EXPORT_CARDS = QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_E)
-
     # Navigation
     OPEN_SETTINGS = QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Comma)
-    HELP = QKeySequence(Qt.Key.Key_F1)
 
     # Application
     QUIT = QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Q)
@@ -84,53 +80,3 @@ def create_shortcut(
     shortcut.setContext(context)
     shortcut.activated.connect(callback)
     return shortcut
-
-
-# Shortcut descriptions for help dialog
-SHORTCUT_DESCRIPTIONS = {
-    "zh": {
-        "open_file": "打开文件",
-        "start_generation": "开始生成",
-        "save_edit": "保存编辑",
-        "export_cards": "导出卡片",
-        "open_settings": "打开设置",
-        "help": "帮助文档",
-        "quit": "退出应用",
-    },
-    "en": {
-        "open_file": "Open File",
-        "start_generation": "Start Generation",
-        "save_edit": "Save Edit",
-        "export_cards": "Export Cards",
-        "open_settings": "Open Settings",
-        "help": "Help",
-        "quit": "Quit Application",
-    },
-}
-
-
-def get_all_shortcuts(language: str = "zh") -> list[tuple[str, str]]:
-    """Get all shortcuts with descriptions for display.
-
-    Args:
-        language: Language code ("zh" or "en")
-
-    Returns:
-        List of (shortcut_text, description) tuples
-    """
-    descriptions = SHORTCUT_DESCRIPTIONS.get(language, SHORTCUT_DESCRIPTIONS["zh"])
-
-    shortcuts = [
-        (get_shortcut_text(ShortcutKeys.OPEN_FILE, language), descriptions["open_file"]),
-        (
-            get_shortcut_text(ShortcutKeys.START_GENERATION, language),
-            descriptions["start_generation"],
-        ),
-        (get_shortcut_text(ShortcutKeys.SAVE_EDIT, language), descriptions["save_edit"]),
-        (get_shortcut_text(ShortcutKeys.EXPORT_CARDS, language), descriptions["export_cards"]),
-        (get_shortcut_text(ShortcutKeys.OPEN_SETTINGS, language), descriptions["open_settings"]),
-        (get_shortcut_text(ShortcutKeys.HELP, language), descriptions["help"]),
-        (get_shortcut_text(ShortcutKeys.QUIT, language), descriptions["quit"]),
-    ]
-
-    return shortcuts

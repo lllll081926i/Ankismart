@@ -630,24 +630,6 @@ class ErrorHandler:
             msg_box.yesButton.setText("确定" if self.language == "zh" else "OK")
             msg_box.exec()
 
-    def log_error(self, error: Exception | str, context: str = "") -> None:
-        """Log error with context information.
-
-        Args:
-            error: Exception object or error message
-            context: Additional context information
-        """
-        error_info = self.classify_error(error)
-
-        log_message = f"[{error_info.category.value}] {error_info.title}"
-        if context:
-            log_message += f" | Context: {context}"
-
-        if isinstance(error, Exception):
-            logger.error(log_message, exc_info=True)
-        else:
-            logger.error(f"{log_message} | Details: {error}")
-
 
 def build_error_display(error: Exception | str, language: str = "zh") -> dict[str, str]:
     """Build a user-facing error title/content pair for InfoBar or labels."""

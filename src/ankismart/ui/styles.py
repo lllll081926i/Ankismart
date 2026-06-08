@@ -291,9 +291,7 @@ def apply_compact_combo_metrics(
         setattr(combo, "_ankismart_base_stylesheet", base_style)
 
     compact_style = (
-        "\nComboBox, ModelComboBox, EditableComboBox {\n"
-        "    padding: 0px 31px 0px 11px;\n"
-        "}\n"
+        "\nComboBox, ModelComboBox, EditableComboBox {\n    padding: 0px 31px 0px 11px;\n}\n"
     )
     set_style_sheet = getattr(combo, "setStyleSheet", None)
     if callable(set_style_sheet):

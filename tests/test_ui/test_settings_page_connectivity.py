@@ -469,7 +469,7 @@ def test_check_for_updates_failure_updates_metadata_and_warns(_qapp, monkeypatch
         def __enter__(self):
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        def __exit__(self, _exc_type, _exc, _tb):
             return False
 
         def get(self, *args, **kwargs):
@@ -530,7 +530,7 @@ def test_check_for_updates_detects_new_release_and_shows_clickable_infobar(
         def __enter__(self):
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        def __exit__(self, _exc_type, _exc, _tb):
             return False
 
         def get(self, _url, headers=None):
@@ -596,7 +596,7 @@ def test_check_for_updates_falls_back_to_tags_api(_qapp, monkeypatch) -> None:
         def __enter__(self):
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        def __exit__(self, _exc_type, _exc, _tb):
             return False
 
         def get(self, url, headers=None):
@@ -633,6 +633,7 @@ def test_show_update_available_info_bar_can_open_release_page(_qapp, monkeypatch
             self.widgets = []
 
         def addWidget(self, widget, stretch=0):
+            _ = stretch
             self.widgets.append(widget)
 
     info_bar_stub = _InfoBarStub()

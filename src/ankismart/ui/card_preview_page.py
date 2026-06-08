@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import csv
-import json
 import re
 import time
-from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -31,7 +29,6 @@ from qfluentwidgets import (
     InfoBar,
     InfoBarPosition,
     LineEdit,
-    MessageBox,
     PrimaryPushButton,
     ProgressBar,
     PushButton,
@@ -355,11 +352,7 @@ class CardPreviewPage(QWidget):
         quality_suffix = ""
         if quality_flags:
             quality_text = format_quality_flags(quality_flags, "zh" if is_zh else "en")
-            quality_suffix = (
-                f"  风险: {quality_text}"
-                if is_zh
-                else f"  Flags: {quality_text}"
-            )
+            quality_suffix = f"  风险: {quality_text}" if is_zh else f"  Flags: {quality_text}"
         self._note_type_label.setText(
             f"类型: {kind_text}  质量: {quality_score}{quality_suffix}"
             if is_zh
@@ -580,11 +573,6 @@ class CardPreviewPage(QWidget):
         """Show next card."""
         if self._current_index < len(self._filtered_cards) - 1:
             self._show_card(self._current_index + 1)
-
-    def _close_preview(self):
-        """Close preview and return to previous page."""
-        # Navigate back to result page
-        self._main.switchTo(self._main.result_page)
 
     def _apply_browser_theme(self) -> None:
         """Apply theme-aware stylesheet to embedded HTML preview browser."""
@@ -1261,78 +1249,6 @@ class CardPreviewPage(QWidget):
         )
         save_config(self._main.config)
 
-    def _export_json(self) -> None:
-        is_zh = self._main.config.language == "zh"
-        if not self._all_cards:
-            InfoBar.warning(
-                title="警告" if is_zh else "Warning",
-                content="没有卡片需要导出" if is_zh else "No cards to export",
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=3000,
-                parent=self,
-            )
-            return
-
-        output_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "导出为 JSON" if is_zh else "Export JSON",
-            "ankismart_cards.json",
-            "JSON Files (*.json)",
-        )
-        if not output_path:
-            return
-
-        headers, rows = self._build_export_rows()
-        payload = {
-            "count": len(rows),
-            "columns": headers,
-            "cards": rows,
-        }
-        try:
-            Path(output_path).write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        except Exception as exc:
-            InfoBar.error(
-                title="导出失败" if is_zh else "Export Failed",
-                content=str(exc),
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=4000,
-                parent=self,
-            )
-            append_task_history(
-                self._main.config,
-                event="export_json",
-                status="failed",
-                summary=f"导出 JSON 失败: {exc}",
-                payload={"cards_total": len(self._all_cards)},
-            )
-            save_config(self._main.config)
-            return
-
-        InfoBar.success(
-            title="导出成功" if is_zh else "Export Succeeded",
-            content=f"已导出到 {output_path}" if is_zh else f"Exported to {output_path}",
-            orient=Qt.Orientation.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP,
-            duration=2800,
-            parent=self,
-        )
-        append_task_history(
-            self._main.config,
-            event="export_json",
-            status="success",
-            summary=f"导出 JSON: {Path(output_path).name}",
-            payload={"cards_total": len(self._all_cards), "output_path": output_path},
-        )
-        save_config(self._main.config)
-
     @staticmethod
     def _normalize_similarity_text(text: str) -> str:
         plain = re.sub(r"<[^>]+>", " ", text or "")
@@ -1347,45 +1263,6 @@ class CardPreviewPage(QWidget):
         if card.fields:
             return self._normalize_similarity_text(str(next(iter(card.fields.values()))))
         return ""
-
-    def _estimate_duplicate_risk(
-        self, cards: list[CardDraft], threshold: float
-    ) -> tuple[int, list[tuple[int, int, float]], bool]:
-        if len(cards) < 2:
-            return 0, [], False
-
-        texts = [self._extract_card_question_for_similarity(card) for card in cards]
-        suspicious_pairs: list[tuple[int, int, float]] = []
-        risky_indices: set[int] = set()
-        max_comparisons = 15000
-        comparisons = 0
-        truncated = False
-
-        for i in range(len(texts)):
-            if comparisons >= max_comparisons:
-                truncated = True
-                break
-            left = texts[i]
-            if not left:
-                continue
-            for j in range(i + 1, len(texts)):
-                comparisons += 1
-                if comparisons > max_comparisons:
-                    truncated = True
-                    break
-                right = texts[j]
-                if not right:
-                    continue
-                ratio = SequenceMatcher(None, left, right).ratio()
-                if ratio >= threshold:
-                    risky_indices.add(i)
-                    risky_indices.add(j)
-                    if len(suspicious_pairs) < 8:
-                        suspicious_pairs.append((i, j, ratio))
-            if truncated:
-                break
-
-        return len(risky_indices), suspicious_pairs, truncated
 
     def _collect_duplicate_risk_indices(self, cards: list[CardDraft], threshold: float) -> set[int]:
         if len(cards) < 2:
@@ -1425,67 +1302,6 @@ class CardPreviewPage(QWidget):
 
     def _is_duplicate_risk_card(self, card: CardDraft) -> bool:
         return id(card) in self._duplicate_risk_card_ids
-
-    def _show_push_preview(self) -> None:
-        is_zh = self._main.config.language == "zh"
-        if not self._all_cards:
-            InfoBar.warning(
-                title="警告" if is_zh else "Warning",
-                content="没有卡片可预演" if is_zh else "No cards for preview",
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=2800,
-                parent=self,
-            )
-            return
-
-        threshold = float(getattr(self._main.config, "semantic_duplicate_threshold", 0.9))
-        risk_count, pairs, truncated = self._estimate_duplicate_risk(self._all_cards, threshold)
-
-        deck_counter = Counter((card.deck_name or "Default") for card in self._all_cards)
-        top_decks = sorted(deck_counter.items(), key=lambda item: item[1], reverse=True)[:5]
-        mode = (
-            getattr(self._main.config, "last_update_mode", "create_or_update") or "create_or_update"
-        )
-
-        lines: list[str] = []
-        if is_zh:
-            lines.append(f"卡片总数：{len(self._all_cards)}")
-            lines.append(f"推送模式：{mode}")
-            lines.append(
-                f"近重复风险：{risk_count} 张（阈值 {threshold:.2f}）"
-                + ("，已触发比较上限，结果为近似值" if truncated else "")
-            )
-            lines.append("牌组分布（Top 5）：")
-            lines.extend([f"- {deck}: {count}" for deck, count in top_decks])
-            if pairs:
-                lines.append("高相似样例：")
-                for left, right, score in pairs[:5]:
-                    lines.append(f"- #{left + 1} vs #{right + 1}: {score:.2f}")
-        else:
-            lines.append(f"Total cards: {len(self._all_cards)}")
-            lines.append(f"Update mode: {mode}")
-            lines.append(
-                f"Near-duplicate risk: {risk_count} cards (threshold {threshold:.2f})"
-                + (", comparison capped so this is approximate" if truncated else "")
-            )
-            lines.append("Deck distribution (Top 5):")
-            lines.extend([f"- {deck}: {count}" for deck, count in top_decks])
-            if pairs:
-                lines.append("High-similarity samples:")
-                for left, right, score in pairs[:5]:
-                    lines.append(f"- #{left + 1} vs #{right + 1}: {score:.2f}")
-
-        dialog = MessageBox(
-            "推送预演" if is_zh else "Push Preview",
-            "\n".join(lines),
-            self,
-        )
-        dialog.yesButton.setText("确认推送" if is_zh else "Push Now")
-        dialog.cancelButton.setText("取消" if is_zh else "Cancel")
-        if dialog.exec():
-            self._push_to_anki()
 
     def _cleanup_push_worker(self) -> None:
         worker = self.__dict__.get("_push_worker")

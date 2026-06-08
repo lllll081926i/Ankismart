@@ -148,7 +148,7 @@ def test_start_convert_cloud_mode_skips_local_model_check(monkeypatch):
     assert ensure_called["value"] is False
 
 
-def test_ensure_ocr_models_ready_does_not_create_state_tooltip(monkeypatch):
+def test_ensure_ocr_models_ready_prompts_model_download(monkeypatch):
     page = make_page()
     page._model_check_in_progress = False
     page._set_generate_actions_enabled = lambda _enabled: None
@@ -382,7 +382,7 @@ def test_on_page_progress_shows_file_page_infobar_and_deduplicates(monkeypatch):
     assert calls[0][0][2] == "讲义.pdf 3/12"
 
 
-def test_create_right_panel_does_not_include_startup_precheck_card():
+def test_create_right_panel_contains_core_groups():
     page = make_page()
     page._create_config_group = lambda: QWidget()
     page._create_strategy_group = lambda: QWidget()
@@ -391,7 +391,6 @@ def test_create_right_panel_does_not_include_startup_precheck_card():
     right_panel = ImportPage._create_right_panel(page)
 
     assert right_panel is not None
-    assert not hasattr(ImportPage, "_create_startup_precheck_card")
     widget_count = sum(
         1
         for index in range(page.expand_layout.count())
@@ -400,7 +399,7 @@ def test_create_right_panel_does_not_include_startup_precheck_card():
     assert widget_count == 3
 
 
-def test_start_generate_cards_delegates_to_convert_without_auto_generate_flag(monkeypatch):
+def test_start_generate_cards_delegates_to_convert(monkeypatch):
     page = make_page()
     page._file_paths = [Path("a.md")]
     calls = {"count": 0}
@@ -414,7 +413,6 @@ def test_start_generate_cards_delegates_to_convert_without_auto_generate_flag(mo
     ImportPage._start_generate_cards(page)
 
     assert calls["count"] == 1
-    assert "_auto_generate_after_convert" not in page.__dict__
 
 
 def test_get_start_convert_text_matches_manual_conversion_flow() -> None:

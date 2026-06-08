@@ -18,8 +18,6 @@ from qfluentwidgets import (
     isDarkTheme,
 )
 
-from ankismart.anki_gateway.client import AnkiConnectClient
-from ankismart.anki_gateway.gateway import AnkiGateway
 from ankismart.core.config import append_task_history, record_operation_metric, save_config
 from ankismart.core.errors import ErrorCode
 from ankismart.core.logging import get_logger
@@ -37,8 +35,8 @@ from ankismart.ui.styles import (
     scale_px,
 )
 from ankismart.ui.task_runtime import TaskEvent
-from ankismart.ui.utils import ProgressMixin, request_infobar_confirmation, split_tags_text
-from ankismart.ui.workers import BatchGenerateWorker, PushWorker
+from ankismart.ui.utils import ProgressMixin, split_tags_text
+from ankismart.ui.workers import BatchGenerateWorker
 
 if TYPE_CHECKING:
     from ankismart.ui.main_window import MainWindow
@@ -620,8 +618,7 @@ class PreviewPage(ProgressMixin, QWidget):
                 content="样本卡片正在生成，请稍后再开始正式生成"
                 if is_zh
                 else (
-                    "Sample generation is in progress. "
-                    "Please wait before starting full generation."
+                    "Sample generation is in progress. Please wait before starting full generation."
                 ),
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
@@ -1479,85 +1476,6 @@ class PreviewPage(ProgressMixin, QWidget):
                 message="generation cancelled",
             )
         )
-
-    def _cancel_generation(self):
-        """Cancel the current generation operation."""
-        if self._generate_worker and self._generate_worker.isRunning():
-            is_zh = self._main.config.language == "zh"
-            if not request_infobar_confirmation(
-                self,
-                self._confirmations,
-                key="cancel_generate",
-                title="再次点击取消" if is_zh else "Click Again to Cancel",
-                content="再次点击取消生成任务"
-                if is_zh
-                else "Click cancel again to stop generation",
-            ):
-                return
-            self._generate_worker.cancel()
-        elif self._push_worker and self._push_worker.isRunning():
-            is_zh = self._main.config.language == "zh"
-            if not request_infobar_confirmation(
-                self,
-                self._confirmations,
-                key="cancel_push",
-                title="再次点击取消" if is_zh else "Click Again to Cancel",
-                content="再次点击取消推送任务"
-                if is_zh
-                else "Click cancel again to stop pushing",
-            ):
-                return
-            self._push_worker.cancel()
-
-    def _start_push(self, cards):
-        """Start pushing cards to Anki."""
-        self._btn_generate.setEnabled(False)
-        self._btn_save.setEnabled(False)
-        self._set_sample_preview_enabled(False)
-        self._progress_bar.show()
-
-        # Apply duplicate check settings to cards
-        config = self._main.config
-        for card in cards:
-            if card.options is None:
-                from ankismart.core.models import CardOptions
-
-                card.options = CardOptions()
-            card.options.allow_duplicate = config.allow_duplicate
-            card.options.duplicate_scope = config.duplicate_scope
-            card.options.duplicate_scope_options.deck_name = card.deck_name
-            card.options.duplicate_scope_options.check_children = False
-            card.options.duplicate_scope_options.check_all_models = not config.duplicate_check_model
-
-        # Create gateway
-        client = AnkiConnectClient(
-            url=config.anki_connect_url,
-            key=config.anki_connect_key,
-            proxy_url=config.proxy_url,
-        )
-        gateway = AnkiGateway(client)
-
-        # Start push worker
-        self._cleanup_push_worker()
-        self._publish_task_event(
-            TaskEvent(
-                task_id=self._current_task_id,
-                stage="push",
-                kind="started",
-                message="push started",
-            )
-        )
-        self._push_worker = PushWorker(
-            gateway=gateway,
-            cards=cards,
-            update_mode=config.last_update_mode or "create_or_update",
-        )
-        self._push_worker.progress.connect(self._on_push_progress)
-        self._push_worker.card_progress.connect(self._on_push_card_progress)
-        self._push_worker.finished.connect(self._on_push_finished)
-        self._push_worker.error.connect(self._on_push_error)
-        self._push_worker.cancelled.connect(self._on_push_cancelled)
-        self._push_worker.start()
 
     def _on_push_progress(self, message: str):
         """Handle push progress message."""

@@ -12,7 +12,6 @@ from ankismart.core.config import AppConfig
 from ankismart.core.models import CardDraft
 from ankismart.ui.card_preview_page import CardPreviewPage, CardRenderer
 from ankismart.ui.main_window import MainWindow
-from ankismart.ui.shortcuts_dialog import ShortcutsHelpDialog
 from ankismart.ui.styles import (
     DARK_PAGE_BACKGROUND_HEX,
     Colors,
@@ -84,26 +83,6 @@ def test_card_preview_dark_class_keeps_compatibility() -> None:
     html = CardRenderer._wrap_html("<div>demo</div>", "basic")
     assert '<body class="night_mode nightMode">' in html
     setTheme(Theme.LIGHT)
-
-
-def test_shortcuts_dialog_can_construct_without_crash() -> None:
-    dialog = ShortcutsHelpDialog("zh")
-    dialog.close()
-
-
-def test_shortcuts_dialog_uses_theme_accent_for_shortcut_key(monkeypatch) -> None:
-    monkeypatch.setattr("ankismart.ui.shortcuts_dialog.isDarkTheme", lambda: False)
-    monkeypatch.setattr(
-        "ankismart.ui.shortcuts_dialog.get_theme_accent_text_hex",
-        lambda **_: "#123456",
-    )
-
-    dialog = ShortcutsHelpDialog("zh")
-    row = dialog._create_shortcut_row("Ctrl+S", "保存")
-    key_label = row.layout().itemAt(0).widget()
-
-    assert "#123456" in key_label.styleSheet()
-    dialog.close()
 
 
 def test_app_apply_theme_uses_resolved_accent(monkeypatch) -> None:
@@ -398,14 +377,3 @@ def test_card_preview_meta_labels_use_chinese_type_mapping_and_trim_tags() -> No
     assert page._deck_label.text() == "牌组: Ankismart::Demo"
     assert page._tags_label.text() == "标签: ankismart, demo, basic 等1个"
     assert page._tags_label.toolTip() == "ankismart, demo, basic, extra"
-
-
-def test_card_preview_bottom_bar_keeps_only_core_actions() -> None:
-    main = _make_card_preview_main()
-    page = CardPreviewPage(main)
-
-    assert hasattr(page, "_btn_export_apkg")
-    assert hasattr(page, "_btn_export_csv")
-    assert hasattr(page, "_btn_push")
-    assert not hasattr(page, "_btn_export_json")
-    assert not hasattr(page, "_btn_push_preview")

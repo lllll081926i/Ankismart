@@ -108,11 +108,6 @@ class CardEditWidget(QWidget):
         self._field_editors: dict[str, Any] = {}
         self._list = None
 
-    def set_cards(self, cards: list[CardDraft]) -> None:
-        self._save_current()
-        self._cards = list(cards)
-        self._current_index = -1
-
     def get_cards(self) -> list[CardDraft]:
         self._save_current()
         return list(self._cards)

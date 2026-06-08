@@ -41,7 +41,8 @@ class TaskRuntime:
         return task
 
     def list_resumable(self) -> list[TaskRun]:
-        return self._store.list_resumable()
+        tasks = [task for task in self._tasks.values() if task.is_resumable]
+        return sorted(tasks, key=lambda item: item.created_at, reverse=True)
 
     def handle(self, event: TaskEvent) -> TaskRun:
         task = self.get(event.task_id)

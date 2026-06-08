@@ -49,10 +49,7 @@ if TYPE_CHECKING:
     from .settings_page import SettingsPage
 
 logger = get_logger("ui.main_window")
-
-
-def load_resumable_tasks(store: JsonTaskStore) -> list[TaskRun]:
-    return store.list_resumable()
+_TASK_CENTER_STARTUP_RENDER_LIMIT = 5
 
 
 class MainWindow(FluentWindow):
@@ -74,7 +71,7 @@ class MainWindow(FluentWindow):
         self._task_store = JsonTaskStore(TASKS_PATH)
         self.task_runtime = TaskRuntime(store=self._task_store, on_event=self._on_task_event)
         self._active_task_id = ""
-        self._resumable_tasks: list[TaskRun] = load_resumable_tasks(self._task_store)
+        self._resumable_tasks: list[TaskRun] = self.task_runtime.list_resumable()
 
         # Set initial language
         set_language(self.config.language)
@@ -503,7 +500,7 @@ NavigationPanel[transparent=true] {{
     def _refresh_task_center(self) -> None:
         tasks = self.task_runtime.list_resumable()
         self._resumable_tasks = tasks
-        self._task_center_panel.render_tasks(tasks)
+        self._task_center_panel.render_tasks(tasks[:_TASK_CENTER_STARTUP_RENDER_LIMIT])
         # Keep resumable task state, but don't render the floating overlay on top-left.
         self._task_center_panel.hide()
 
@@ -601,18 +598,6 @@ NavigationPanel[transparent=true] {{
         self.apply_runtime_config(updated, persist=True, changed_fields={"theme"})
         # Note: _on_theme_changed will be called automatically by qconfig.themeChanged signal.
 
-    def switch_language(self, language: str):
-        """Switch application language and refresh all UI components.
-
-        Args:
-            language: Language code ("zh" or "en")
-        """
-        if self.config.language == language:
-            return  # No change needed
-
-        updated = self.config.model_copy(update={"language": language})
-        self.apply_runtime_config(updated, persist=True, changed_fields={"language"})
-
     def _refresh_navigation(self):
         """Refresh navigation labels after language change."""
         labels = self._get_navigation_labels()
@@ -684,10 +669,6 @@ NavigationPanel[transparent=true] {{
     def switch_to_settings(self) -> None:
         """Switch to settings page."""
         self._switch_page(4)
-
-    def switch_to_results(self) -> None:
-        """Compatibility alias for old callers."""
-        self.switch_to_result()
 
     def set_connection_status(self, connected: bool) -> None:
         """Store connection status for settings page feedback."""

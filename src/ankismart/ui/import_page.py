@@ -18,7 +18,6 @@ from PyQt6.QtWidgets import (
 )
 from qfluentwidgets import (
     BodyLabel,
-    CardWidget,
     ComboBox,
     EditableComboBox,
     FluentIcon,
@@ -350,95 +349,6 @@ class OCRDownloadConfigDialog(QDialog):
         return str(self._source_combo.currentData())
 
 
-class _LegacyBatchConvertWorker(QThread):
-    """Worker thread for batch file conversion."""
-
-    file_progress = pyqtSignal(str, int, int)  # filename, current, total
-    finished = pyqtSignal(object)  # BatchConvertResult
-    error = pyqtSignal(str)  # Error message
-    cancelled = pyqtSignal()  # Cancellation signal
-
-    def __init__(self, file_paths: list[Path], config=None) -> None:
-        super().__init__()
-        self._file_paths = file_paths
-        self._config = config
-        self._cancelled = False
-
-    def cancel(self) -> None:
-        """Cancel the conversion operation."""
-        self._cancelled = True
-
-    def run(self) -> None:
-        try:
-            documents = []
-            errors = []
-
-            for i, file_path in enumerate(self._file_paths, 1):
-                # Check if cancelled
-                if self._cancelled:
-                    self.cancelled.emit()
-                    return
-
-                self.file_progress.emit(file_path.name, i, len(self._file_paths))
-                try:
-                    # Create converter with OCR correction if enabled
-                    ocr_correction_fn = None
-                    if (
-                        self._config
-                        and hasattr(self._config, "ocr_correction")
-                        and self._config.ocr_correction
-                    ):
-                        # Get LLM client from active provider
-                        provider = self._config.active_provider
-                        if provider:
-                            from ankismart.card_gen.generator import CardGenerator
-                            from ankismart.card_gen.llm_client import LLMClient
-
-                            # Validate provider configuration before creating LLMClient
-                            if not provider.api_key and "Ollama" not in provider.name:
-                                raise ValueError(
-                                    f"Provider '{provider.name}' requires an API key "
-                                    "but none is configured"
-                                )
-                            if not provider.base_url:
-                                raise ValueError(
-                                    f"Provider '{provider.name}' requires a base URL "
-                                    "but none is configured"
-                                )
-                            if not provider.model:
-                                raise ValueError(
-                                    f"Provider '{provider.name}' requires a model "
-                                    "but none is configured"
-                                )
-
-                            llm_client = LLMClient(
-                                api_key=provider.api_key,
-                                base_url=provider.base_url,
-                                model=provider.model,
-                            )
-                            generator = CardGenerator(llm_client)
-                            ocr_correction_fn = generator.correct_ocr_text
-
-                    from ankismart.converter.converter import DocumentConverter
-
-                    converter = DocumentConverter(ocr_correction_fn=ocr_correction_fn)
-                    result = converter.convert(file_path)
-                    documents.append(ConvertedDocument(result=result, file_name=file_path.name))
-                except Exception as e:
-                    errors.append(f"{file_path.name}: {str(e)}")
-
-            # Check if cancelled before emitting finished
-            if self._cancelled:
-                self.cancelled.emit()
-                return
-
-            batch_result = BatchConvertResult(documents=documents, errors=errors)
-            self.finished.emit(batch_result)
-        except Exception as e:
-            if not self._cancelled:
-                self.error.emit(str(e))
-
-
 class DeckLoaderWorker(QThread):
     """Worker thread for loading deck names from Anki."""
 
@@ -566,10 +476,6 @@ class ImportPage(ProgressMixin, QWidget):
         self._current_task_id: str = ""
         self._confirmations: dict[str, float] = {}
 
-        # Lazy-loaded heavy dependencies
-        self._converter = None
-        self._gateway = None
-        self._card_generator = None
         self._strategy_group_initialized = False
         self._strategy_group_init_scheduled = False
         self._strategy_group_host: QWidget | None = None
@@ -838,9 +744,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._generation_preset_card = SettingCard(
             FluentIcon.BOOK_SHELF,
             "使用场景" if is_zh else "Usage Preset",
-            "一键套用常见制卡场景配置"
-            if is_zh
-            else "Apply common generation presets in one click",
+            "一键套用常见制卡场景配置" if is_zh else "Apply common generation presets in one click",
             group,
         )
         self._generation_preset_combo = ComboBox(self._generation_preset_card)
@@ -897,7 +801,9 @@ class ImportPage(ProgressMixin, QWidget):
         self._total_count_mode_combo.hide()  # Hidden but accessible for tests
         self._on_auto_target_count_changed(True)
         self._restore_generation_preset_from_config()
-        self._generation_preset_combo.currentIndexChanged.connect(self._on_generation_preset_changed)
+        self._generation_preset_combo.currentIndexChanged.connect(
+            self._on_generation_preset_changed
+        )
 
         # Deck name card
         self._deck_card = SettingCard(
@@ -961,10 +867,7 @@ class ImportPage(ProgressMixin, QWidget):
     def _populate_generation_preset_combo(self) -> None:
         is_zh = self._main.config.language == "zh"
         current = ""
-        if (
-            hasattr(self, "_generation_preset_combo")
-            and self._generation_preset_combo.count() > 0
-        ):
+        if hasattr(self, "_generation_preset_combo") and self._generation_preset_combo.count() > 0:
             current = str(self._generation_preset_combo.currentData() or "")
 
         self._generation_preset_combo.blockSignals(True)
@@ -985,8 +888,14 @@ class ImportPage(ProgressMixin, QWidget):
         self._generation_preset_combo.blockSignals(False)
 
     def _restore_generation_preset_from_config(self) -> None:
+        preset_id = normalize_generation_preset(
+            getattr(self._main.config, "generation_preset", DEFAULT_GENERATION_PRESET)
+        )
+        if preset_id == DEFAULT_GENERATION_PRESET:
+            return
+
         self._apply_generation_preset(
-            getattr(self._main.config, "generation_preset", DEFAULT_GENERATION_PRESET),
+            preset_id,
             show_feedback=False,
             persist=False,
         )
@@ -1014,8 +923,7 @@ class ImportPage(ProgressMixin, QWidget):
         auto_target_count = bool(preset.get("auto_target_count", True))
         target_total = int(preset.get("target_total", 20))
         strategy_mix = {
-            str(key): int(value)
-            for key, value in dict(preset.get("strategy_mix", {})).items()
+            str(key): int(value) for key, value in dict(preset.get("strategy_mix", {})).items()
         }
 
         self._auto_target_count_switch.blockSignals(True)
@@ -1181,37 +1089,6 @@ class ImportPage(ProgressMixin, QWidget):
                 parent=self,
             )
 
-    def _get_converter(self):
-        """获取或创建文档转换器（懒加载）"""
-        if self._converter is None:
-            from ankismart.converter.converter import DocumentConverter
-
-            self._converter = DocumentConverter()
-        return self._converter
-
-    def _get_gateway(self):
-        """获取或创建 Anki 网关（懒加载）"""
-        if self._gateway is None:
-            from ankismart.anki_gateway.client import AnkiConnectClient
-            from ankismart.anki_gateway.gateway import AnkiGateway
-
-            client = AnkiConnectClient(
-                url=self._main.config.anki_connect_url,
-                key=self._main.config.anki_connect_key,
-            )
-            self._gateway = AnkiGateway(client)
-        return self._gateway
-
-    def _get_card_generator(self):
-        """获取或创建卡片生成器（懒加载）"""
-        if self._card_generator is None:
-            from ankismart.card_gen.generator import CardGenerator
-            from ankismart.card_gen.llm_client import LLMClient
-
-            llm_client = LLMClient.from_config(self._main.config)
-            self._card_generator = CardGenerator(llm_client)
-        return self._card_generator
-
     def _init_shortcuts(self):
         """Initialize page-specific keyboard shortcuts."""
         # Ctrl+O: Open files
@@ -1219,58 +1096,6 @@ class ImportPage(ProgressMixin, QWidget):
 
         # Ctrl+G: Start generation
         create_shortcut(self, ShortcutKeys.START_GENERATION, self._start_convert)
-
-    def _create_top_buttons(self) -> QWidget:
-        """Create top-right button row."""
-        widget = QWidget()
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(MARGIN_SMALL)
-
-        is_zh = self._main.config.language == "zh"
-
-        layout.addStretch()  # Push buttons to right
-
-        self._btn_load_example = PushButton("加载示例" if is_zh else "Load Example")
-        self._btn_load_example.setIcon(FluentIcon.DOCUMENT)
-        self._btn_load_example.clicked.connect(self._load_example)
-
-        self._btn_recommend = PushButton("推荐策略" if is_zh else "Recommend Strategy")
-        self._btn_recommend.setIcon(FluentIcon.ROBOT)
-        self._btn_recommend.clicked.connect(self._recommend_strategy)
-
-        layout.addWidget(self._btn_load_example)
-        layout.addWidget(self._btn_recommend)
-
-        return widget
-
-    def _create_bottom_buttons(self) -> QWidget:
-        """Create bottom action buttons."""
-        widget = QWidget()
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(MARGIN_SMALL)
-
-        is_zh = self._main.config.language == "zh"
-
-        # Add shortcut hints to button tooltips
-        start_text = self._get_start_convert_text(self._main.config.language)
-        start_shortcut = get_shortcut_text(
-            ShortcutKeys.START_GENERATION, self._main.config.language
-        )
-
-        self._btn_convert = PrimaryPushButton(start_text)
-        self._btn_convert.setToolTip(f"{start_text} ({start_shortcut})")
-        self._btn_convert.clicked.connect(self._start_convert)
-
-        self._btn_clear = PushButton("清除" if is_zh else "Clear")
-        self._btn_clear.clicked.connect(self._clear_all)
-
-        layout.addWidget(self._btn_convert)
-        layout.addWidget(self._btn_clear)
-        layout.addStretch()
-
-        return widget
 
     def _set_generate_actions_enabled(self, enabled: bool) -> None:
         """Toggle both generation entry buttons together."""
@@ -2089,7 +1914,7 @@ class ImportPage(ProgressMixin, QWidget):
             duration=1800,
         )
 
-    def _on_ocr_download_finished(self, downloaded_models: list[str]):
+    def _on_ocr_download_finished(self, _downloaded_models: list[str]):
         """Handle successful OCR model download."""
         self._model_check_in_progress = False
         self._last_ocr_progress_message = ""
@@ -2142,10 +1967,13 @@ class ImportPage(ProgressMixin, QWidget):
                 strategy_mix.append({"strategy": strategy_id, "ratio": ratio})
 
         auto_target_count = self._is_auto_target_count_enabled()
-        try:
-            target_total = int(self._total_count_input.text())
-        except ValueError:
-            target_total = 20
+        if auto_target_count:
+            target_total = 0
+        else:
+            try:
+                target_total = int(self._total_count_input.text())
+            except ValueError:
+                target_total = 20
 
         return {
             "mode": "mixed",
@@ -2715,20 +2543,6 @@ class ImportPage(ProgressMixin, QWidget):
         self._dispose_progress_info_bar()
         super().closeEvent(event)
 
-    def _clear_all(self):
-        """Clear all selections and inputs."""
-        self._clear_files()
-        self._status_label.clear()
-
-        # Reset sliders
-        for i, (strategy_id, slider, value_label) in enumerate(self._strategy_sliders):
-            if i == 0:  # First strategy (basic)
-                slider.setValue(100)
-                value_label.setText("100%")
-            else:
-                slider.setValue(0)
-                value_label.setText("0%")
-
     def _create_task_run(self, flow: str):
         task = build_default_task_run(flow=flow)
         register_task = getattr(self._main, "register_task", None)
@@ -2742,265 +2556,6 @@ class ImportPage(ProgressMixin, QWidget):
         publish = getattr(self._main, "publish_task_event", None)
         if callable(publish):
             publish(event)
-
-    def _load_example(self):
-        """Show dialog to select and load example documents."""
-        is_zh = self._main.config.language == "zh"
-
-        # Create custom dialog
-        dialog = MessageBox("选择示例文档" if is_zh else "Select Example Document", "", self)
-
-        # Get examples directory
-        import sys
-
-        if getattr(sys, "frozen", False):
-            # Running as compiled executable
-            base_path = Path(sys._MEIPASS)
-        else:
-            # Running as script
-            base_path = Path(__file__).parent.parent.parent.parent
-
-        examples_dir = base_path / "examples"
-
-        # Define examples
-        examples = [
-            {
-                "file": "sample.md",
-                "name": "综合知识示例" if is_zh else "Comprehensive Knowledge",
-                "desc": "包含数学公式、代码块、列表等多种内容"
-                if is_zh
-                else "Contains math formulas, code blocks, lists, etc.",
-                "strategy": {"basic": 40, "cloze": 30, "concept": 30},
-            },
-            {
-                "file": "sample-math.md",
-                "name": "数学公式专题" if is_zh else "Mathematics Formulas",
-                "desc": "微积分、线性代数、概率论等数学内容"
-                if is_zh
-                else "Calculus, linear algebra, probability, etc.",
-                "strategy": {"cloze": 50, "concept": 30, "basic": 20},
-            },
-            {
-                "file": "sample-biology.md",
-                "name": "生物学知识" if is_zh else "Biology Knowledge",
-                "desc": "细胞、遗传、生态、进化等生物学内容"
-                if is_zh
-                else "Cell biology, genetics, ecology, evolution, etc.",
-                "strategy": {"basic": 40, "key_terms": 30, "concept": 30},
-            },
-        ]
-
-        # Build dialog content
-        content_widget = QWidget()
-        content_layout = QVBoxLayout(content_widget)
-        content_layout.setSpacing(SPACING_MEDIUM)
-
-        selected_example = [None]  # Use list to allow modification in nested function
-
-        for example in examples:
-            example_path = examples_dir / example["file"]
-            if not example_path.exists():
-                continue
-
-            # Create example card using CardWidget
-            card = CardWidget()
-            card.setBorderRadius(8)
-            card_layout = QVBoxLayout(card)
-            card_layout.setSpacing(SPACING_SMALL)
-            card_layout.setContentsMargins(
-                SPACING_MEDIUM, SPACING_MEDIUM, SPACING_MEDIUM, SPACING_MEDIUM
-            )
-
-            # Title
-            title_label = SubtitleLabel(example["name"])
-            card_layout.addWidget(title_label)
-
-            # Description
-            desc_label = BodyLabel(example["desc"])
-            desc_label.setWordWrap(True)
-            card_layout.addWidget(desc_label)
-
-            # Select button
-            select_btn = PushButton("选择" if is_zh else "Select")
-            select_btn.setMinimumWidth(100)
-
-            def make_handler(ex):
-                def handler():
-                    selected_example[0] = ex
-                    dialog.accept()
-
-                return handler
-
-            select_btn.clicked.connect(make_handler(example))
-            card_layout.addWidget(select_btn)
-
-            content_layout.addWidget(card)
-
-        dialog.textEdit.hide()
-        dialog.yesButton.hide()
-        dialog.cancelButton.setText("取消" if is_zh else "Cancel")
-
-        # Add content widget to dialog
-        dialog.textLayout.addWidget(content_widget)
-
-        if dialog.exec():
-            if selected_example[0]:
-                example = selected_example[0]
-                example_path = examples_dir / example["file"]
-
-                # Load the example file
-                self._add_files([example_path])
-
-                # Apply recommended strategy
-                self._apply_strategy_mix(example["strategy"])
-
-                # Show success message
-                InfoBar.success(
-                    title="示例已加载" if is_zh else "Example Loaded",
-                    content=f"已加载示例文档：{example['name']}"
-                    if is_zh
-                    else f"Example document loaded: {example['name']}",
-                    orient=Qt.Orientation.Horizontal,
-                    isClosable=True,
-                    position=InfoBarPosition.TOP,
-                    duration=3000,
-                    parent=self,
-                )
-
-    def _recommend_strategy(self):
-        """Analyze files and recommend generation strategy."""
-        is_zh = self._main.config.language == "zh"
-
-        if not self._file_paths:
-            InfoBar.warning(
-                title="警告" if is_zh else "Warning",
-                content="请先选择文件" if is_zh else "Please select files first",
-                orient=Qt.Orientation.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=3000,
-                parent=self,
-            )
-            return
-
-        # Analyze file content to determine type
-        content_type = self._analyze_content_type()
-
-        # Get recommended strategy based on content type
-        strategy_mix = self._get_recommended_strategy(content_type)
-
-        type_names = {
-            "math_science": ("数学/理科内容", "Math/Science Content"),
-            "liberal_arts": ("文科/历史内容", "Liberal Arts/History Content"),
-            "programming": ("编程/技术内容", "Programming/Technical Content"),
-            "general": ("通用内容", "General Content"),
-        }
-
-        type_descs = {
-            "math_science": (
-                "检测到数学公式、科学概念等内容",
-                "Detected math formulas, scientific concepts, etc.",
-            ),
-            "liberal_arts": (
-                "检测到历史事件、人文知识等内容",
-                "Detected historical events, humanities knowledge, etc.",
-            ),
-            "programming": (
-                "检测到代码块、技术文档等内容",
-                "Detected code blocks, technical documentation, etc.",
-            ),
-            "general": (
-                "混合类型内容，使用平衡策略",
-                "Mixed content type, using balanced strategy",
-            ),
-        }
-
-        type_name = type_names.get(content_type, type_names["general"])
-        type_desc = type_descs.get(content_type, type_descs["general"])
-
-        strategy_summary: list[str] = []
-
-        strategy_names = {
-            "basic": ("基础问答", "Basic Q&A"),
-            "cloze": ("填空题", "Cloze"),
-            "concept": ("概念解释", "Concept"),
-            "key_terms": ("关键术语", "Key Terms"),
-            "single_choice": ("单选题", "Single Choice"),
-            "multiple_choice": ("多选题", "Multiple Choice"),
-        }
-
-        for strategy_id, ratio in strategy_mix.items():
-            if ratio > 0:
-                name = strategy_names.get(strategy_id, (strategy_id, strategy_id))
-                strategy_summary.append(f"{name[0] if is_zh else name[1]} {ratio}%")
-
-        self._apply_strategy_mix(strategy_mix)
-        self._show_info_bar(
-            "success",
-            "已应用推荐策略" if is_zh else "Recommendation Applied",
-            (
-                f"{type_name[0]}：{type_desc[0]}；建议配比 {', '.join(strategy_summary)}"
-                if is_zh
-                else (
-                    f"{type_name[1]}: {type_desc[1]}; "
-                    f"recommended mix {', '.join(strategy_summary)}"
-                )
-            ),
-            duration=3600,
-        )
-
-    def _analyze_content_type(self) -> str:
-        """Analyze file content to determine content type."""
-        # Simple heuristic based on file content
-        math_keywords = ["$$", "\\frac", "\\int", "\\sum", "\\lim", "公式", "定理", "证明"]
-        programming_keywords = ["```", "def ", "class ", "function", "import", "代码", "函数"]
-        history_keywords = ["年", "世纪", "朝代", "历史", "事件", "人物"]
-
-        math_score = 0
-        programming_score = 0
-        history_score = 0
-
-        for file_path in self._file_paths[:3]:  # Check first 3 files
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="ignore")[
-                    :5000
-                ]  # First 5000 chars
-
-                for keyword in math_keywords:
-                    math_score += content.count(keyword)
-
-                for keyword in programming_keywords:
-                    programming_score += content.count(keyword)
-
-                for keyword in history_keywords:
-                    history_score += content.count(keyword)
-            except (OSError, UnicodeDecodeError) as e:
-                logger.warning(f"Failed to read file {file_path}: {e}")
-                pass
-
-        # Determine content type based on scores
-        if math_score > programming_score and math_score > history_score and math_score > 3:
-            return "math_science"
-        elif (
-            programming_score > math_score
-            and programming_score > history_score
-            and programming_score > 2
-        ):
-            return "programming"
-        elif history_score > math_score and history_score > programming_score and history_score > 5:
-            return "liberal_arts"
-        else:
-            return "general"
-
-    def _get_recommended_strategy(self, content_type: str) -> dict:
-        """Get recommended strategy mix based on content type."""
-        strategies = {
-            "math_science": {"cloze": 50, "concept": 30, "basic": 20},
-            "liberal_arts": {"basic": 40, "key_terms": 30, "concept": 30},
-            "programming": {"basic": 40, "cloze": 30, "concept": 30},
-            "general": {"basic": 35, "cloze": 25, "concept": 25, "key_terms": 15},
-        }
-        return strategies.get(content_type, strategies["general"])
 
     def _apply_strategy_mix(self, strategy_mix: dict):
         """Apply strategy mix to sliders."""
@@ -3035,7 +2590,6 @@ class ImportPage(ProgressMixin, QWidget):
         self._btn_convert.setText(start_text)
         self._btn_convert.setToolTip(f"{start_text} ({start_shortcut})")
 
-        self._btn_clear.setText("清除" if is_zh else "Clear")
         if hasattr(self, "_resume_failed_btn"):
             self._refresh_resume_failed_button()
 

@@ -6,7 +6,6 @@ import sys
 import time
 from statistics import median
 
-import pytest
 from PyQt6.QtWidgets import QApplication
 
 from ankismart.core.config import AppConfig
@@ -37,10 +36,6 @@ def test_main_window_smoke(monkeypatch) -> None:
     assert window.card_preview_page is not None
     assert window.result_page is not None
     assert window.settings_page is not None
-    assert "performance" not in window._deferred_page_queue
-
-    with pytest.raises(AttributeError):
-        _ = window.performance_page
 
     window.close()
     app.processEvents()
@@ -78,9 +73,7 @@ def test_main_window_keeps_sidebar_back_action(monkeypatch) -> None:
     back_buttons = [
         button
         for button in window.navigationInterface.findChildren(object)
-        if hasattr(button, "toolTip")
-        and callable(button.toolTip)
-        and button.toolTip() == "Back"
+        if hasattr(button, "toolTip") and callable(button.toolTip) and button.toolTip() == "Back"
     ]
 
     assert any(button.isVisible() for button in back_buttons if hasattr(button, "isVisible"))
@@ -189,6 +182,7 @@ def test_close_event_invokes_shutdown_pages(monkeypatch) -> None:
     app.processEvents()
 
     assert calls == ["called"]
+
 
 def test_app_write_crash_report_creates_log(tmp_path, monkeypatch) -> None:
     from ankismart.ui import app as app_module

@@ -71,13 +71,6 @@ class _ThreadLikeWorker:
 
 
 class TestPreviewPageLoadDocuments:
-    def test_preview_page_does_not_render_sample_button(self):
-        main = _make_main_window()
-        page = PreviewPage(main)
-
-        assert not hasattr(page, "_btn_preview")
-        assert page._btn_generate is not None
-
     def test_preview_page_does_not_render_performance_hint(self):
         main = _make_main_window()
         page = PreviewPage(main)
@@ -270,8 +263,7 @@ class TestMarkdownHighlighter:
         )
         hl = MarkdownHighlighter()
         color_by_pattern = {
-            pattern.pattern: fmt.foreground().color().name()
-            for pattern, fmt in hl._rules
+            pattern.pattern: fmt.foreground().color().name() for pattern, fmt in hl._rules
         }
 
         assert color_by_pattern[r"^#{1,6}\s+.*$"] == "#123456"
@@ -521,7 +513,7 @@ def test_update_converting_status_shows_top_infobar(monkeypatch):
     assert page._btn_generate.isEnabled() is False
 
 
-def test_preview_sample_uses_progress_infobar_not_state_tooltip(monkeypatch):
+def test_preview_sample_uses_progress_infobar(monkeypatch):
     main = _make_main_window()
     main.config.language = "zh"
     main.config.active_provider = SimpleNamespace(
@@ -549,7 +541,6 @@ def test_preview_sample_uses_progress_infobar_not_state_tooltip(monkeypatch):
 
     page._on_preview_sample()
 
-    assert not hasattr(page, "_show_state_tooltip")
     assert calls == [("正在生成样本卡片", "正在调用模型，请稍候")]
 
 
@@ -622,15 +613,6 @@ def test_generate_cards_closes_llm_client_when_worker_start_fails(monkeypatch):
 
     assert closed["value"] is True
     assert page._btn_generate.isEnabled() is True
-
-
-def test_preview_page_removes_state_tooltip_popup_api():
-    main = _make_main_window()
-    main.config.language = "zh"
-    page = PreviewPage(main)
-
-    assert not hasattr(page, "_show_state_tooltip")
-    assert not hasattr(page, "_finish_state_tooltip")
 
 
 def test_generation_warning_publishes_task_warning(monkeypatch):
