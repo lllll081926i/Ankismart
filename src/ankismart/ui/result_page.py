@@ -297,14 +297,6 @@ class ResultPage(QWidget):
         # Track edited cards
         self._edited_card_indices: set[int] = set()
 
-        # Initialize shortcuts
-        self._init_shortcuts()
-
-    def _init_shortcuts(self):
-        """Initialize page-specific keyboard shortcuts."""
-        # Removed Ctrl+E shortcut for export failed cards
-        pass
-
     def _on_update_mode_changed(self) -> None:
         """Persist selected update mode in runtime config."""
         mode = self._update_combo.currentData()

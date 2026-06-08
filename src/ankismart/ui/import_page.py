@@ -66,7 +66,6 @@ from ankismart.ui.styles import (
 from ankismart.ui.task_runtime import TaskEvent
 from ankismart.ui.utils import (
     ProgressMixin,
-    format_operation_hint,
     request_infobar_confirmation,
     split_tags_text,
 )
@@ -1981,19 +1980,6 @@ class ImportPage(ProgressMixin, QWidget):
             "auto_target_count": auto_target_count,
             "strategy_mix": strategy_mix,
         }
-
-    def _refresh_conversion_hint(self) -> None:
-        label = self.__dict__.get("_performance_hint_label")
-        if label is None or not hasattr(label, "setText"):
-            return
-
-        label.setText(
-            format_operation_hint(
-                self._main.config,
-                event="convert",
-                language=self._main.config.language,
-            )
-        )
 
     def _show_info_bar(
         self,
