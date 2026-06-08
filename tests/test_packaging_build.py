@@ -122,35 +122,31 @@ def test_installer_script_defaults_to_chinese_and_customizes_wizard_copy() -> No
     iss_path = Path(__file__).resolve().parents[1] / "packaging" / "ankismart.iss"
     content = iss_path.read_text(encoding="utf-8")
     zh_lang_path = (
-        Path(__file__).resolve().parents[1]
-        / "packaging"
-        / "languages"
-        / "ChineseSimplified.isl"
+        Path(__file__).resolve().parents[1] / "packaging" / "languages" / "ChineseSimplified.isl"
     )
 
     assert (
         'Name: "chinesesimplified"; MessagesFile: '
-        '"{#ProjectRoot}\\packaging\\languages\\ChineseSimplified.isl"'
-        in content
+        '"{#ProjectRoot}\\packaging\\languages\\ChineseSimplified.isl"' in content
     )
     assert 'Name: "english"; MessagesFile: "compiler:Default.isl"' in content
     assert zh_lang_path.exists()
-    assert 'LanguageDetectionMethod=none' in content
-    assert 'ShowLanguageDialog=yes' in content
-    assert 'UsePreviousLanguage=no' in content
-    assert 'chinesesimplified.WelcomeHeadline=' in content
-    assert 'chinesesimplified.FinishedHeadline=' in content
-    assert 'procedure InitializeWizard();' in content
+    assert "LanguageDetectionMethod=none" in content
+    assert "ShowLanguageDialog=yes" in content
+    assert "UsePreviousLanguage=no" in content
+    assert "chinesesimplified.WelcomeHeadline=" in content
+    assert "chinesesimplified.FinishedHeadline=" in content
+    assert "procedure InitializeWizard();" in content
 
 
 def test_installer_script_adds_optional_uninstall_user_data_cleanup() -> None:
     iss_path = Path(__file__).resolve().parents[1] / "packaging" / "ankismart.iss"
     content = iss_path.read_text(encoding="utf-8")
 
-    assert 'chinesesimplified.RemoveUserDataOnUninstall=' in content
-    assert 'english.RemoveUserDataOnUninstall=' in content
-    assert 'RemoveUserDataCheck := TNewCheckBox.Create' in content
-    assert 'RemoveUserDataCheck.Checked := False' in content
+    assert "chinesesimplified.RemoveUserDataOnUninstall=" in content
+    assert "english.RemoveUserDataOnUninstall=" in content
+    assert "RemoveUserDataCheck := TNewCheckBox.Create" in content
+    assert "RemoveUserDataCheck.Checked := False" in content
     assert "ExpandConstant('{localappdata}\\ankismart')" in content
     assert "DelTree(userDataDir, True, True, True)" in content
 
@@ -161,8 +157,8 @@ def test_installer_script_uses_directory_page_and_finish_page_options() -> None:
 
     assert "DisableProgramGroupPage=yes" in content
     assert "DefaultDirName={localappdata}\\{#MyAppName}" in content
-    assert '[Tasks]' not in content
-    assert 'Tasks: desktopicon' not in content
+    assert "[Tasks]" not in content
+    assert "Tasks: desktopicon" not in content
     assert "function ShouldSkipPage(PageID: Integer): Boolean;" in content
     assert "PageID = wpWelcome" in content
     assert "PageID = wpReady" in content
@@ -177,8 +173,7 @@ def test_installer_script_uses_directory_page_and_finish_page_options() -> None:
     assert "LaunchAppCheck.Checked := False" in content
     assert "LaunchAppCheck.Height := ScaleY(26)" in content
     assert (
-        "LaunchAppCheck.Top := DesktopIconCheck.Top + "
-        "DesktopIconCheck.Height + ScaleY(6)"
+        "LaunchAppCheck.Top := DesktopIconCheck.Top + DesktopIconCheck.Height + ScaleY(6)"
     ) in content
     assert "WizardForm.RunList.Visible := False" in content
     assert "WizardForm.RunList.Height := 0" in content
@@ -187,8 +182,8 @@ def test_installer_script_uses_directory_page_and_finish_page_options() -> None:
     assert "WizardForm.RunList.Visible := False;" in content
     assert "WizardForm.RunList.Height := 0;" in content
     assert "WizardForm.RunList.Checked[1] := False" not in content
-    assert 'chinesesimplified.OpenInstallDirOnFinish=' not in content
-    assert 'english.OpenInstallDirOnFinish=' not in content
+    assert "chinesesimplified.OpenInstallDirOnFinish=" not in content
+    assert "english.OpenInstallDirOnFinish=" not in content
     assert 'Description: "{cm:OpenInstallDirOnFinish}"' not in content
 
 

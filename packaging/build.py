@@ -190,8 +190,7 @@ def stage_app_files() -> None:
 
 
 def create_portable_package(version: str) -> Path:
-    # 便携版目录名不带版本号
-    portable_dir = PORTABLE_ROOT / "Ankismart-Portable"
+    portable_dir = PORTABLE_ROOT / f"Ankismart-Portable-{version}"
     if portable_dir.exists():
         shutil.rmtree(portable_dir)
 
@@ -202,8 +201,7 @@ def create_portable_package(version: str) -> Path:
     write_portable_marker(portable_dir)
     remove_ocr_model_artifacts(portable_dir)
 
-    # 压缩包名称也不带版本号
-    archive_base = portable_dir.parent / "Ankismart-Portable"
+    archive_base = portable_dir.parent / f"Ankismart-Portable-{version}"
     archive_file = shutil.make_archive(
         str(archive_base),
         "zip",
@@ -211,7 +209,6 @@ def create_portable_package(version: str) -> Path:
         portable_dir.name,
     )
     _print(f"便携版压缩包: {archive_file}")
-    _print(f"提示: 版本号 {version} 已嵌入到文件属性中")
     return portable_dir
 
 
