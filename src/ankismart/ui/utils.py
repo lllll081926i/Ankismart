@@ -4,7 +4,7 @@ import re
 import time
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QPoint, Qt, QTimer
+from PyQt6.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 from PyQt6.QtWidgets import QHBoxLayout, QSizePolicy, QWidget
 from qfluentwidgets import BodyLabel, InfoBar, InfoBarPosition
 
@@ -56,10 +56,75 @@ def _set_regular_label(label: BodyLabel) -> None:
     label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
 
-def _progress_infobar_target_width(window_width: int) -> int:
-    available_width = max(240, window_width - 88)
-    preferred_width = max(420, int(window_width * 0.56))
-    return min(available_width, preferred_width, 760)
+_PROGRESS_INFOBAR_MIN_WIDTH = 240
+_PROGRESS_INFOBAR_WINDOW_MARGIN = 88
+_PROGRESS_INFOBAR_MAX_WIDTH = 920
+
+
+def _widget_width(widget: object) -> int:
+    width_getter = getattr(widget, "width", None)
+    if not callable(width_getter):
+        return 0
+    try:
+        return max(0, int(width_getter() or 0))
+    except RuntimeError:
+        raise
+    except Exception:
+        return 0
+
+
+def _widget_size_hint_width(widget: object) -> int:
+    size_hint_getter = getattr(widget, "sizeHint", None)
+    if not callable(size_hint_getter):
+        return 0
+    try:
+        size_hint = size_hint_getter()
+        width_getter = getattr(size_hint, "width", None)
+        return max(0, int(width_getter() or 0)) if callable(width_getter) else 0
+    except RuntimeError:
+        raise
+    except Exception:
+        return 0
+
+
+def _progress_infobar_max_width(window_width: int) -> int:
+    available_width = max(
+        _PROGRESS_INFOBAR_MIN_WIDTH,
+        window_width - _PROGRESS_INFOBAR_WINDOW_MARGIN,
+    )
+    return min(available_width, _PROGRESS_INFOBAR_MAX_WIDTH)
+
+
+def _progress_infobar_chrome_width(info_bar: QWidget) -> int:
+    stored_width = getattr(info_bar, "_progress_chrome_width", None)
+    if isinstance(stored_width, int) and stored_width > 0:
+        return stored_width
+
+    hint_width = _widget_size_hint_width(info_bar)
+    if hint_width > 0:
+        setattr(info_bar, "_progress_chrome_width", hint_width)
+        return hint_width
+
+    current_width = _widget_width(info_bar)
+    if current_width > 0:
+        setattr(info_bar, "_progress_chrome_width", current_width)
+    return current_width
+
+
+def _progress_infobar_natural_width(info_bar: QWidget) -> int:
+    text_widget = getattr(info_bar, "_progress_text_widget", None)
+    text_width = _widget_size_hint_width(text_widget)
+    if text_width > 0:
+        return _progress_infobar_chrome_width(info_bar) + text_width
+
+    return _widget_width(info_bar)
+
+
+def _progress_infobar_target_width(info_bar: QWidget, window_width: int) -> int:
+    max_width = _progress_infobar_max_width(window_width)
+    min_width = min(_PROGRESS_INFOBAR_MIN_WIDTH, max_width)
+    natural_width = _progress_infobar_natural_width(info_bar)
+    return min(max(natural_width, min_width), max_width)
 
 
 def _progress_infobar_center_x(info_bar: QWidget, target_width: int, window_width: int) -> int:
@@ -78,6 +143,88 @@ def _progress_infobar_center_x(info_bar: QWidget, target_width: int, window_widt
     return (window_width - target_width) // 2
 
 
+class _ProgressInfoBarPositionFilter(QObject):
+    def __init__(self, info_bar: QWidget) -> None:
+        super().__init__(info_bar)
+        self._info_bar = info_bar
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.WindowStateChange):
+            QTimer.singleShot(0, lambda: _safe_position_progress_infobar(self._info_bar))
+        return super().eventFilter(obj, event)
+
+
+def _ensure_progress_infobar_position_filter(info_bar: QWidget) -> None:
+    if not isinstance(info_bar, QObject):
+        return
+
+    event_filter = getattr(info_bar, "_progress_position_filter", None)
+    if event_filter is None:
+        event_filter = _ProgressInfoBarPositionFilter(info_bar)
+        setattr(info_bar, "_progress_position_filter", event_filter)
+        setattr(info_bar, "_progress_position_filter_targets", [])
+
+    targets = getattr(info_bar, "_progress_position_filter_targets", [])
+    parent_widget = info_bar.parentWidget()
+    window_getter = getattr(info_bar, "window", None)
+    window_widget = window_getter() if callable(window_getter) else None
+
+    for target in (parent_widget, window_widget):
+        if target is None or any(target is installed for installed in targets):
+            continue
+        try:
+            target.installEventFilter(event_filter)
+            targets.append(target)
+        except RuntimeError:
+            raise
+        except Exception:
+            continue
+
+
+def _progress_infobar_animation_y(info_bar: QWidget, fallback_y: int) -> int:
+    property_getter = getattr(info_bar, "property", None)
+    if not callable(property_getter):
+        return fallback_y
+
+    try:
+        slide_animation = property_getter("slideAni")
+        end_value_getter = getattr(slide_animation, "endValue", None)
+        end_value = end_value_getter() if callable(end_value_getter) else None
+    except RuntimeError:
+        raise
+    except Exception:
+        return fallback_y
+
+    if isinstance(end_value, QPoint):
+        return max(0, end_value.y())
+    return fallback_y
+
+
+def _sync_progress_infobar_animation_target(info_bar: QWidget, target_pos: QPoint) -> None:
+    property_getter = getattr(info_bar, "property", None)
+    if not callable(property_getter):
+        return
+
+    for animation_name in ("slideAni", "dropAni"):
+        try:
+            animation = property_getter(animation_name)
+        except RuntimeError:
+            raise
+        except Exception:
+            continue
+        if animation is None:
+            continue
+
+        for method_name in ("stop",):
+            method = getattr(animation, method_name, None)
+            if callable(method):
+                method()
+        for method_name in ("setStartValue", "setEndValue"):
+            method = getattr(animation, method_name, None)
+            if callable(method):
+                method(target_pos)
+
+
 def _position_progress_infobar(info_bar: QWidget) -> None:
     parent_widget = info_bar.parentWidget()
     window_getter = getattr(info_bar, "window", None)
@@ -92,7 +239,7 @@ def _position_progress_infobar(info_bar: QWidget) -> None:
     if window_width <= 0:
         return
 
-    target_width = _progress_infobar_target_width(window_width)
+    target_width = _progress_infobar_target_width(info_bar, window_width)
     if hasattr(info_bar, "setFixedWidth"):
         info_bar.setFixedWidth(target_width)
     elif hasattr(info_bar, "setMaximumWidth"):
@@ -101,12 +248,20 @@ def _position_progress_infobar(info_bar: QWidget) -> None:
     if hasattr(info_bar, "adjustSize"):
         info_bar.adjustSize()
     if hasattr(info_bar, "move"):
+        actual_width = _widget_width(info_bar) or target_width
         y_getter = getattr(info_bar, "y", None)
-        y_pos = int(y_getter() if callable(y_getter) else 0)
-        info_bar.move(
-            _progress_infobar_center_x(info_bar, target_width, window_width),
-            max(0, y_pos),
+        fallback_y = max(0, int(y_getter() if callable(y_getter) else 0))
+        target_pos = QPoint(
+            _progress_infobar_center_x(info_bar, actual_width, window_width),
+            _progress_infobar_animation_y(info_bar, fallback_y),
         )
+        _sync_progress_infobar_animation_target(info_bar, target_pos)
+        try:
+            info_bar.move(target_pos)
+        except TypeError:
+            info_bar.move(target_pos.x(), target_pos.y())
+
+    _ensure_progress_infobar_position_filter(info_bar)
 
 
 def _safe_position_progress_infobar(info_bar: QWidget) -> None:
@@ -138,6 +293,8 @@ def update_progress_infobar_text(
         if title_label is None or content_label is None:
             if not hasattr(info_bar, "addWidget"):
                 return False
+
+            _progress_infobar_chrome_width(info_bar)
 
             for attr in ("titleLabel", "contentLabel"):
                 default_label = getattr(info_bar, attr, None)
