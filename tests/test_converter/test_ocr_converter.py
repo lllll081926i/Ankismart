@@ -443,6 +443,22 @@ class TestOcrConfigHelpers:
 
         assert model_root == (tmp_path / "custom_model_root").resolve()
 
+    def test_frozen_model_root_defaults_to_install_directory(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        import ankismart.converter.ocr_models as ocr_models
+
+        install_dir = tmp_path / "Ankismart"
+        exe_path = install_dir / "Ankismart.exe"
+        install_dir.mkdir(parents=True)
+
+        monkeypatch.setattr(ocr_models.sys, "frozen", True, raising=False)
+        monkeypatch.setattr(ocr_models.sys, "executable", str(exe_path))
+        with patch.dict("os.environ", {}, clear=True):
+            model_root = ocr_models._resolve_model_root()
+
+        assert model_root == (install_dir / "model").resolve()
+
     def test_custom_model_dir_is_respected(self, tmp_path: Path) -> None:
         det_dir = tmp_path / "det_model_dir"
         rec_dir = tmp_path / "rec_model_dir"
