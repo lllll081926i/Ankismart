@@ -44,6 +44,7 @@ from .task_runtime import TaskEvent, TaskRuntime
 
 if TYPE_CHECKING:
     from .card_preview_page import CardPreviewPage
+    from .history_page import HistoryPage
     from .preview_page import PreviewPage
     from .result_page import ResultPage
     from .settings_page import SettingsPage
@@ -84,12 +85,14 @@ class MainWindow(FluentWindow):
         self._preview_page: PreviewPage | None = None
         self._card_preview_page: CardPreviewPage | None = None
         self._result_page: ResultPage | None = None
+        self._history_page: HistoryPage | None = None
         self._settings_page: SettingsPage | None = None
         self._nav_routes_added: set[str] = set()
         self._deferred_page_queue: list[str] = [
             "preview",
             "card_preview",
             "result",
+            "history",
             "settings",
         ]
         self._deferred_bootstrap_started = False
@@ -276,6 +279,10 @@ NavigationPanel[transparent=true] {{
             from .result_page import ResultPage
 
             return ResultPage(self)
+        if page_key == "history":
+            from .history_page import HistoryPage
+
+            return HistoryPage(self)
         if page_key == "settings":
             from .settings_page import SettingsPage
 
@@ -312,6 +319,13 @@ NavigationPanel[transparent=true] {{
                 labels["result"],
                 NavigationItemPosition.TOP,
             )
+        elif page_key == "history":
+            self.addSubInterface(
+                page,
+                FluentIcon.HISTORY,
+                labels["history"],
+                NavigationItemPosition.TOP,
+            )
         elif page_key == "settings":
             self.addSubInterface(
                 page,
@@ -331,6 +345,7 @@ NavigationPanel[transparent=true] {{
             "preview": "_preview_page",
             "card_preview": "_card_preview_page",
             "result": "_result_page",
+            "history": "_history_page",
             "settings": "_settings_page",
         }
         attr = attr_map.get(page_key)
@@ -351,6 +366,7 @@ NavigationPanel[transparent=true] {{
             self._preview_page,
             self._card_preview_page,
             self._result_page,
+            self._history_page,
             self._settings_page,
         ):
             if page is not None:
@@ -525,6 +541,7 @@ NavigationPanel[transparent=true] {{
             "preview": t("nav.preview", lang),
             "card_preview": t("nav.card_preview", lang),
             "result": t("nav.result", lang),
+            "history": t("nav.history", lang),
             "settings": t("nav.settings", lang),
         }
 
@@ -614,6 +631,8 @@ NavigationPanel[transparent=true] {{
             route_to_label[self._card_preview_page.objectName()] = labels["card_preview"]
         if self._result_page is not None:
             route_to_label[self._result_page.objectName()] = labels["result"]
+        if self._history_page is not None:
+            route_to_label[self._history_page.objectName()] = labels["history"]
         if self._settings_page is not None:
             route_to_label[self._settings_page.objectName()] = labels["settings"]
         for route_key, text in route_to_label.items():
@@ -632,7 +651,7 @@ NavigationPanel[transparent=true] {{
 
     def _switch_page(self, index: int) -> None:
         """Switch page by index for backward compatibility."""
-        page_keys = ["import", "preview", "card_preview", "result", "settings"]
+        page_keys = ["import", "preview", "card_preview", "result", "history", "settings"]
         if 0 <= index < len(page_keys):
             page = self._ensure_page(page_keys[index], add_to_navigation=True)
             self.switchTo(page)
@@ -668,7 +687,7 @@ NavigationPanel[transparent=true] {{
 
     def switch_to_settings(self) -> None:
         """Switch to settings page."""
-        self._switch_page(4)
+        self._switch_page(5)
 
     def set_connection_status(self, connected: bool) -> None:
         """Store connection status for settings page feedback."""
@@ -681,6 +700,7 @@ NavigationPanel[transparent=true] {{
             "preview_page": self._preview_page,
             "card_preview_page": self._card_preview_page,
             "result_page": self._result_page,
+            "history_page": self._history_page,
             "settings_page": self._settings_page,
         }
         for attr, page in page_map.items():
@@ -717,6 +737,10 @@ NavigationPanel[transparent=true] {{
     @property
     def result_page(self) -> ResultPage:
         return self._ensure_page("result", add_to_navigation=True)
+
+    @property
+    def history_page(self) -> HistoryPage:
+        return self._ensure_page("history", add_to_navigation=True)
 
     @property
     def settings_page(self) -> SettingsPage:

@@ -35,6 +35,7 @@ def test_main_window_smoke(monkeypatch) -> None:
     assert window.preview_page is not None
     assert window.card_preview_page is not None
     assert window.result_page is not None
+    assert window.history_page is not None
     assert window.settings_page is not None
 
     window.close()
@@ -152,6 +153,7 @@ def test_shutdown_pages_closes_all_child_pages(monkeypatch) -> None:
     window.preview_page.close = _mark("preview")
     window.card_preview_page.close = _mark("card_preview")
     window.result_page.close = _mark("result")
+    window.history_page.close = _mark("history")
     window.settings_page.close = _mark("settings")
 
     window._shutdown_pages()
@@ -161,6 +163,7 @@ def test_shutdown_pages_closes_all_child_pages(monkeypatch) -> None:
         "preview",
         "card_preview",
         "result",
+        "history",
         "settings",
     ]
     window.close()

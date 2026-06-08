@@ -1441,7 +1441,8 @@ class PreviewPage(ProgressMixin, QWidget):
                     if str(getattr(card.metadata, "strategy_id", "") or "").strip()
                 }
             )
-            get_default_history_store().save_generation_batch(
+            history_store = get_default_history_store()
+            history_store.save_generation_batch(
                 list(cards),
                 title=f"生成 {len(cards)} 张卡片",
                 status=status,
@@ -1454,6 +1455,19 @@ class PreviewPage(ProgressMixin, QWidget):
                     "strategy_ids": strategy_ids,
                 },
             )
+            prune_result = history_store.prune_cache(
+                max_size_mb=getattr(self._main.config, "history_cache_max_mb", 500),
+                max_records=getattr(self._main.config, "history_cache_max_records", 500),
+            )
+            if prune_result.deleted_batches:
+                logger.info(
+                    "generation history cache pruned",
+                    extra={
+                        "event": "history.cache.pruned",
+                        "deleted_batches": prune_result.deleted_batches,
+                        "deleted_cards": prune_result.deleted_cards,
+                    },
+                )
         except Exception:
             logger.warning("failed to persist generation history", exc_info=True)
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
@@ -516,6 +518,35 @@ def test_save_config_preserves_generation_preset_from_import_page(_qapp, monkeyp
     assert captured["cfg"].generation_preset == "language_vocab"
 
 
+def test_history_cache_limits_load_and_save(_qapp, monkeypatch) -> None:
+    cfg = AppConfig(history_cache_max_mb=256, history_cache_max_records=120)
+    main, _ = make_main(cfg)
+    page = SettingsPage(main)
+
+    assert page._history_cache_size_spinbox.value() == 256
+    assert page._history_cache_records_spinbox.value() == 120
+
+    captured: dict[str, AppConfig] = {}
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.save_config", lambda c: captured.setdefault("cfg", c)
+    )
+    monkeypatch.setattr("ankismart.ui.settings_page.configure_ocr_runtime", lambda **kwargs: None)
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+
+    page._history_cache_size_spinbox.setValue(768)
+    page._history_cache_records_spinbox.setValue(300)
+    page._save_config()
+
+    assert "cfg" in captured
+    assert captured["cfg"].history_cache_max_mb == 768
+    assert captured["cfg"].history_cache_max_records == 300
+
+
 def test_settings_page_uses_llm_group_as_top_content(_qapp) -> None:
     provider = LLMProviderConfig(
         id="p1",
@@ -558,6 +589,12 @@ def test_clear_cache_confirmation_dialog_uses_custom_clean_styles(_qapp, monkeyp
     monkeypatch.setattr(
         "ankismart.core.logging.get_log_stats",
         lambda: {"size_mb": 0.0, "count": 0, "size_gb": 0.0},
+    )
+    monkeypatch.setattr(
+        "ankismart.core.history_store.get_default_history_store",
+        lambda: SimpleNamespace(
+            get_cache_stats=lambda: {"size_mb": 0.0, "batch_count": 0, "card_count": 0}
+        ),
     )
 
     shown_dialog: dict[str, QMessageBox] = {}
@@ -619,6 +656,13 @@ def test_clear_cache_also_clears_log_files(_qapp, monkeypatch) -> None:
         lambda: actions.append("logs") or True,
     )
     monkeypatch.setattr(
+        "ankismart.core.history_store.get_default_history_store",
+        lambda: SimpleNamespace(
+            get_cache_stats=lambda: {"size_mb": 0.5, "batch_count": 4, "card_count": 20},
+            clear_generation_history=lambda: actions.append("history") or 4,
+        ),
+    )
+    monkeypatch.setattr(
         "ankismart.ui.settings_page.SettingsPage._exec_message_box",
         lambda self, dialog: QMessageBox.StandardButton.Yes,
     )
@@ -629,6 +673,6 @@ def test_clear_cache_also_clears_log_files(_qapp, monkeypatch) -> None:
 
     page._clear_cache()
 
-    assert actions == ["cache", "logs"]
+    assert actions == ["cache", "logs", "history"]
     assert len(calls) == 1
     assert calls[0][0][0] == "success"

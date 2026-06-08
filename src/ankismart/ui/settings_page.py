@@ -1098,6 +1098,34 @@ class SettingsPage(ScrollArea):
         self._cache_count_card.clicked.connect(self._refresh_cache_stats)
         self._cache_group.addSettingCard(self._cache_count_card)
 
+        self._history_cache_size_card = SettingCard(
+            FluentIcon.HISTORY,
+            "历史缓存上限",
+            "超过容量后自动清理最早的生成记录",
+            self.scrollWidget,
+        )
+        self._history_cache_size_spinbox = SpinBox(self._history_cache_size_card)
+        self._history_cache_size_spinbox.setRange(1, 102400)
+        self._history_cache_size_spinbox.setSuffix(" MB")
+        self._history_cache_size_spinbox.setMinimumWidth(128)
+        self._history_cache_size_card.hBoxLayout.addWidget(self._history_cache_size_spinbox)
+        self._history_cache_size_card.hBoxLayout.addSpacing(16)
+        self._cache_group.addSettingCard(self._history_cache_size_card)
+
+        self._history_cache_records_card = SettingCard(
+            FluentIcon.SAVE,
+            "历史记录上限",
+            "超过条数后自动清理最早的生成记录",
+            self.scrollWidget,
+        )
+        self._history_cache_records_spinbox = SpinBox(self._history_cache_records_card)
+        self._history_cache_records_spinbox.setRange(1, 100000)
+        self._history_cache_records_spinbox.setSuffix(" 条")
+        self._history_cache_records_spinbox.setMinimumWidth(128)
+        self._history_cache_records_card.hBoxLayout.addWidget(self._history_cache_records_spinbox)
+        self._history_cache_records_card.hBoxLayout.addSpacing(16)
+        self._cache_group.addSettingCard(self._history_cache_records_card)
+
         self.expandLayout.addWidget(self._cache_group)
 
         # ── Document Processing Group ──
@@ -1285,6 +1313,10 @@ class SettingsPage(ScrollArea):
         self._split_threshold_spinbox.setValue(config.split_threshold)
 
         # Cache statistics
+        self._history_cache_size_spinbox.setValue(getattr(config, "history_cache_max_mb", 500))
+        self._history_cache_records_spinbox.setValue(
+            getattr(config, "history_cache_max_records", 500)
+        )
         self._refresh_cache_stats_deferred()
 
         # Log level
@@ -1964,6 +1996,7 @@ class SettingsPage(ScrollArea):
     def _clear_cache(self) -> None:
         """Clear all cache files."""
         from ankismart.converter.cache import clear_cache, get_cache_stats
+        from ankismart.core.history_store import get_default_history_store
         from ankismart.core.logging import clear_log_files, get_log_stats
         from ankismart.ui.i18n import t
 
@@ -1973,9 +2006,13 @@ class SettingsPage(ScrollArea):
         log_stats = get_log_stats()
         log_size_mb = float(log_stats["size_mb"])
         log_count = int(log_stats["count"])
+        history_store = get_default_history_store()
+        history_stats = history_store.get_cache_stats()
+        history_size_mb = float(history_stats["size_mb"])
+        history_count = int(history_stats["batch_count"])
 
         # Check if cache and logs are empty
-        if count == 0 and log_count == 0:
+        if count == 0 and log_count == 0 and history_count == 0:
             self._show_info_bar(
                 "info",
                 t("settings.cache_empty", self._main.config.language),
@@ -1990,6 +2027,8 @@ class SettingsPage(ScrollArea):
             size=size_mb,
             log_count=log_count,
             log_size=log_size_mb,
+            history_count=history_count,
+            history_size=history_size_mb,
         )
         dialog = self._build_clear_cache_message_box(
             t("settings.confirm_clear_cache", self._main.config.language),
@@ -2001,13 +2040,18 @@ class SettingsPage(ScrollArea):
         if reply == QMessageBox.StandardButton.Yes:
             success = clear_cache() and clear_log_files()
             if success:
+                try:
+                    history_store.clear_generation_history()
+                except Exception:
+                    success = False
+            if success:
                 self._show_info_bar(
                     "success",
                     t("settings.cache_cleared", self._main.config.language),
                     t(
                         "settings.cache_cleared_msg",
                         self._main.config.language,
-                        size=size_mb + log_size_mb,
+                        size=size_mb + log_size_mb + history_size_mb,
                     ),
                     duration=3500,
                 )
@@ -2028,9 +2072,21 @@ class SettingsPage(ScrollArea):
         size: float,
         log_count: int = 0,
         log_size: float = 0.0,
+        history_count: int = 0,
+        history_size: float = 0.0,
     ) -> tuple[str, str]:
         is_zh = self._main.config.language == "zh"
         if is_zh:
+            if log_count or history_count:
+                parts = [f"{count} 个转换缓存文件（{size:.2f} MB）"]
+                if log_count:
+                    parts.append(f"{log_count} 个日志文件（{log_size:.2f} MB）")
+                if history_count:
+                    parts.append(f"{history_count} 条历史结果（{history_size:.2f} MB）")
+                return (
+                    "确认要清空缓存、日志和历史结果吗？",
+                    f"这将删除{'、'.join(parts)}，此操作不可撤销。",
+                )
             if log_count:
                 return (
                     "确认要清空缓存和日志文件吗？",
@@ -2041,11 +2097,15 @@ class SettingsPage(ScrollArea):
                 "确认要清空所有缓存文件吗？",
                 f"这将删除 {count} 个文件（{size:.2f} MB），此操作不可撤销。",
             )
-        if log_count:
+        if log_count or history_count:
+            parts = [f"{count} conversion cache files ({size:.2f} MB)"]
+            if log_count:
+                parts.append(f"{log_count} log files ({log_size:.2f} MB)")
+            if history_count:
+                parts.append(f"{history_count} history batches ({history_size:.2f} MB)")
             return (
-                "Clear all cache and log files?",
-                f"This will delete {count} cache files ({size:.2f} MB) and "
-                f"{log_count} log files ({log_size:.2f} MB). This cannot be undone.",
+                "Clear cache, logs, and history results?",
+                f"This will delete {', '.join(parts)}. This cannot be undone.",
             )
         return (
             "Clear all cache files?",
@@ -2449,6 +2509,8 @@ class SettingsPage(ScrollArea):
                 "language": language,
                 "auto_check_updates": self._auto_update_card.isChecked(),
                 "log_level": log_level,
+                "history_cache_max_mb": self._history_cache_size_spinbox.value(),
+                "history_cache_max_records": self._history_cache_records_spinbox.value(),
                 "enable_auto_split": self._auto_split_switch.isChecked(),
                 "split_threshold": self._split_threshold_spinbox.value(),
             }
