@@ -468,6 +468,82 @@ def test_push_card_progress_updates_progress_infobar(monkeypatch):
     assert calls == [("正在推送到 Anki", "已完成 2/5")]
 
 
+def test_show_progress_info_bar_ignores_stale_deleted_infobar(monkeypatch):
+    main = _make_main_window()
+    main.config.language = "zh"
+    page = PreviewPage(main)
+    info_calls: list[dict] = []
+
+    class _DeletedInfoBar:
+        def close(self):
+            raise RuntimeError("wrapped C/C++ object of type InfoBar has been deleted")
+
+    page._progress_info_bar = _DeletedInfoBar()
+
+    monkeypatch.setattr(
+        "ankismart.ui.preview_page.InfoBar.info",
+        lambda **kwargs: info_calls.append(kwargs) or object(),
+    )
+
+    page._show_progress_info_bar("正在生成卡片", "正在生成 basic 卡片")
+
+    assert len(info_calls) == 1
+    assert info_calls[0]["title"] == "正在生成卡片"
+    assert info_calls[0]["content"] == "正在生成 basic 卡片"
+    assert page._progress_info_bar is not None
+
+
+def test_show_progress_info_bar_reuses_existing_infobar(monkeypatch):
+    main = _make_main_window()
+    main.config.language = "zh"
+    page = PreviewPage(main)
+    info_calls: list[dict] = []
+
+    class _Label:
+        def __init__(self) -> None:
+            self.text = ""
+            self.visible = True
+
+        def setText(self, text: str) -> None:
+            self.text = text
+
+        def setVisible(self, visible: bool) -> None:
+            self.visible = visible
+
+    class _ProgressInfoBar:
+        def __init__(self, title: str, content: str, duration: int) -> None:
+            self.title = title
+            self.content = content
+            self.duration = duration
+            self.titleLabel = _Label()
+            self.contentLabel = _Label()
+            self.closed = False
+
+        def _adjustText(self) -> None:
+            self.titleLabel.setText(self.title)
+            self.contentLabel.setText(self.content)
+
+        def close(self) -> None:
+            self.closed = True
+
+    def _show_info_bar(**kwargs):
+        info_calls.append(kwargs)
+        return _ProgressInfoBar(kwargs["title"], kwargs["content"], kwargs["duration"])
+
+    monkeypatch.setattr("ankismart.ui.preview_page.InfoBar.info", _show_info_bar)
+
+    page._show_progress_info_bar("正在生成卡片", "准备生成")
+    original = page._progress_info_bar
+    page._show_progress_info_bar("正在生成卡片", "已生成 1/3 张卡片")
+
+    assert len(info_calls) == 1
+    assert info_calls[0]["duration"] == -1
+    assert page._progress_info_bar is original
+    assert original.closed is False
+    assert original.content == "已生成 1/3 张卡片"
+    assert original.contentLabel.text == "已生成 1/3 张卡片"
+
+
 def test_generation_warning_shows_visible_infobar(monkeypatch):
     main = _make_main_window()
     main.config.language = "zh"

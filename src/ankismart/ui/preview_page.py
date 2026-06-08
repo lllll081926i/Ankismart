@@ -4,6 +4,7 @@ import re
 import time
 from typing import TYPE_CHECKING
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
 from PyQt6.QtWidgets import QHBoxLayout, QListWidget, QVBoxLayout, QWidget
@@ -1080,11 +1081,13 @@ class PreviewPage(ProgressMixin, QWidget):
             parent=self,
         )
 
-    def _show_progress_info_bar(self, title: str, content: str, duration: int = 1800):
+    def _show_progress_info_bar(self, title: str, content: str, duration: int = -1):
         """Show a single progress infobar instead of popup tooltip windows."""
         current = self.__dict__.get("_progress_info_bar")
-        if current is not None and hasattr(current, "close"):
-            current.close()
+        if self._update_progress_info_bar(current, title, content, duration):
+            return
+
+        self._clear_progress_info_bar()
 
         self.__dict__["_progress_info_bar"] = InfoBar.info(
             title=title,
@@ -1096,11 +1099,51 @@ class PreviewPage(ProgressMixin, QWidget):
             parent=self,
         )
 
+    def _update_progress_info_bar(self, current, title: str, content: str, duration: int) -> bool:
+        if current is None:
+            return False
+
+        try:
+            if sip.isdeleted(current):
+                return False
+        except TypeError:
+            pass
+
+        try:
+            title_label = getattr(current, "titleLabel", None)
+            content_label = getattr(current, "contentLabel", None)
+            if title_label is None or content_label is None:
+                return False
+
+            current.title = title
+            current.content = content
+            current.duration = duration
+            title_label.setVisible(bool(title))
+            content_label.setVisible(bool(content))
+
+            adjust_text = getattr(current, "_adjustText", None)
+            if callable(adjust_text):
+                adjust_text()
+            else:
+                title_label.setText(title)
+                content_label.setText(content)
+
+            return True
+        except RuntimeError:
+            logger.debug("progress infobar was already deleted", exc_info=True)
+            return False
+
     def _clear_progress_info_bar(self) -> None:
         current = self.__dict__.get("_progress_info_bar")
         self.__dict__["_progress_info_bar"] = None
-        if current is not None and hasattr(current, "close"):
-            current.close()
+        if current is None:
+            return
+        try:
+            close = getattr(current, "close", None)
+            if callable(close):
+                close()
+        except RuntimeError:
+            logger.debug("progress infobar was already deleted", exc_info=True)
 
     def _close_llm_client_safely(self, llm_client, *, context: str) -> None:
         if llm_client is None:
