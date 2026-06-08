@@ -4,7 +4,7 @@ import re
 import time
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QPoint, Qt, QTimer
 from PyQt6.QtWidgets import QHBoxLayout, QSizePolicy, QWidget
 from qfluentwidgets import BodyLabel, InfoBar, InfoBarPosition
 
@@ -54,6 +54,66 @@ def _set_regular_label(label: BodyLabel) -> None:
     label.setFont(font)
     label.setWordWrap(False)
     label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+
+def _progress_infobar_target_width(window_width: int) -> int:
+    available_width = max(240, window_width - 88)
+    preferred_width = max(420, int(window_width * 0.56))
+    return min(available_width, preferred_width, 760)
+
+
+def _progress_infobar_center_x(info_bar: QWidget, target_width: int, window_width: int) -> int:
+    parent_widget = info_bar.parentWidget()
+    window_getter = getattr(info_bar, "window", None)
+    window_widget = window_getter() if callable(window_getter) else parent_widget
+    if parent_widget is not None and window_widget is not None and window_widget is not info_bar:
+        try:
+            center_global = window_widget.mapToGlobal(QPoint(window_width // 2, 0))
+            center_in_parent = parent_widget.mapFromGlobal(center_global).x()
+            return center_in_parent - target_width // 2
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
+    return (window_width - target_width) // 2
+
+
+def _position_progress_infobar(info_bar: QWidget) -> None:
+    parent_widget = info_bar.parentWidget()
+    window_getter = getattr(info_bar, "window", None)
+    window_widget = window_getter() if callable(window_getter) else parent_widget
+    width_source = (
+        window_widget
+        if window_widget is not None and window_widget is not info_bar
+        else parent_widget
+    )
+    width_getter = getattr(width_source, "width", None)
+    window_width = int(width_getter() or 0) if callable(width_getter) else 0
+    if window_width <= 0:
+        return
+
+    target_width = _progress_infobar_target_width(window_width)
+    if hasattr(info_bar, "setFixedWidth"):
+        info_bar.setFixedWidth(target_width)
+    elif hasattr(info_bar, "setMaximumWidth"):
+        info_bar.setMaximumWidth(target_width)
+
+    if hasattr(info_bar, "adjustSize"):
+        info_bar.adjustSize()
+    if hasattr(info_bar, "move"):
+        y_getter = getattr(info_bar, "y", None)
+        y_pos = int(y_getter() if callable(y_getter) else 0)
+        info_bar.move(
+            _progress_infobar_center_x(info_bar, target_width, window_width),
+            max(0, y_pos),
+        )
+
+
+def _safe_position_progress_infobar(info_bar: QWidget) -> None:
+    try:
+        _position_progress_infobar(info_bar)
+    except RuntimeError:
+        return
 
 
 def update_progress_infobar_text(
@@ -121,25 +181,8 @@ def update_progress_infobar_text(
             info_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         if hasattr(info_bar, "updateGeometry"):
             info_bar.updateGeometry()
-        parent_widget = getattr(info_bar, "parentWidget", lambda: None)()
-        parent_width = 0
-        if parent_widget is not None:
-            width_getter = getattr(parent_widget, "width", None)
-            if callable(width_getter):
-                parent_width = int(width_getter() or 0)
-        if parent_width > 0:
-            max_width = max(240, min(parent_width - 48, max(360, int(parent_width * 0.72))))
-            if hasattr(info_bar, "setMaximumWidth"):
-                info_bar.setMaximumWidth(max_width)
-        if hasattr(info_bar, "adjustSize"):
-            info_bar.adjustSize()
-        if parent_width > 0 and hasattr(info_bar, "move"):
-            width_getter = getattr(info_bar, "width", None)
-            y_getter = getattr(info_bar, "y", None)
-            info_width = int(width_getter() if callable(width_getter) else 0)
-            y_pos = int(y_getter() if callable(y_getter) else 0)
-            x_pos = max(0, (parent_width - info_width) // 2)
-            info_bar.move(x_pos, max(0, y_pos))
+        _position_progress_infobar(info_bar)
+        QTimer.singleShot(0, lambda: _safe_position_progress_infobar(info_bar))
         return True
     except RuntimeError:
         return False
