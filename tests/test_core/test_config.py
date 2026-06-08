@@ -26,8 +26,14 @@ from ankismart.core.errors import ConfigError
 class TestAppConfig:
     def test_defaults(self):
         cfg = AppConfig()
-        assert cfg.llm_providers == []
-        assert cfg.active_provider_id == ""
+        provider_names = [provider.name for provider in cfg.llm_providers]
+        assert provider_names == ["OpenAI", "DeepSeek"]
+        assert cfg.llm_providers[0].base_url == "https://api.openai.com/v1"
+        assert cfg.llm_providers[0].model == "gpt-4o"
+        assert cfg.llm_providers[1].base_url == "https://api.deepseek.com"
+        assert cfg.llm_providers[1].model == "deepseek-chat"
+        assert cfg.llm_providers[1].api_key == ""
+        assert cfg.active_provider_id == cfg.llm_providers[0].id
         assert cfg.anki_connect_url == "http://127.0.0.1:8765"
         assert cfg.anki_connect_key == ""
         assert cfg.default_deck == "Default"
@@ -48,7 +54,7 @@ class TestAppConfig:
         assert cfg.active_provider is p1
 
     def test_active_provider_none_when_empty(self):
-        cfg = AppConfig()
+        cfg = AppConfig(llm_providers=[], active_provider_id="")
         assert cfg.active_provider is None
 
     def test_provider_config_defaults(self):

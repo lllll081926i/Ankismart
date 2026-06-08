@@ -195,9 +195,26 @@ class LLMProviderConfig(BaseModel):
     rpm_limit: int = 0
 
 
+def _default_llm_providers() -> list[LLMProviderConfig]:
+    return [
+        LLMProviderConfig(
+            id="openai",
+            name="OpenAI",
+            base_url=KNOWN_PROVIDERS["OpenAI"],
+            model="gpt-4o",
+        ),
+        LLMProviderConfig(
+            id="deepseek",
+            name="DeepSeek",
+            base_url=KNOWN_PROVIDERS["DeepSeek"],
+            model="deepseek-chat",
+        ),
+    ]
+
+
 class AppConfig(BaseModel):
-    llm_providers: list[LLMProviderConfig] = []
-    active_provider_id: str = ""
+    llm_providers: list[LLMProviderConfig] = Field(default_factory=_default_llm_providers)
+    active_provider_id: str = "openai"
     anki_connect_url: str = "http://127.0.0.1:8765"
     anki_connect_key: str = ""
     default_deck: str = "Default"
