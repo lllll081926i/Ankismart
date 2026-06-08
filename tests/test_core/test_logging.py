@@ -10,7 +10,13 @@ from unittest.mock import patch
 import pytest
 
 import ankismart.core.logging as logging_module
-from ankismart.core.logging import JsonFormatter, get_logger, setup_logging
+from ankismart.core.logging import (
+    JsonFormatter,
+    clear_log_files,
+    get_log_stats,
+    get_logger,
+    setup_logging,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -310,6 +316,69 @@ class TestResolveLogDir:
 
         result = logging_module._resolve_log_dir()
         assert result == root / "logs"
+
+
+class TestLogFileMaintenance:
+    def test_get_log_stats_counts_log_files(self, monkeypatch, tmp_path: Path) -> None:
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        (log_dir / "ankismart.log").write_text("abc", encoding="utf-8")
+        (log_dir / "old.log").write_text("defg", encoding="utf-8")
+        monkeypatch.setattr(logging_module, "_resolve_log_dir", lambda: log_dir)
+        monkeypatch.setattr(logging_module, "_resolve_crash_dir", lambda: tmp_path / "crash")
+
+        stats = get_log_stats()
+
+        assert stats["count"] == 2
+        assert stats["size_mb"] > 0
+
+    def test_log_stats_include_crash_reports(self, monkeypatch, tmp_path: Path) -> None:
+        log_dir = tmp_path / "logs"
+        crash_dir = tmp_path / "crash"
+        log_dir.mkdir()
+        crash_dir.mkdir()
+        (log_dir / "ankismart.log").write_text("abc", encoding="utf-8")
+        (crash_dir / "crash-20260608-120743.log").write_text("traceback", encoding="utf-8")
+        monkeypatch.setattr(logging_module, "_resolve_log_dir", lambda: log_dir)
+        monkeypatch.setattr(logging_module, "_resolve_crash_dir", lambda: crash_dir)
+
+        stats = get_log_stats()
+
+        assert stats["count"] == 2
+
+    def test_clear_log_files_removes_logs_and_reopens_file_handler(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        log_dir = tmp_path / "logs"
+        monkeypatch.setattr(logging_module, "_resolve_log_dir", lambda: log_dir)
+        monkeypatch.setattr(logging_module, "_resolve_crash_dir", lambda: tmp_path / "crash")
+        setup_logging(logging.INFO)
+        logger = get_logger("test.clear_logs")
+        logger.info("before clear")
+
+        assert any(log_dir.iterdir())
+
+        assert clear_log_files() is True
+
+        remaining = [path for path in log_dir.rglob("*") if path.is_file()]
+        assert all("before clear" not in path.read_text(encoding="utf-8") for path in remaining)
+        root = logging.getLogger("ankismart")
+        assert any(isinstance(handler, logging.FileHandler) for handler in root.handlers)
+
+    def test_clear_log_files_removes_crash_reports(self, monkeypatch, tmp_path: Path) -> None:
+        log_dir = tmp_path / "logs"
+        crash_dir = tmp_path / "crash"
+        log_dir.mkdir()
+        crash_dir.mkdir()
+        (log_dir / "ankismart.log").write_text("abc", encoding="utf-8")
+        crash_report = crash_dir / "crash-20260608-120743.log"
+        crash_report.write_text("traceback", encoding="utf-8")
+        monkeypatch.setattr(logging_module, "_resolve_log_dir", lambda: log_dir)
+        monkeypatch.setattr(logging_module, "_resolve_crash_dir", lambda: crash_dir)
+
+        assert clear_log_files() is True
+
+        assert not crash_report.exists()
 
     def test_frozen_windows_non_portable_uses_install_logs_dir(self, monkeypatch, tmp_path: Path):
         root = tmp_path / "installed-app"

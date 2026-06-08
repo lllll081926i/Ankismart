@@ -94,6 +94,14 @@ def _resolve_log_dir() -> Path:
     return _resolve_app_dir() / "logs"
 
 
+def _resolve_crash_dir() -> Path:
+    return _resolve_app_dir() / "crash"
+
+
+def _iter_log_maintenance_dirs() -> tuple[Path, ...]:
+    return (_resolve_log_dir(), _resolve_crash_dir())
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         from ankismart.core.tracing import generate_trace_id, peek_trace_id
@@ -217,6 +225,55 @@ def setup_logging(level: int = logging.INFO) -> None:
         root_logger.addHandler(file_handler)
     except OSError:
         pass
+
+
+def get_log_stats() -> dict[str, float | int]:
+    total_size = 0
+    count = 0
+
+    try:
+        for log_dir in _iter_log_maintenance_dirs():
+            if not log_dir.exists():
+                continue
+            for file_path in log_dir.rglob("*"):
+                if file_path.is_file():
+                    total_size += file_path.stat().st_size
+                    count += 1
+    except OSError:
+        return {"size_mb": 0.0, "count": 0, "size_gb": 0.0}
+
+    size_mb = total_size / (1024 * 1024)
+    return {"size_mb": size_mb, "count": count, "size_gb": size_mb / 1024}
+
+
+def clear_log_files() -> bool:
+    """Clear application log files and reopen logging handlers."""
+    log_dirs = _iter_log_maintenance_dirs()
+    if not any(log_dir.exists() for log_dir in log_dirs):
+        return True
+
+    root_logger = logging.getLogger("ankismart")
+    level = root_logger.level or logging.INFO
+
+    try:
+        for handler in list(root_logger.handlers):
+            if isinstance(handler, logging.FileHandler):
+                try:
+                    handler.close()
+                finally:
+                    root_logger.removeHandler(handler)
+
+        for log_dir in log_dirs:
+            if not log_dir.exists():
+                continue
+            for file_path in log_dir.rglob("*"):
+                if file_path.is_file():
+                    file_path.unlink()
+        return True
+    except OSError:
+        return False
+    finally:
+        setup_logging(level)
 
 
 def get_logger(name: str) -> logging.Logger:
