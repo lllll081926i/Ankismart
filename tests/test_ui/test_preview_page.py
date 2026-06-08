@@ -372,11 +372,22 @@ class TestPreviewPageFlow:
             )
         ]
         captured: dict[str, object] = {}
+        order: list[str] = []
 
         class _HistoryStore:
             def save_generation_batch(self, cards_arg, **kwargs):
+                order.append("history_save")
                 captured["cards"] = cards_arg
                 captured["kwargs"] = kwargs
+
+            def prune_cache(self, **_kwargs):
+                return SimpleNamespace(deleted_batches=0, deleted_cards=0)
+
+        main._history_page = SimpleNamespace(
+            refresh_history=lambda: order.append("history_refresh")
+        )
+        main.card_preview_page.load_cards = lambda _cards: order.append("preview_load")
+        main._switch_page = lambda _index: order.append("switch")
 
         monkeypatch.setattr("ankismart.ui.preview_page.append_task_history", lambda *a, **k: None)
         monkeypatch.setattr("ankismart.ui.preview_page.save_config", lambda cfg: None)
@@ -402,6 +413,7 @@ class TestPreviewPageFlow:
         assert captured["kwargs"]["status"] == "success"
         assert captured["kwargs"]["metadata"]["task_id"] == "task-history"
         assert captured["kwargs"]["metadata"]["source_documents"] == ["lesson.md"]
+        assert order == ["history_save", "history_refresh", "preview_load", "switch"]
 
 
 class TestPreviewPageWorkerCleanup:

@@ -146,6 +146,8 @@ def _create_apkg_exporter():
 class ResultPage(QWidget):
     """推送结果展示页面，显示卡片推送统计和详细结果列表。"""
 
+    _PAGE_SIZE = 50
+
     def __init__(self, main_window) -> None:
         super().__init__()
         self.setObjectName("resultPage")
@@ -159,6 +161,7 @@ class ResultPage(QWidget):
         self._selected_indices: set[int] = set()  # Track selected card indices
         self._result_feedback_key: tuple[str, int, int, int] | None = None
         self._current_task_id: str = ""
+        self._current_page = 0
 
         layout = QVBoxLayout(self)
         layout.setSpacing(SPACING_SMALL)
@@ -254,6 +257,19 @@ class ResultPage(QWidget):
         self._status_label.setWordWrap(True)
         self._status_label.hide()
         all_buttons_row.addWidget(self._status_label, 1)
+        self._btn_prev_page = PushButton("上一页" if lang == "zh" else "Previous")
+        self._btn_prev_page.setMinimumHeight(34)
+        self._btn_prev_page.clicked.connect(self._go_prev_page)
+        all_buttons_row.addWidget(self._btn_prev_page)
+
+        self._pagination_label = CaptionLabel("第 1/1 页，共 0 条")
+        all_buttons_row.addWidget(self._pagination_label)
+
+        self._btn_next_page = PushButton("下一页" if lang == "zh" else "Next")
+        self._btn_next_page.setMinimumHeight(34)
+        self._btn_next_page.clicked.connect(self._go_next_page)
+        all_buttons_row.addWidget(self._btn_next_page)
+
         all_buttons_row.addStretch()
 
         self._btn_batch_edit_tags = PrimaryPushButton(t("result.batch_edit_tags"))
@@ -616,6 +632,7 @@ class ResultPage(QWidget):
         """加载推送结果数据。"""
         self._push_result = result
         self._cards = cards
+        self._current_page = 0
         self._display_result(result, cards, show_feedback=True)
 
     def _display_result(
@@ -634,15 +651,14 @@ class ResultPage(QWidget):
         skipped = result.total - result.succeeded - result.failed
         self._update_stat_card(self._card_skipped, str(skipped))
 
-        # Update table
-        self._table.setRowCount(0)
-        for status in result.results:
-            self._add_table_row(status, cards)
+        self._clamp_current_page()
+        self._render_current_result_page()
 
         # Enable/disable buttons
         has_failed = result.failed > 0
         self._btn_retry.setEnabled(has_failed)
         self._btn_export_apkg.setEnabled(bool(cards))
+        self._update_batch_button_states()
 
         # Show top feedback only on fresh result load.
         feedback_key = (result.trace_id or "", result.total, result.succeeded, result.failed)
@@ -676,6 +692,7 @@ class ResultPage(QWidget):
         # Checkbox for selection
         checkbox = CheckBox()
         checkbox.setProperty("card_index", status.index)
+        checkbox.setChecked(status.index in self._selected_indices)
         checkbox.stateChanged.connect(
             lambda state, idx=status.index: self._on_row_checkbox_changed(idx, state)
         )
@@ -767,6 +784,8 @@ class ResultPage(QWidget):
         self._update_stat_card(self._card_failed, "0")
         self._update_stat_card(self._card_skipped, "0")
         self._table.setRowCount(0)
+        self._current_page = 0
+        self._update_pagination_controls()
         self._btn_retry.setEnabled(False)
         self._btn_export_apkg.setEnabled(False)
         self._result_feedback_key = None
@@ -1060,6 +1079,7 @@ class ResultPage(QWidget):
         is_checked = state == Qt.CheckState.Checked.value
 
         # Update all row checkboxes
+        current_page_indices = set(self._current_page_indices())
         for row in range(self._table.rowCount()):
             checkbox_widget = self._table.cellWidget(row, 0)
             if checkbox_widget:
@@ -1076,6 +1096,9 @@ class ResultPage(QWidget):
                     else:
                         self._selected_indices.discard(card_index)
 
+        if not is_checked:
+            self._selected_indices -= current_page_indices
+
         # Update batch button states
         self._update_batch_button_states()
 
@@ -1089,13 +1112,7 @@ class ResultPage(QWidget):
             self._selected_indices.discard(card_index)
 
         # Update header checkbox state
-        total_rows = self._table.rowCount()
-        if len(self._selected_indices) == 0:
-            self._header_checkbox.setCheckState(Qt.CheckState.Unchecked)
-        elif len(self._selected_indices) == total_rows:
-            self._header_checkbox.setCheckState(Qt.CheckState.Checked)
-        else:
-            self._header_checkbox.setCheckState(Qt.CheckState.PartiallyChecked)
+        self._sync_header_checkbox_for_current_page()
 
         # Update batch button states
         self._update_batch_button_states()
@@ -1106,6 +1123,79 @@ class ResultPage(QWidget):
         self._btn_batch_edit_tags.setEnabled(has_selection)
         self._btn_batch_edit_deck.setEnabled(has_selection)
         self._btn_export_selected.setEnabled(has_selection)
+
+    def _total_pages(self) -> int:
+        total = len(self._push_result.results) if self._push_result else 0
+        if total <= 0:
+            return 1
+        return (total + self._PAGE_SIZE - 1) // self._PAGE_SIZE
+
+    def _clamp_current_page(self) -> None:
+        self._current_page = max(0, min(self._current_page, self._total_pages() - 1))
+
+    def _current_page_statuses(self) -> list[CardPushStatus]:
+        if not self._push_result:
+            return []
+        start = self._current_page * self._PAGE_SIZE
+        end = start + self._PAGE_SIZE
+        return self._push_result.results[start:end]
+
+    def _current_page_indices(self) -> list[int]:
+        return [status.index for status in self._current_page_statuses()]
+
+    def _render_current_result_page(self) -> None:
+        self._table.setUpdatesEnabled(False)
+        self._table.blockSignals(True)
+        try:
+            self._table.setRowCount(0)
+            for status in self._current_page_statuses():
+                self._add_table_row(status, self._cards)
+        finally:
+            self._table.blockSignals(False)
+            self._table.setUpdatesEnabled(True)
+        self._sync_header_checkbox_for_current_page()
+        self._update_pagination_controls()
+
+    def _sync_header_checkbox_for_current_page(self) -> None:
+        current_page_indices = set(self._current_page_indices())
+        selected_on_page = current_page_indices & self._selected_indices
+        self._header_checkbox.blockSignals(True)
+        if not selected_on_page:
+            self._header_checkbox.setCheckState(Qt.CheckState.Unchecked)
+        elif selected_on_page == current_page_indices:
+            self._header_checkbox.setCheckState(Qt.CheckState.Checked)
+        else:
+            self._header_checkbox.setCheckState(Qt.CheckState.PartiallyChecked)
+        self._header_checkbox.blockSignals(False)
+
+    def _update_pagination_controls(self) -> None:
+        lang = getattr(self._main.config, "language", "zh")
+        total = len(self._push_result.results) if self._push_result else 0
+        total_pages = self._total_pages()
+        if lang == "zh":
+            self._pagination_label.setText(
+                f"第 {self._current_page + 1}/{total_pages} 页，共 {total} 条"
+            )
+        else:
+            self._pagination_label.setText(
+                f"Page {self._current_page + 1}/{total_pages}, {total} rows"
+            )
+        self._btn_prev_page.setEnabled(self._current_page > 0)
+        self._btn_next_page.setEnabled(self._current_page < total_pages - 1)
+
+    def _go_prev_page(self) -> None:
+        if self._current_page <= 0:
+            return
+        self._current_page -= 1
+        self._render_current_result_page()
+        self._update_batch_button_states()
+
+    def _go_next_page(self) -> None:
+        if self._current_page >= self._total_pages() - 1:
+            return
+        self._current_page += 1
+        self._render_current_result_page()
+        self._update_batch_button_states()
 
     def _batch_edit_tags(self) -> None:
         """Open batch edit tags dialog."""
@@ -1169,8 +1259,8 @@ class ResultPage(QWidget):
         if not self._push_result:
             return
 
-        # Find the row corresponding to this card index
-        for row_idx, status in enumerate(self._push_result.results):
+        # Find the visible row corresponding to this card index.
+        for row_idx, status in enumerate(self._current_page_statuses()):
             if status.index == card_index:
                 # Update card title
                 card = self._cards[card_index]
@@ -1342,6 +1432,8 @@ class ResultPage(QWidget):
         self._btn_retry.setText(t("result.retry_failed", lang))
         self._btn_repush_all.setText("推送所有卡片" if is_zh else "Push All Cards")
         self._btn_export_apkg.setText("导出为 APKG" if is_zh else "Export as APKG")
+        self._btn_prev_page.setText("上一页" if is_zh else "Previous")
+        self._btn_next_page.setText("下一页" if is_zh else "Next")
 
         self._update_combo.setItemText(0, t("result.create_only", lang))
         self._update_combo.setItemText(1, t("result.update_only", lang))
@@ -1353,6 +1445,8 @@ class ResultPage(QWidget):
         # Refresh row content (status/error/action texts) with the active language.
         if self._push_result:
             self._display_result(self._push_result, self._cards, show_feedback=False)
+        else:
+            self._update_pagination_controls()
 
     def _cleanup_push_worker(self) -> None:
         worker = self.__dict__.get("_worker")

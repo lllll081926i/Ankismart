@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from PyQt6.QtGui import QShowEvent
 from PyQt6.QtWidgets import QApplication
 
 from ankismart.core.config import AppConfig
@@ -52,6 +53,47 @@ def test_history_page_lists_generation_batches(_qapp, tmp_path: Path) -> None:
     assert page._total_records_value.text() == "2"
     assert page._total_cards_value.text() == "3"
     assert "chapter.md" in page._table.item(0, 2).text()
+
+
+def test_history_page_renders_generation_batches_in_pages_of_50(_qapp, tmp_path: Path) -> None:
+    store = SQLiteHistoryStore(tmp_path / "history.sqlite3")
+    for index in range(120):
+        store.save_generation_batch(
+            [_card(index)],
+            batch_id=f"batch-{index:03d}",
+            title=f"第 {index} 批",
+        )
+
+    page = HistoryPage(_main(), history_store=store)
+
+    assert page._table.rowCount() == 50
+    assert page._pagination_label.text() == "第 1/3 页，共 120 条"
+    assert page._btn_prev_page.isEnabled() is False
+    assert page._btn_next_page.isEnabled() is True
+
+    page._go_next_page()
+
+    assert page._table.rowCount() == 50
+    assert page._pagination_label.text() == "第 2/3 页，共 120 条"
+
+    page._go_next_page()
+
+    assert page._table.rowCount() == 20
+    assert page._pagination_label.text() == "第 3/3 页，共 120 条"
+    assert page._btn_next_page.isEnabled() is False
+
+
+def test_history_page_refreshes_each_time_it_is_shown(_qapp, tmp_path: Path) -> None:
+    store = SQLiteHistoryStore(tmp_path / "history.sqlite3")
+    page = HistoryPage(_main(), history_store=store)
+    assert page._table.rowCount() == 0
+
+    store.save_generation_batch([_card(1)], batch_id="batch-new", title="新批次")
+
+    page.showEvent(QShowEvent())
+
+    assert page._table.rowCount() == 1
+    assert page._total_records_value.text() == "1"
 
 
 def test_history_page_exports_selected_batch_to_json(_qapp, tmp_path: Path, monkeypatch) -> None:

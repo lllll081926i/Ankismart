@@ -582,6 +582,36 @@ def test_result_page_shows_warning_style_for_cards_with_quality_flags(_qapp) -> 
     assert "缺少解析" in page._table.item(0, 3).text()
 
 
+def test_result_page_renders_push_results_in_pages_of_50(_qapp) -> None:
+    page = ResultPage(_FakeMainWindow())
+    cards = [_make_card(f"问题 {index}", f"答案 {index}") for index in range(120)]
+    result = PushResult(
+        total=120,
+        succeeded=120,
+        failed=0,
+        results=[CardPushStatus(index=index, success=True, error="") for index in range(120)],
+    )
+
+    page.load_result(result, cards)
+
+    assert page._table.rowCount() == 50
+    assert page._pagination_label.text() == "第 1/3 页，共 120 条"
+    assert page._btn_prev_page.isEnabled() is False
+    assert page._btn_next_page.isEnabled() is True
+
+    page._go_next_page()
+
+    assert page._table.rowCount() == 50
+    assert page._pagination_label.text() == "第 2/3 页，共 120 条"
+    assert page._table.item(0, 1).text().startswith("问题 50")
+
+    page._go_next_page()
+
+    assert page._table.rowCount() == 20
+    assert page._pagination_label.text() == "第 3/3 页，共 120 条"
+    assert page._btn_next_page.isEnabled() is False
+
+
 def test_result_page_total_stat_card_uses_theme_accent(_qapp, monkeypatch) -> None:
     monkeypatch.setattr("ankismart.ui.result_page.get_theme_accent_text_hex", lambda **_: "#123456")
     page = ResultPage(_FakeMainWindow())

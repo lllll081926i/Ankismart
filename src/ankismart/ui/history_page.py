@@ -47,6 +47,7 @@ from ankismart.ui.styles import (
     MARGIN_STANDARD,
     SPACING_MEDIUM,
     SPACING_SMALL,
+    apply_compact_combo_metrics,
     apply_page_title_style,
     get_theme_accent_text_hex,
 )
@@ -55,14 +56,18 @@ from ankismart.ui.styles import (
 class HistoryPage(QWidget):
     """历史结果页面，展示并导出之前生成的卡片批次。"""
 
+    _PAGE_SIZE = 50
+
     def __init__(self, main_window, *, history_store: SQLiteHistoryStore | None = None) -> None:
         super().__init__()
         self.setObjectName("historyPage")
         self._main = main_window
         self._history_store = history_store or get_default_history_store()
         self._summaries: list[GenerationBatchSummary] = []
+        self._filtered_summaries: list[GenerationBatchSummary] = []
         self._selected_batch_ids: set[str] = set()
         self._export_worker = None
+        self._current_page = 0
 
         layout = QVBoxLayout(self)
         layout.setSpacing(SPACING_SMALL)
@@ -114,6 +119,7 @@ class HistoryPage(QWidget):
         self._export_format_combo.addItem("CSV", userData="csv")
         self._export_format_combo.addItem("Markdown", userData="markdown")
         self._export_format_combo.setMinimumWidth(128)
+        apply_compact_combo_metrics(self._export_format_combo)
         toolbar_layout.addWidget(self._export_format_combo)
 
         self._btn_refresh = PushButton("刷新")
@@ -190,8 +196,20 @@ class HistoryPage(QWidget):
         self._status_label = CaptionLabel("")
         bottom_layout.addWidget(self._status_label)
         bottom_layout.addStretch(1)
+        self._btn_prev_page = PushButton("上一页")
+        self._btn_prev_page.clicked.connect(self._go_prev_page)
+        bottom_layout.addWidget(self._btn_prev_page)
+        self._pagination_label = CaptionLabel("第 1/1 页，共 0 条")
+        bottom_layout.addWidget(self._pagination_label)
+        self._btn_next_page = PushButton("下一页")
+        self._btn_next_page.clicked.connect(self._go_next_page)
+        bottom_layout.addWidget(self._btn_next_page)
         layout.addWidget(bottom_bar)
 
+        self.refresh_history()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
         self.refresh_history()
 
     def refresh_history(self) -> None:
@@ -208,18 +226,21 @@ class HistoryPage(QWidget):
         self._update_actions()
 
     def _render_table(self, summaries: list[GenerationBatchSummary]) -> None:
+        self._filtered_summaries = summaries
+        self._clamp_current_page()
+        self._render_current_page()
+
+    def _render_current_page(self) -> None:
         self._table.setUpdatesEnabled(False)
         try:
             self._table.setRowCount(0)
-            visible_ids = {summary.batch_id for summary in summaries}
+            visible_ids = {summary.batch_id for summary in self._filtered_summaries}
             self._selected_batch_ids &= visible_ids
-            for summary in summaries:
+            for summary in self._current_page_summaries():
                 self._add_summary_row(summary)
         finally:
             self._table.setUpdatesEnabled(True)
-        self._status_label.setText(
-            f"显示 {len(summaries)} 条记录，已选择 {len(self._selected_batch_ids)} 条"
-        )
+        self._update_pagination_controls()
 
     def _add_summary_row(self, summary: GenerationBatchSummary) -> None:
         row = self._table.rowCount()
@@ -264,7 +285,8 @@ class HistoryPage(QWidget):
             self._selected_batch_ids = {summary.batch_id for summary in self._visible_summaries()}
         else:
             self._selected_batch_ids.clear()
-        self.refresh_history()
+        self._render_current_page()
+        self._update_actions()
 
     def _sync_select_all_checkbox(self) -> None:
         visible_ids = {summary.batch_id for summary in self._visible_summaries()}
@@ -272,12 +294,12 @@ class HistoryPage(QWidget):
         self._select_all_checkbox.blockSignals(True)
         self._select_all_checkbox.setChecked(checked)
         self._select_all_checkbox.blockSignals(False)
-        self._status_label.setText(
-            f"显示 {len(visible_ids)} 条记录，已选择 {len(self._selected_batch_ids)} 条"
-        )
+        self._update_pagination_controls()
 
     def _visible_summaries(self) -> list[GenerationBatchSummary]:
         query = self._search_edit.text().strip().lower()
+        if self._filtered_summaries and not query:
+            return list(self._filtered_summaries)
         return [summary for summary in self._summaries if self._matches_query(summary, query)]
 
     def _update_actions(self) -> None:
@@ -288,6 +310,50 @@ class HistoryPage(QWidget):
         self._btn_load_selected.setEnabled(has_selection)
         self._btn_delete_selected.setEnabled(has_selection)
         self._sync_select_all_checkbox()
+
+    def _total_pages(self) -> int:
+        if not self._filtered_summaries:
+            return 1
+        return (len(self._filtered_summaries) + self._PAGE_SIZE - 1) // self._PAGE_SIZE
+
+    def _clamp_current_page(self) -> None:
+        self._current_page = max(0, min(self._current_page, self._total_pages() - 1))
+
+    def _current_page_summaries(self) -> list[GenerationBatchSummary]:
+        start = self._current_page * self._PAGE_SIZE
+        end = start + self._PAGE_SIZE
+        return self._filtered_summaries[start:end]
+
+    def _update_pagination_controls(self) -> None:
+        total = len(self._filtered_summaries)
+        total_pages = self._total_pages()
+        self._pagination_label.setText(
+            f"第 {self._current_page + 1}/{total_pages} 页，共 {total} 条"
+        )
+        self._btn_prev_page.setEnabled(self._current_page > 0)
+        self._btn_next_page.setEnabled(self._current_page < total_pages - 1)
+        if total:
+            start = self._current_page * self._PAGE_SIZE + 1
+            end = min(total, start + len(self._current_page_summaries()) - 1)
+            self._status_label.setText(
+                f"显示 {start}-{end}/{total} 条记录，已选择 {len(self._selected_batch_ids)} 条"
+            )
+        else:
+            self._status_label.setText("显示 0 条记录，已选择 0 条")
+
+    def _go_prev_page(self) -> None:
+        if self._current_page <= 0:
+            return
+        self._current_page -= 1
+        self._render_current_page()
+        self._update_actions()
+
+    def _go_next_page(self) -> None:
+        if self._current_page >= self._total_pages() - 1:
+            return
+        self._current_page += 1
+        self._render_current_page()
+        self._update_actions()
 
     def _export_selected(self) -> None:
         if not self._selected_batch_ids:

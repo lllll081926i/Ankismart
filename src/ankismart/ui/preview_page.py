@@ -1364,6 +1364,7 @@ class PreviewPage(ProgressMixin, QWidget):
             low_quality_count=low_quality_count,
             elapsed=elapsed,
         )
+        self._refresh_history_page()
         self._publish_task_event(
             TaskEvent(
                 task_id=self._current_task_id,
@@ -1470,6 +1471,14 @@ class PreviewPage(ProgressMixin, QWidget):
                 )
         except Exception:
             logger.warning("failed to persist generation history", exc_info=True)
+
+    def _refresh_history_page(self) -> None:
+        history_page = getattr(self._main, "_history_page", None)
+        refresh = (
+            getattr(history_page, "refresh_history", None) if history_page is not None else None
+        )
+        if callable(refresh):
+            refresh()
 
     def _on_generation_error(self, error: str):
         """Handle generation error."""
