@@ -272,6 +272,7 @@ class OCRDownloadConfigDialog(QDialog):
         self._model_combo.addItem(self._build_tier_text("lite"), userData="lite")
         self._model_combo.addItem(self._build_tier_text("standard"), userData="standard")
         self._model_combo.addItem(self._build_tier_text("accuracy"), userData="accuracy")
+        apply_compact_combo_metrics(self._model_combo)
         layout.addWidget(self._model_combo)
 
         self._recommend_label = BodyLabel(self)
@@ -292,6 +293,7 @@ class OCRDownloadConfigDialog(QDialog):
             "国内镜像（ModelScope）" if self._is_zh else "China Mirror (ModelScope)",
             userData="cn_mirror",
         )
+        apply_compact_combo_metrics(self._source_combo)
         layout.addWidget(self._source_combo)
 
         button_box = QDialogButtonBox(
@@ -608,12 +610,7 @@ class ImportPage(ProgressMixin, QWidget):
         card.setObjectName("generationPresetCard")
         self._generation_preset_card = card
         self._generation_preset_combo = ComboBox(card)
-        apply_compact_combo_metrics(
-            self._generation_preset_combo,
-            control_height=22,
-            popup_item_height=24,
-        )
-        self._enforce_compact_combo_height(self._generation_preset_combo, 22)
+        apply_compact_combo_metrics(self._generation_preset_combo)
         self._populate_generation_preset_combo()
         card.hBoxLayout.addWidget(self._generation_preset_combo)
         card.hBoxLayout.addSpacing(16)
@@ -813,6 +810,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._total_count_mode_combo.addItem("auto")
         self._total_count_mode_combo.addItem("custom")
         self._total_count_mode_combo.setCurrentText("auto")
+        apply_compact_combo_metrics(self._total_count_mode_combo)
         self._total_count_mode_combo.hide()  # Hidden but accessible for tests
         self._on_auto_target_count_changed(True)
         self._restore_generation_preset_from_config()
@@ -837,6 +835,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._deck_combo.setToolTip(
             get_text("import.deck_name_tooltip", self._main.config.language)
         )
+        apply_compact_combo_metrics(self._deck_combo)
         self._deck_card.hBoxLayout.addWidget(self._deck_combo)
         self._deck_card.hBoxLayout.addSpacing(16)
         self._deck_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
@@ -854,7 +853,7 @@ class ImportPage(ProgressMixin, QWidget):
         self._tags_input.setPlaceholderText(
             get_text("import.tags_placeholder", self._main.config.language)
         )
-        self._tags_input.setToolTip(get_text("import.tags_tooltip", self._main.config.language))
+        self._tags_input.setToolTip("")
         self._tags_input.setMinimumWidth(320)
         self._tags_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         if self._main.config.last_tags:
@@ -993,12 +992,7 @@ class ImportPage(ProgressMixin, QWidget):
             group,
         )
         self._strategy_template_combo = ComboBox(template_card)
-        apply_compact_combo_metrics(
-            self._strategy_template_combo,
-            control_height=22,
-            popup_item_height=24,
-        )
-        self._enforce_compact_combo_height(self._strategy_template_combo, 22)
+        apply_compact_combo_metrics(self._strategy_template_combo)
         for key, meta in _STRATEGY_TEMPLATE_LIBRARY.items():
             self._strategy_template_combo.addItem(
                 str(meta["zh"] if is_zh else meta["en"]),

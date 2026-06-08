@@ -265,14 +265,16 @@ def apply_compact_combo_metrics(
     *,
     control_height: int | None = None,
     popup_item_height: int | None = None,
+    max_visible_items: int = 8,
 ) -> None:
     """Apply compact size metrics to QFluent ComboBox-like widgets.
 
     This helper also patches popup menu creation so dropdown items are lower.
     """
     scale = get_display_scale()
-    target_control_height = control_height or scale_px(24, scale=scale, min_value=22)
-    target_popup_item_height = popup_item_height or scale_px(26, scale=scale, min_value=22)
+    target_control_height = control_height or scale_px(30, scale=scale, min_value=28)
+    target_popup_item_height = popup_item_height or scale_px(32, scale=scale, min_value=30)
+    target_max_visible_items = max(1, int(max_visible_items or 8))
 
     set_fixed_height = getattr(combo, "setFixedHeight", None)
     if callable(set_fixed_height):
@@ -283,6 +285,9 @@ def apply_compact_combo_metrics(
     set_maximum_height = getattr(combo, "setMaximumHeight", None)
     if callable(set_maximum_height):
         set_maximum_height(target_control_height)
+    set_max_visible_items = getattr(combo, "setMaxVisibleItems", None)
+    if callable(set_max_visible_items):
+        set_max_visible_items(target_max_visible_items)
 
     base_style = getattr(combo, "_ankismart_base_stylesheet", None)
     if base_style is None:
@@ -298,6 +303,7 @@ def apply_compact_combo_metrics(
         set_style_sheet(f"{base_style}{compact_style}")
 
     setattr(combo, "_ankismart_combo_item_height", target_popup_item_height)
+    setattr(combo, "_ankismart_combo_max_visible_items", target_max_visible_items)
 
     create_menu = getattr(combo, "_createComboMenu", None)
     if not callable(create_menu):
@@ -314,6 +320,16 @@ def apply_compact_combo_metrics(
                     getattr(combo, "_ankismart_combo_item_height", target_popup_item_height)
                 )
                 menu.setItemHeight(item_height)
+                max_items = int(
+                    getattr(
+                        combo,
+                        "_ankismart_combo_max_visible_items",
+                        target_max_visible_items,
+                    )
+                )
+                set_menu_max_visible_items = getattr(menu, "setMaxVisibleItems", None)
+                if callable(set_menu_max_visible_items):
+                    set_menu_max_visible_items(max_items)
             except Exception as exc:
                 logger.debug(
                     "Failed to apply compact combo menu item height",
@@ -415,7 +431,7 @@ def get_stylesheet(*, dark: bool = False) -> str:
     combo_padding_left = scale_px(10, scale=scale, min_value=8)
     combo_padding_right = scale_px(28, scale=scale, min_value=22)
     combo_min_height = max(
-        scale_px(22, scale=scale, min_value=20),
+        scale_px(30, scale=scale, min_value=28),
         combo_text_px + scale_px(8, scale=scale, min_value=6),
     )
     menu_border_radius = scale_px(9, scale=scale, min_value=7)

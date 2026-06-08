@@ -855,6 +855,74 @@ def test_batch_generate_worker_malformed_large_llm_output_emits_error(monkeypatc
     assert "[E_LLM_PARSE_ERROR]" in errors[0]
 
 
+def test_batch_generate_worker_retries_failed_strategy_before_success(monkeypatch) -> None:
+    attempts = {"count": 0}
+
+    class _FakeGenerator:
+        def __init__(self, _llm_client):
+            pass
+
+        def generate(self, request):
+            attempts["count"] += 1
+            if attempts["count"] < 3:
+                raise RuntimeError("temporary network error")
+            return [
+                CardDraft(
+                    note_type="Basic",
+                    deck_name=request.deck_name,
+                    fields={"Front": "Question ok", "Back": "Answer ok"},
+                    tags=request.tags,
+                )
+            ]
+
+    monkeypatch.setattr("ankismart.ui.workers.CardGenerator", _FakeGenerator)
+
+    document = ConvertedDocument(
+        result=MarkdownResult(
+            content="source content",
+            source_path="retry.md",
+            source_format="markdown",
+            trace_id="trace-retry-generate",
+        ),
+        file_name="retry.md",
+    )
+    worker = BatchGenerateWorker(
+        documents=[document],
+        generation_config={
+            "target_total": 1,
+            "strategy_mix": [{"strategy": "basic", "ratio": 100}],
+        },
+        llm_client=SimpleNamespace(close=lambda: None),
+        deck_name="Default",
+        tags=["ankismart"],
+        config=SimpleNamespace(
+            semantic_duplicate_threshold=0.9,
+            card_quality_min_chars=2,
+            card_quality_retry_rounds=0,
+            llm_adaptive_concurrency=False,
+            llm_concurrency=1,
+            generation_error_max_attempts=3,
+            language="zh",
+        ),
+    )
+
+    progress: list[str] = []
+    finished: list[list[CardDraft]] = []
+    errors: list[str] = []
+    worker.progress.connect(progress.append)
+    worker.finished.connect(finished.append)
+    worker.error.connect(errors.append)
+
+    worker.run()
+
+    assert attempts["count"] == 3
+    assert errors == []
+    assert len(finished) == 1
+    assert len(finished[0]) == 1
+    assert any("第 2/3 次尝试" in message for message in progress)
+    assert any("第 3/3 次尝试" in message for message in progress)
+
+
 def test_batch_convert_worker_closes_ocr_correction_client(monkeypatch) -> None:
     closed = {"value": False}
 

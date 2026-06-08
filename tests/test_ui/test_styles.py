@@ -1,8 +1,10 @@
+from ankismart.ui import styles
 from ankismart.ui.styles import (
     DARK_PAGE_BACKGROUND_HEX,
     DEFAULT_THEME_ACCENT_HEX,
     Colors,
     DarkColors,
+    apply_compact_combo_metrics,
     get_list_widget_palette,
     get_page_background_color,
     get_stylesheet,
@@ -96,3 +98,60 @@ def test_refresh_theme_accent_cache_reloads_system_color(monkeypatch):
 
     assert refresh_theme_accent_cache() == "#445566"
     assert get_theme_accent_hex() == "#445566"
+
+
+def test_apply_combo_metrics_uses_moderate_default_heights(monkeypatch):
+    monkeypatch.setattr(styles, "get_display_scale", lambda: 1.0)
+
+    class _Menu:
+        def __init__(self) -> None:
+            self.item_height = None
+            self.max_visible_items = None
+
+        def setItemHeight(self, value: int) -> None:
+            self.item_height = value
+
+        def setMaxVisibleItems(self, value: int) -> None:
+            self.max_visible_items = value
+
+    class _Combo:
+        def __init__(self) -> None:
+            self.fixed_height = None
+            self.minimum_height = None
+            self.maximum_height = None
+            self.max_visible_items = None
+            self._style = ""
+            self.menu = _Menu()
+
+        def setFixedHeight(self, value: int) -> None:
+            self.fixed_height = value
+
+        def setMinimumHeight(self, value: int) -> None:
+            self.minimum_height = value
+
+        def setMaximumHeight(self, value: int) -> None:
+            self.maximum_height = value
+
+        def setMaxVisibleItems(self, value: int) -> None:
+            self.max_visible_items = value
+
+        def styleSheet(self) -> str:
+            return self._style
+
+        def setStyleSheet(self, value: str) -> None:
+            self._style = value
+
+        def _createComboMenu(self):
+            return self.menu
+
+    combo = _Combo()
+
+    apply_compact_combo_metrics(combo)
+    menu = combo._createComboMenu()
+
+    assert combo.fixed_height == 30
+    assert combo.minimum_height == 30
+    assert combo.maximum_height == 30
+    assert combo.max_visible_items == 8
+    assert menu.item_height == 32
+    assert menu.max_visible_items == 8

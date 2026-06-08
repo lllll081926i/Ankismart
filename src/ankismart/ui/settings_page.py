@@ -60,6 +60,7 @@ from ankismart.ui.shortcuts import ShortcutKeys, create_shortcut, get_shortcut_t
 from ankismart.ui.styles import (
     MARGIN_STANDARD,
     SPACING_MEDIUM,
+    apply_compact_combo_metrics,
     get_list_widget_palette,
     get_page_background_color,
     get_theme_accent_hex,
@@ -810,6 +811,7 @@ class SettingsPage(ScrollArea):
         self._theme_combo = ComboBox(self._theme_card)
         self._theme_combo.addItems(["浅色", "深色", "跟随系统"])
         self._theme_combo.setMinimumWidth(200)
+        apply_compact_combo_metrics(self._theme_combo)
         self._theme_card.hBoxLayout.addWidget(self._theme_combo)
         self._theme_card.hBoxLayout.addSpacing(16)
         # Theme switching is handled by sidebar button, keep this control hidden.
@@ -825,6 +827,7 @@ class SettingsPage(ScrollArea):
         self._language_combo = ComboBox(self._language_card)
         self._language_combo.addItems(["中文", "English"])
         self._language_combo.setMinimumWidth(200)
+        apply_compact_combo_metrics(self._language_combo)
         self._language_card.hBoxLayout.addWidget(self._language_combo)
         self._language_card.hBoxLayout.addSpacing(16)
         self._network_group.addSettingCard(self._language_card)
@@ -852,6 +855,7 @@ class SettingsPage(ScrollArea):
         self._proxy_mode_combo = ComboBox(proxy_container)
         self._proxy_mode_combo.addItems(["系统代理", "手动配置", "不使用代理"])
         self._proxy_mode_combo.setMinimumWidth(150)
+        apply_compact_combo_metrics(self._proxy_mode_combo)
         self._proxy_mode_combo.currentIndexChanged.connect(self._on_proxy_mode_changed)
 
         proxy_layout.addWidget(self._proxy_edit, 1)
@@ -899,6 +903,7 @@ class SettingsPage(ScrollArea):
         self._log_level_combobox.setCurrentIndex(
             ["DEBUG", "INFO", "WARNING", "ERROR"].index(self._main.config.log_level)
         )
+        apply_compact_combo_metrics(self._log_level_combobox)
         self._log_level_combobox.currentIndexChanged.connect(self._on_log_level_changed)
 
         # Add ComboBox to card layout
@@ -931,6 +936,7 @@ class SettingsPage(ScrollArea):
         self._ocr_mode_combo = ComboBox(self._ocr_mode_card)
         for key, zh_text, en_text in _OCR_MODE_CHOICES:
             self._ocr_mode_combo.addItem(zh_text if is_zh else en_text, userData=key)
+        apply_compact_combo_metrics(self._ocr_mode_combo)
         self._ocr_mode_combo.currentIndexChanged.connect(self._on_ocr_mode_changed)
         self._ocr_mode_card.hBoxLayout.addWidget(self._ocr_mode_combo)
         self._ocr_mode_card.hBoxLayout.addSpacing(16)
@@ -949,6 +955,7 @@ class SettingsPage(ScrollArea):
         self._doc_convert_backend_combo = ComboBox(self._doc_convert_backend_card)
         for key, zh_text, en_text in _DOC_CONVERT_BACKEND_CHOICES:
             self._doc_convert_backend_combo.addItem(zh_text if is_zh else en_text, userData=key)
+        apply_compact_combo_metrics(self._doc_convert_backend_combo)
         self._doc_convert_backend_card.hBoxLayout.addWidget(self._doc_convert_backend_combo)
         self._doc_convert_backend_card.hBoxLayout.addSpacing(16)
         self._ocr_group.addSettingCard(self._doc_convert_backend_card)
@@ -962,6 +969,7 @@ class SettingsPage(ScrollArea):
         self._ocr_cloud_provider_combo = ComboBox(self._ocr_cloud_provider_card)
         for key, zh_text, en_text in _OCR_CLOUD_PROVIDER_CHOICES:
             self._ocr_cloud_provider_combo.addItem(zh_text if is_zh else en_text, userData=key)
+        apply_compact_combo_metrics(self._ocr_cloud_provider_combo)
         self._ocr_cloud_provider_card.hBoxLayout.addWidget(self._ocr_cloud_provider_combo)
         self._ocr_cloud_provider_card.hBoxLayout.addSpacing(16)
         self._ocr_group.addSettingCard(self._ocr_cloud_provider_card)
@@ -1037,6 +1045,7 @@ class SettingsPage(ScrollArea):
         self._ocr_model_tier_combo = ComboBox(self._ocr_model_tier_card)
         for key, zh_text, en_text in _OCR_MODEL_TIER_CHOICES:
             self._ocr_model_tier_combo.addItem(zh_text if is_zh else en_text, userData=key)
+        apply_compact_combo_metrics(self._ocr_model_tier_combo)
         self._ocr_model_tier_combo.currentIndexChanged.connect(
             lambda _: self._refresh_ocr_recommendation()
         )
@@ -1059,6 +1068,7 @@ class SettingsPage(ScrollArea):
         self._ocr_source_combo = ComboBox(self._ocr_source_card)
         for key, zh_text, en_text in _OCR_SOURCE_CHOICES:
             self._ocr_source_combo.addItem(zh_text if is_zh else en_text, userData=key)
+        apply_compact_combo_metrics(self._ocr_source_combo)
         self._ocr_source_card.hBoxLayout.addWidget(self._ocr_source_combo)
         self._ocr_source_card.hBoxLayout.addSpacing(16)
         self._ocr_group.addSettingCard(self._ocr_source_card)

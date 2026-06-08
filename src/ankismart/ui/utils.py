@@ -121,8 +121,25 @@ def update_progress_infobar_text(
             info_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         if hasattr(info_bar, "updateGeometry"):
             info_bar.updateGeometry()
+        parent_widget = getattr(info_bar, "parentWidget", lambda: None)()
+        parent_width = 0
+        if parent_widget is not None:
+            width_getter = getattr(parent_widget, "width", None)
+            if callable(width_getter):
+                parent_width = int(width_getter() or 0)
+        if parent_width > 0:
+            max_width = max(240, min(parent_width - 48, max(360, int(parent_width * 0.72))))
+            if hasattr(info_bar, "setMaximumWidth"):
+                info_bar.setMaximumWidth(max_width)
         if hasattr(info_bar, "adjustSize"):
             info_bar.adjustSize()
+        if parent_width > 0 and hasattr(info_bar, "move"):
+            width_getter = getattr(info_bar, "width", None)
+            y_getter = getattr(info_bar, "y", None)
+            info_width = int(width_getter() if callable(width_getter) else 0)
+            y_pos = int(y_getter() if callable(y_getter) else 0)
+            x_pos = max(0, (parent_width - info_width) // 2)
+            info_bar.move(x_pos, max(0, y_pos))
         return True
     except RuntimeError:
         return False

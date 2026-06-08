@@ -1154,6 +1154,12 @@ class BatchGenerateWorker(QThread):
         self._card_quality_retry_rounds = int(getattr(config, "card_quality_retry_rounds", 2))
         self._adaptive_enabled = bool(getattr(config, "llm_adaptive_concurrency", True))
         self._concurrency_cap = int(getattr(config, "llm_concurrency_max", 6))
+        try:
+            self._generation_error_max_attempts = max(
+                1, int(getattr(config, "generation_error_max_attempts", 3) or 3)
+            )
+        except (TypeError, ValueError):
+            self._generation_error_max_attempts = 3
         self._throttle_events = 0
         self._timeout_events = 0
         self._warning_emitted = False
@@ -1306,41 +1312,86 @@ class BatchGenerateWorker(QThread):
                     ):
                         rounds_used += 1
                         remaining = 0 if auto_target_count else count - len(accepted_for_strategy)
-                        try:
-                            request = GenerateRequest(
-                                markdown=document.result.content,
-                                strategy=strategy,
-                                deck_name=self._deck_name,
-                                tags=self._tags,
-                                trace_id=document.result.trace_id,
-                                source_path=document.result.source_path,
-                                target_count=remaining,
-                                auto_target_count=auto_target_count,
-                                enable_auto_split=self._enable_auto_split,
-                                split_threshold=self._split_threshold,
-                            )
-                            round_cards = generator.generate(request)
-                        except Exception as e:
-                            self._mark_runtime_error(e)
-                            with first_error_lock:
-                                if first_error_message[0] is None:
-                                    first_error_message[0] = _format_error_for_ui(e)
-                            logger.warning(
-                                "strategy generation failed",
+                        request = GenerateRequest(
+                            markdown=document.result.content,
+                            strategy=strategy,
+                            deck_name=self._deck_name,
+                            tags=self._tags,
+                            trace_id=document.result.trace_id,
+                            source_path=document.result.source_path,
+                            target_count=remaining,
+                            auto_target_count=auto_target_count,
+                            enable_auto_split=self._enable_auto_split,
+                            split_threshold=self._split_threshold,
+                        )
+                        round_cards: list[CardDraft] = []
+                        generation_failed = False
+                        for attempt in range(1, self._generation_error_max_attempts + 1):
+                            if self._is_cancelled():
+                                return doc_cards
+                            try:
+                                round_cards = generator.generate(request)
+                                generation_failed = False
+                                break
+                            except Exception as e:
+                                self._mark_runtime_error(e)
+                                if attempt < self._generation_error_max_attempts:
+                                    next_attempt = attempt + 1
+                                    logger.warning(
+                                        "strategy generation retry scheduled",
+                                        extra={
+                                            "event": "worker.batch_generate.strategy_retry",
+                                            "strategy": strategy,
+                                            "file_name": document.file_name,
+                                            "round": rounds_used,
+                                            "attempt": attempt,
+                                            "next_attempt": next_attempt,
+                                            "max_attempts": self._generation_error_max_attempts,
+                                            "error_detail": str(e),
+                                        },
+                                    )
+                                    self.progress.emit(
+                                        f"{document.file_name}/{strategy}: 生成失败，"
+                                        f"正在进行第 {next_attempt}/"
+                                        f"{self._generation_error_max_attempts} 次尝试"
+                                    )
+                                    continue
+
+                                with first_error_lock:
+                                    if first_error_message[0] is None:
+                                        first_error_message[0] = _format_error_for_ui(e)
+                                logger.warning(
+                                    "strategy generation failed",
+                                    extra={
+                                        "event": "worker.batch_generate.strategy_failed",
+                                        "strategy": strategy,
+                                        "file_name": document.file_name,
+                                        "round": rounds_used,
+                                        "attempt": attempt,
+                                        "max_attempts": self._generation_error_max_attempts,
+                                        "error_detail": str(e),
+                                    },
+                                )
+                                self.progress.emit(
+                                    f"生成 {strategy} 卡片时出错 ({document.file_name}): "
+                                    f"{_format_error_for_ui(e)}"
+                                )
+                                runtime_warning_requested.set()
+                                generation_failed = True
+                                break
+
+                        if generation_failed:
+                            break
+                        if self._generation_error_max_attempts > 1 and not round_cards:
+                            logger.debug(
+                                "strategy generation returned no cards",
                                 extra={
-                                    "event": "worker.batch_generate.strategy_failed",
+                                    "event": "worker.batch_generate.strategy_empty_result",
                                     "strategy": strategy,
                                     "file_name": document.file_name,
                                     "round": rounds_used,
-                                    "error_detail": str(e),
                                 },
                             )
-                            self.progress.emit(
-                                f"生成 {strategy} 卡片时出错 ({document.file_name}): "
-                                f"{_format_error_for_ui(e)}"
-                            )
-                            runtime_warning_requested.set()
-                            break
 
                         if not round_cards:
                             continue
@@ -1389,25 +1440,13 @@ class BatchGenerateWorker(QThread):
 
                 return doc_cards
 
-            # Use ThreadPoolExecutor for concurrent generation
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # Submit all document generation tasks
-                future_to_doc = {
-                    executor.submit(generate_for_document, idx, doc): (idx, doc)
-                    for idx, doc in enumerate(self._documents)
-                }
-
-                # Collect results as they complete
-                for future in concurrent.futures.as_completed(future_to_doc):
+            if max_workers <= 1:
+                for idx, doc in enumerate(self._documents):
                     if self._is_cancelled():
-                        # Cancel all pending futures
-                        for f in future_to_doc:
-                            f.cancel()
                         self.cancelled.emit()
                         return
-
                     try:
-                        cards = future.result()
+                        cards = generate_for_document(idx, doc)
                         all_cards.extend(cards)
                         if runtime_warning_requested.is_set():
                             self._emit_non_blocking_warning_if_needed()
@@ -1416,7 +1455,6 @@ class BatchGenerateWorker(QThread):
                         with first_error_lock:
                             if first_error_message[0] is None:
                                 first_error_message[0] = _format_error_for_ui(e)
-                        idx, doc = future_to_doc[future]
                         logger.warning(
                             "document generation failed",
                             extra={
@@ -1430,6 +1468,48 @@ class BatchGenerateWorker(QThread):
                             f"处理 {doc.file_name} 时出错: {_format_error_for_ui(e)}"
                         )
                         self._emit_non_blocking_warning_if_needed()
+            else:
+                # Use ThreadPoolExecutor for concurrent generation
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # Submit all document generation tasks
+                    future_to_doc = {
+                        executor.submit(generate_for_document, idx, doc): (idx, doc)
+                        for idx, doc in enumerate(self._documents)
+                    }
+
+                    # Collect results as they complete
+                    for future in concurrent.futures.as_completed(future_to_doc):
+                        if self._is_cancelled():
+                            # Cancel all pending futures
+                            for f in future_to_doc:
+                                f.cancel()
+                            self.cancelled.emit()
+                            return
+
+                        try:
+                            cards = future.result()
+                            all_cards.extend(cards)
+                            if runtime_warning_requested.is_set():
+                                self._emit_non_blocking_warning_if_needed()
+                        except Exception as e:
+                            self._mark_runtime_error(e)
+                            with first_error_lock:
+                                if first_error_message[0] is None:
+                                    first_error_message[0] = _format_error_for_ui(e)
+                            idx, doc = future_to_doc[future]
+                            logger.warning(
+                                "document generation failed",
+                                extra={
+                                    "event": "worker.batch_generate.document_failed",
+                                    "document_index": idx,
+                                    "file_name": doc.file_name,
+                                    "error_detail": str(e),
+                                },
+                            )
+                            self.progress.emit(
+                                f"处理 {doc.file_name} 时出错: {_format_error_for_ui(e)}"
+                            )
+                            self._emit_non_blocking_warning_if_needed()
 
             if self._is_cancelled():
                 self.cancelled.emit()

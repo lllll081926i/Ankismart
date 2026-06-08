@@ -244,8 +244,8 @@ def test_import_page_uses_compact_heights_for_preset_combos() -> None:
     _APP.processEvents()
     _APP.processEvents()
 
-    assert page._generation_preset_combo.height() <= 22
-    assert page._strategy_template_combo.height() <= 22
+    assert 28 <= page._generation_preset_combo.height() <= 32
+    assert 28 <= page._strategy_template_combo.height() <= 32
     assert "padding: 0px 31px 0px 11px;" in page._generation_preset_combo.styleSheet()
     assert "padding: 0px 31px 0px 11px;" in page._strategy_template_combo.styleSheet()
     page.close()
@@ -264,6 +264,13 @@ def test_generation_preset_is_inside_generation_config_above_target_count() -> N
         page._count_card
     )
     assert page._total_count_input.toolTip() == ""
+    page.close()
+
+
+def test_import_page_tags_input_does_not_use_native_tooltip() -> None:
+    page = ImportPage(DummyMain())
+
+    assert page._tags_input.toolTip() == ""
     page.close()
 
 
