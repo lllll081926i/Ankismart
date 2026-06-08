@@ -310,6 +310,29 @@ class TestCacheStatsAndClear:
         assert cleared is True
         assert count_after == 0
 
+    def test_cache_stats_scans_cache_directory_once(self, monkeypatch, tmp_path: Path) -> None:
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / "a.md").write_text("12345", encoding="utf-8")
+        (cache_dir / "a.json").write_text("{}", encoding="utf-8")
+
+        rglob_calls: list[str] = []
+        original_rglob = Path.rglob
+
+        def counting_rglob(self: Path, pattern: str):
+            if self == cache_dir:
+                rglob_calls.append(pattern)
+            yield from original_rglob(self, pattern)
+
+        monkeypatch.setattr(Path, "rglob", counting_rglob)
+
+        with patch("ankismart.converter.cache.CACHE_DIR", cache_dir):
+            stats = get_cache_stats()
+
+        assert stats["count"] == 2
+        assert stats["size_mb"] > 0
+        assert rglob_calls == ["*"]
+
 
 class TestResolveAppDir:
     def test_env_app_dir_has_highest_priority(self, monkeypatch, tmp_path: Path) -> None:

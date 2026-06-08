@@ -358,9 +358,11 @@ class PushWorker(QThread):
         self._update_mode = update_mode
         self._max_retries = max_retries
         self._cancelled = False
+        self._cancel_event = threading.Event()
 
     def cancel(self) -> None:
         """Cancel the push operation."""
+        self._cancel_event.set()
         self._cancelled = True
 
     def _do_push(self) -> Any:
@@ -384,8 +386,6 @@ class PushWorker(QThread):
             return self._gateway.push(self._cards, update_mode=self._update_mode)
 
     def run(self) -> None:
-        import time
-
         last_error: Exception | None = None
         for attempt in range(self._max_retries + 1):
             if self._cancelled:
@@ -406,7 +406,9 @@ class PushWorker(QThread):
                 else:
                     delay = _calculate_retry_delay(attempt - 1)
                     self.progress.emit(f"推送失败，{delay:.1f}秒后进行第{attempt + 1}次重试...")
-                    time.sleep(delay)
+                    if self._cancel_event.wait(delay):
+                        self.cancelled.emit()
+                        return
                     if self._cancelled:
                         self.cancelled.emit()
                         return

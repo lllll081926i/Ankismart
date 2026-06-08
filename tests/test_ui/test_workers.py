@@ -327,6 +327,44 @@ def test_push_worker_error_emits_structured_message() -> None:
     assert errors == ["[E_LLM_AUTH_ERROR] push failed"]
 
 
+def test_push_worker_cancel_during_retry_delay_uses_interruptible_wait(monkeypatch) -> None:
+    class _Gateway:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def push(self, _cards, *, update_mode):
+            self.calls += 1
+            raise RuntimeError("timeout")
+
+    gateway = _Gateway()
+    worker = PushWorker(gateway, [], max_retries=1)
+    wait_calls: list[float] = []
+    cancelled: list[bool] = []
+
+    class _CancelEvent:
+        def set(self) -> None:
+            pass
+
+        def wait(self, delay: float) -> bool:
+            wait_calls.append(delay)
+            worker.cancel()
+            return True
+
+    worker._cancel_event = _CancelEvent()
+    monkeypatch.setattr("ankismart.ui.workers._calculate_retry_delay", lambda _attempt: 30.0)
+    monkeypatch.setattr(
+        "time.sleep",
+        lambda _delay: (_ for _ in ()).throw(AssertionError("retry delay should be interruptible")),
+    )
+
+    worker.cancelled.connect(lambda: cancelled.append(True))
+    worker.run()
+
+    assert gateway.calls == 1
+    assert wait_calls == [30.0]
+    assert cancelled == [True]
+
+
 def test_export_worker_success_emits_output_path(tmp_path) -> None:
     finished: list[str] = []
     output_path = tmp_path / "cards.apkg"

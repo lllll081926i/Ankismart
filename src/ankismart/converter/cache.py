@@ -274,8 +274,21 @@ def get_cache_stats() -> dict[str, float | int]:
         - count: Number of cache files
         - size_gb: Total cache size in gigabytes (for display)
     """
-    size_mb = get_cache_size()
-    count = get_cache_count()
+    total_size = 0
+    count = 0
+
+    if CACHE_DIR.exists():
+        try:
+            for file_path in CACHE_DIR.rglob("*"):
+                if file_path.is_file():
+                    total_size += file_path.stat().st_size
+                    count += 1
+        except OSError:
+            logger.warning("Failed to calculate cache statistics")
+            total_size = 0
+            count = 0
+
+    size_mb = total_size / (1024 * 1024)
 
     return {
         "size_mb": size_mb,

@@ -457,6 +457,14 @@ class TestSplitMarkdown:
         assert all(len(chunk) <= 40 for chunk in chunks)
         assert "".join(chunks) == content
 
+    def test_split_markdown_counts_paragraph_separators_toward_threshold(self):
+        gen = _make_generator()
+        content = ("A" * 39) + "\n\n" + ("B" * 20) + "\n\n" + ("C" * 20)
+
+        chunks = gen._split_markdown(content, threshold=40)
+
+        assert all(len(chunk) <= 40 for chunk in chunks)
+
     def test_generate_uses_chunk_mode_when_auto_split_enabled(self):
         gen = _make_generator(chat_side_effect=_fake_llm_basic)
         request = GenerateRequest(

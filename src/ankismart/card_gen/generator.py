@@ -284,25 +284,39 @@ class CardGenerator:
         in_code_block = False
         code_block_buffer = []
 
-        def flush_code_block(complete_block: str, buffer: list[str]) -> None:
-            nonlocal current_chunk, current_length
+        def can_append_to_current(text: str) -> bool:
+            separator_length = 2 if current_chunk else 0
+            return current_length + separator_length + len(text) <= threshold
 
+        def append_to_current(text: str) -> None:
+            nonlocal current_length
+            separator_length = 2 if current_chunk else 0
+            current_chunk.append(text)
+            current_length += separator_length + len(text)
+
+        def reset_current(text: str) -> None:
+            nonlocal current_chunk, current_length
+            current_chunk = [text]
+            current_length = len(text)
+
+        def flush_current() -> None:
+            nonlocal current_chunk, current_length
+            if current_chunk:
+                chunks.append("\n\n".join(current_chunk))
+                current_chunk = []
+                current_length = 0
+
+        def flush_code_block(complete_block: str, buffer: list[str]) -> None:
             if len(complete_block) > threshold:
-                if current_chunk:
-                    chunks.append("\n\n".join(current_chunk))
-                    current_chunk = []
-                    current_length = 0
+                flush_current()
                 chunks.extend(self._split_code_block(buffer, threshold))
                 return
 
-            if current_length + len(complete_block) > threshold:
-                if current_chunk:
-                    chunks.append("\n\n".join(current_chunk))
-                current_chunk = [complete_block]
-                current_length = len(complete_block)
+            if not can_append_to_current(complete_block):
+                flush_current()
+                reset_current(complete_block)
             else:
-                current_chunk.append(complete_block)
-                current_length += len(complete_block) + 2
+                append_to_current(complete_block)
 
         for para in paragraphs:
             para = para.strip()
@@ -339,10 +353,7 @@ class CardGenerator:
 
             # If single paragraph exceeds threshold, split it by sentences
             if para_length > threshold:
-                if current_chunk:
-                    chunks.append("\n\n".join(current_chunk))
-                    current_chunk = []
-                    current_length = 0
+                flush_current()
 
                 # Split by sentences for very long paragraphs
                 sentences = re.split(r"([.!?。！？]\s+)", para)
@@ -374,29 +385,23 @@ class CardGenerator:
                 continue
 
             # Normal paragraph handling
-            if current_length + para_length > threshold:
-                if current_chunk:
-                    chunks.append("\n\n".join(current_chunk))
-                current_chunk = [para]
-                current_length = para_length
+            if not can_append_to_current(para):
+                flush_current()
+                reset_current(para)
             else:
-                current_chunk.append(para)
-                current_length += para_length + 2  # +2 for \n\n
+                append_to_current(para)
 
         # Add remaining content
         if code_block_buffer:
             trailing_chunks = self._split_code_block(code_block_buffer, threshold)
             if len(trailing_chunks) == 1 and len(trailing_chunks[0]) <= threshold:
-                if current_chunk and current_length + len(trailing_chunks[0]) <= threshold:
-                    current_chunk.append(trailing_chunks[0])
+                if can_append_to_current(trailing_chunks[0]):
+                    append_to_current(trailing_chunks[0])
                 else:
-                    if current_chunk:
-                        chunks.append("\n\n".join(current_chunk))
-                    current_chunk = trailing_chunks
+                    flush_current()
+                    reset_current(trailing_chunks[0])
             else:
-                if current_chunk:
-                    chunks.append("\n\n".join(current_chunk))
-                    current_chunk = []
+                flush_current()
                 chunks.extend(trailing_chunks)
 
         if current_chunk:
