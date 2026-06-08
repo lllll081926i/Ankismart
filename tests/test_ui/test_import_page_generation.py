@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from PyQt6.QtGui import QCloseEvent
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QWidget
 
 from ankismart.core.config import AppConfig
 from ankismart.core.task_models import build_default_task_run
@@ -423,53 +423,52 @@ def test_import_page_progress_infobar_ignores_stale_deleted_infobar(monkeypatch)
             raise RuntimeError("wrapped C/C++ object of type InfoBar has been deleted")
 
     page._progress_info_bar = _DeletedInfoBar()
+
+    class _ProgressInfoBar(QWidget):
+        def __init__(self) -> None:
+            super().__init__()
+            self.added_widgets: list[QWidget] = []
+
+        def addWidget(self, widget: QWidget, stretch: int = 0) -> None:
+            self.added_widgets.append(widget)
+
     monkeypatch.setattr(
         "ankismart.ui.import_page.InfoBar.info",
-        lambda **kwargs: info_calls.append(kwargs) or object(),
+        lambda **kwargs: info_calls.append(kwargs) or _ProgressInfoBar(),
     )
 
     ImportPage._show_progress_info_bar(page, "正在转换", "讲义.pdf")
 
     assert len(info_calls) == 1
-    assert info_calls[0]["title"] == "正在转换"
-    assert info_calls[0]["content"] == "讲义.pdf"
+    assert info_calls[0]["title"] == ""
+    assert info_calls[0]["content"] == ""
     assert page._progress_info_bar is not None
+    assert page._progress_info_bar._progress_title_label.text() == "正在转换"
+    assert page._progress_info_bar._progress_content_label.text() == "讲义.pdf"
+    assert page._progress_info_bar._progress_title_label.font().bold() is False
+    assert page._progress_info_bar.maximumHeight() == 52
 
 
 def test_import_page_progress_infobar_reuses_existing_infobar(monkeypatch) -> None:
     page = make_page()
     info_calls: list[dict] = []
 
-    class _Label:
-        def __init__(self) -> None:
-            self.text = ""
-            self.visible = True
-
-        def setText(self, text: str) -> None:
-            self.text = text
-
-        def setVisible(self, visible: bool) -> None:
-            self.visible = visible
-
-    class _ProgressInfoBar:
-        def __init__(self, title: str, content: str, duration: int) -> None:
-            self.title = title
-            self.content = content
+    class _ProgressInfoBar(QWidget):
+        def __init__(self, duration: int) -> None:
+            super().__init__()
             self.duration = duration
-            self.titleLabel = _Label()
-            self.contentLabel = _Label()
+            self.added_widgets: list[QWidget] = []
             self.closed = False
 
-        def _adjustText(self) -> None:
-            self.titleLabel.setText(self.title)
-            self.contentLabel.setText(self.content)
+        def addWidget(self, widget: QWidget, stretch: int = 0) -> None:
+            self.added_widgets.append(widget)
 
         def close(self) -> None:
             self.closed = True
 
     def _show_info_bar(**kwargs):
         info_calls.append(kwargs)
-        return _ProgressInfoBar(kwargs["title"], kwargs["content"], kwargs["duration"])
+        return _ProgressInfoBar(kwargs["duration"])
 
     monkeypatch.setattr("ankismart.ui.import_page.InfoBar.info", _show_info_bar)
 
@@ -478,10 +477,13 @@ def test_import_page_progress_infobar_reuses_existing_infobar(monkeypatch) -> No
     ImportPage._show_progress_info_bar(page, "正在转换", "讲义.pdf 3/12")
 
     assert len(info_calls) == 1
+    assert info_calls[0]["title"] == ""
+    assert info_calls[0]["content"] == ""
     assert page._progress_info_bar is original
     assert original.closed is False
-    assert original.content == "讲义.pdf 3/12"
-    assert original.contentLabel.text == "讲义.pdf 3/12"
+    assert original._progress_content_label.text() == "讲义.pdf 3/12"
+    assert original._progress_title_label.font().bold() is False
+    assert original.maximumHeight() == 52
 
 
 def test_cloud_ocr_message_progress_updates_status_text():

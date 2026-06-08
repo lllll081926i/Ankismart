@@ -61,6 +61,8 @@ logger = get_logger(__name__)
 class CardPreviewPage(QWidget):
     """Page for previewing generated Anki cards."""
 
+    _DUPLICATE_SCAN_EAGER_LIMIT = 160
+
     _NOTE_TYPE_FILTERS: tuple[tuple[str, str, str], ...] = (
         ("all", "全部类型", "All Types"),
         ("basic", "基础问答", "Basic Q&A"),
@@ -84,6 +86,9 @@ class CardPreviewPage(QWidget):
         self._quality_low_only = False
         self._duplicate_risk_only = False
         self._duplicate_risk_card_ids: set[int] = set()
+        self._duplicate_risk_pending = False
+        self._quality_score_cache: dict[int, int] = {}
+        self._card_list_text_cache: dict[int, str] = {}
         self._push_worker = None
         self._export_worker = None
         self._push_start_ts = 0.0
@@ -117,6 +122,7 @@ class CardPreviewPage(QWidget):
 
         # Bottom bar
         bottom_bar = self._create_bottom_bar()
+        self._bottom_bar_layout = bottom_bar
         layout.addLayout(bottom_bar)
 
         # Progress bar
@@ -282,18 +288,6 @@ class CardPreviewPage(QWidget):
         self._btn_regenerate_current.clicked.connect(self._regenerate_current_card)
         layout.addWidget(self._btn_regenerate_current)
 
-        self._btn_regenerate_selected = PushButton(
-            "重生成所选" if self._main.config.language == "zh" else "Regenerate Selected"
-        )
-        self._btn_regenerate_selected.clicked.connect(self._regenerate_selected_cards)
-        layout.addWidget(self._btn_regenerate_selected)
-
-        self._btn_regenerate_source = PushButton(
-            "重生成来源文档" if self._main.config.language == "zh" else "Regenerate Source"
-        )
-        self._btn_regenerate_source.clicked.connect(self._regenerate_source_document)
-        layout.addWidget(self._btn_regenerate_source)
-
         self._btn_export_apkg = PushButton(
             "导出为 APKG" if self._main.config.language == "zh" else "Export as APKG"
         )
@@ -321,10 +315,14 @@ class CardPreviewPage(QWidget):
     def load_cards(self, cards: list[CardDraft]):
         """Load cards for preview."""
         self._all_cards = cards
-        self._rebuild_duplicate_risk_cache()
+        self._current_index = -1
+        self._quality_score_cache.clear()
+        self._card_list_text_cache.clear()
+        self._duplicate_risk_card_ids.clear()
+        self._duplicate_risk_pending = len(cards) > self._DUPLICATE_SCAN_EAGER_LIMIT
+        if not self._duplicate_risk_pending:
+            self._rebuild_duplicate_risk_cache()
         self._apply_filters()
-        if self._filtered_cards:
-            self._show_card(0)
 
     def _set_total_count_text(self, count: int) -> None:
         """Update total count text based on current language."""
@@ -404,6 +402,7 @@ class CardPreviewPage(QWidget):
             ]
 
         if self._duplicate_risk_only:
+            self._ensure_duplicate_risk_cache()
             filtered = [c for c in filtered if self._is_duplicate_risk_card(c)]
 
         self._filtered_cards = filtered
@@ -411,12 +410,18 @@ class CardPreviewPage(QWidget):
 
     def _refresh_card_list(self):
         """Refresh the card list widget."""
+        self._card_list.setUpdatesEnabled(False)
+        self._card_list.blockSignals(True)
         self._card_list.clear()
 
-        for card in self._filtered_cards:
-            question = self._build_card_list_item_text(card)
-            item = QListWidgetItem(question)
-            self._card_list.addItem(item)
+        try:
+            for card in self._filtered_cards:
+                question = self._build_card_list_item_text(card)
+                item = QListWidgetItem(question)
+                self._card_list.addItem(item)
+        finally:
+            self._card_list.blockSignals(False)
+            self._card_list.setUpdatesEnabled(True)
 
         self._update_quality_overview()
 
@@ -452,6 +457,11 @@ class CardPreviewPage(QWidget):
         return ""
 
     def _compute_card_quality_score(self, card: CardDraft) -> int:
+        cache_key = id(card)
+        cached = self._quality_score_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         question = self._normalize_quality_text(self._get_card_question_text(card))
         answer = self._get_card_answer_text(card)
         score = 100
@@ -472,7 +482,9 @@ class CardPreviewPage(QWidget):
             score -= 35
         if getattr(card.metadata, "quality_flags", None):
             score = min(score, 55)
-        return max(0, min(100, score))
+        score = max(0, min(100, score))
+        self._quality_score_cache[cache_key] = score
+        return score
 
     def _update_quality_overview(self) -> None:
         is_zh = self._main.config.language == "zh"
@@ -521,6 +533,11 @@ class CardPreviewPage(QWidget):
         return "（空问题）" if self._main.config.language == "zh" else "(Empty question)"
 
     def _build_card_list_item_text(self, card: CardDraft) -> str:
+        cache_key = id(card)
+        cached = self._card_list_text_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         question = self._get_card_question_text(card)
         badges: list[str] = []
         if (
@@ -530,9 +547,9 @@ class CardPreviewPage(QWidget):
             badges.append("[低分]" if self._main.config.language == "zh" else "[Low]")
         if self._is_duplicate_risk_card(card):
             badges.append("[近重复]" if self._main.config.language == "zh" else "[Near Duplicate]")
-        if not badges:
-            return question
-        return f"{question} {' '.join(badges)}"
+        text = question if not badges else f"{question} {' '.join(badges)}"
+        self._card_list_text_cache[cache_key] = text
+        return text
 
     def _on_card_selected(self, index: int):
         """Handle card selection from list."""
@@ -654,6 +671,7 @@ class CardPreviewPage(QWidget):
         self._list_title_label.setText("问题列表" if is_zh else "Questions")
         self._btn_prev.setText("上一张" if is_zh else "Previous")
         self._btn_next.setText("下一张" if is_zh else "Next")
+        self._btn_regenerate_current.setText("重生成当前卡" if is_zh else "Regenerate Current")
         self._btn_export_apkg.setText("导出为 APKG" if is_zh else "Export as APKG")
         self._btn_export_csv.setText("导出为 CSV" if is_zh else "Export CSV")
         self._btn_push.setText("推送到 Anki" if is_zh else "Push to Anki")
@@ -1073,16 +1091,6 @@ class CardPreviewPage(QWidget):
         self._btn_export_apkg.setEnabled(enabled)
         self._btn_export_csv.setEnabled(enabled)
         self._btn_regenerate_current.setEnabled(enabled)
-        self._btn_regenerate_selected.setEnabled(enabled)
-        self._btn_regenerate_source.setEnabled(enabled)
-
-    def _selected_filtered_indices(self) -> list[int]:
-        selected_rows = sorted(index.row() for index in self._card_list.selectedIndexes())
-        if selected_rows:
-            return selected_rows
-        if 0 <= self._current_index < len(self._filtered_cards):
-            return [self._current_index]
-        return []
 
     def _build_regenerate_request(self, scope: str, indices: list[int]) -> RegenerateRequest | None:
         cards = [
@@ -1123,22 +1131,6 @@ class CardPreviewPage(QWidget):
         if not (0 <= self._current_index < len(self._filtered_cards)):
             return
         request = self._build_regenerate_request("current_card", [self._current_index])
-        if request is not None:
-            self._dispatch_regenerate_request(request)
-
-    def _regenerate_selected_cards(self) -> None:
-        request = self._build_regenerate_request(
-            "selected_cards",
-            self._selected_filtered_indices(),
-        )
-        if request is not None:
-            self._dispatch_regenerate_request(request)
-
-    def _regenerate_source_document(self) -> None:
-        request = self._build_regenerate_request(
-            "source_document",
-            self._selected_filtered_indices(),
-        )
         if request is not None:
             self._dispatch_regenerate_request(request)
 
@@ -1299,6 +1291,12 @@ class CardPreviewPage(QWidget):
         threshold = float(getattr(self._main.config, "semantic_duplicate_threshold", 0.9))
         risky_indices = self._collect_duplicate_risk_indices(self._all_cards, threshold)
         self._duplicate_risk_card_ids = {id(self._all_cards[index]) for index in risky_indices}
+        self._duplicate_risk_pending = False
+        self._card_list_text_cache.clear()
+
+    def _ensure_duplicate_risk_cache(self) -> None:
+        if self._duplicate_risk_pending:
+            self._rebuild_duplicate_risk_cache()
 
     def _is_duplicate_risk_card(self, card: CardDraft) -> bool:
         return id(card) in self._duplicate_risk_card_ids

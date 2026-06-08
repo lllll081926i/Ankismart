@@ -69,6 +69,7 @@ from ankismart.ui.utils import (
     ProgressMixin,
     request_infobar_confirmation,
     split_tags_text,
+    update_progress_infobar_text,
 )
 from ankismart.ui.workers import BatchConvertWorker
 from ankismart.ui.workflows import (
@@ -516,8 +517,6 @@ class ImportPage(ProgressMixin, QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SPACING_SMALL)
 
-        layout.addWidget(self._create_generation_preset_card(panel))
-
         # Drag and drop area - fills entire left panel
         self._drop_area = DropAreaWidget()
         self._drop_area.setObjectName("dropArea")
@@ -535,9 +534,11 @@ class ImportPage(ProgressMixin, QWidget):
         top_row = QHBoxLayout()
         top_row.setSpacing(MARGIN_SMALL)
 
-        title = SubtitleLabel()
-        title.setText("文件选择" if self._main.config.language == "zh" else "File Selection")
-        top_row.addWidget(title)
+        self._file_selection_title = BodyLabel(
+            "文件选择" if self._main.config.language == "zh" else "File Selection"
+        )
+        self._apply_regular_title_style(self._file_selection_title)
+        top_row.addWidget(self._file_selection_title)
 
         top_row.addStretch()
 
@@ -727,6 +728,12 @@ class ImportPage(ProgressMixin, QWidget):
     def _get_start_convert_text(language: str) -> str:
         return "开始转换" if language == "zh" else "Start Conversion"
 
+    @staticmethod
+    def _apply_regular_title_style(label: BodyLabel) -> None:
+        font = label.font()
+        font.setBold(False)
+        label.setFont(font)
+
     def _create_config_group(self) -> QWidget:
         """Create configuration area with custom title bar."""
         is_zh = self._main.config.language == "zh"
@@ -744,8 +751,9 @@ class ImportPage(ProgressMixin, QWidget):
         title_bar_layout.setContentsMargins(0, 0, 0, 0)
         title_bar_layout.setSpacing(SPACING_SMALL)
 
-        title_label = SubtitleLabel("生成配置" if is_zh else "Generation Config")
-        title_bar_layout.addWidget(title_label)
+        self._generation_config_title = BodyLabel("生成配置" if is_zh else "Generation Config")
+        self._apply_regular_title_style(self._generation_config_title)
+        title_bar_layout.addWidget(self._generation_config_title)
         title_bar_layout.addStretch()
 
         self._btn_generate_cards = PrimaryPushButton(
@@ -769,6 +777,10 @@ class ImportPage(ProgressMixin, QWidget):
         group_layout.setSpacing(2)
         group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         group.setMaximumHeight(_RIGHT_CONFIG_GROUP_MAX_HEIGHT)
+        self._generation_config_group = group
+
+        self._generation_preset_card = self._create_generation_preset_card(group)
+        group_layout.addWidget(self._generation_preset_card)
 
         # Target count card
         self._count_card = SettingCard(
@@ -2024,15 +2036,17 @@ class ImportPage(ProgressMixin, QWidget):
             return
 
         self._dispose_progress_info_bar()
-        self.__dict__["_progress_info_bar"] = InfoBar.info(
-            title=title,
-            content=content,
+        info_bar = InfoBar.info(
+            title="",
+            content="",
             orient=Qt.Orientation.Horizontal,
             isClosable=False,
             position=InfoBarPosition.TOP,
             duration=duration,
             parent=self,
         )
+        update_progress_infobar_text(info_bar, title, content, duration=duration)
+        self.__dict__["_progress_info_bar"] = info_bar
 
     def _update_progress_info_bar(self, current, title: str, content: str, duration: int) -> bool:
         if current is None:
@@ -2045,25 +2059,7 @@ class ImportPage(ProgressMixin, QWidget):
             pass
 
         try:
-            title_label = getattr(current, "titleLabel", None)
-            content_label = getattr(current, "contentLabel", None)
-            if title_label is None or content_label is None:
-                return False
-
-            current.title = title
-            current.content = content
-            current.duration = duration
-            title_label.setVisible(bool(title))
-            content_label.setVisible(bool(content))
-
-            adjust_text = getattr(current, "_adjustText", None)
-            if callable(adjust_text):
-                adjust_text()
-            else:
-                title_label.setText(title)
-                content_label.setText(content)
-
-            return True
+            return update_progress_infobar_text(current, title, content, duration=duration)
         except RuntimeError:
             logger.debug("progress infobar was already deleted", exc_info=True)
             return False

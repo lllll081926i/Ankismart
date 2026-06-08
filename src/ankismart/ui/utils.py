@@ -5,8 +5,8 @@ import time
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QWidget
-from qfluentwidgets import InfoBar, InfoBarPosition
+from PyQt6.QtWidgets import QHBoxLayout, QSizePolicy, QWidget
+from qfluentwidgets import BodyLabel, InfoBar, InfoBarPosition
 
 if TYPE_CHECKING:
     from qfluentwidgets import ProgressBar, ProgressRing, PushButton
@@ -46,6 +46,86 @@ def split_tags_text(tags_text: str) -> list[str]:
     if not tags_text.strip():
         return []
     return [part.strip() for part in re.split(r"[，,]", tags_text) if part.strip()]
+
+
+def _set_regular_label(label: BodyLabel) -> None:
+    font = label.font()
+    font.setBold(False)
+    label.setFont(font)
+    label.setWordWrap(False)
+    label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+
+def update_progress_infobar_text(
+    info_bar: QWidget | None,
+    title: str,
+    content: str,
+    *,
+    duration: int | None = None,
+    fixed_height: int = 52,
+) -> bool:
+    """Use stable single-line labels inside a qfluent InfoBar for progress updates."""
+    if info_bar is None:
+        return False
+
+    try:
+        if duration is not None:
+            setattr(info_bar, "duration", duration)
+
+        title_label = getattr(info_bar, "_progress_title_label", None)
+        content_label = getattr(info_bar, "_progress_content_label", None)
+
+        if title_label is None or content_label is None:
+            if not hasattr(info_bar, "addWidget"):
+                return False
+
+            for attr in ("titleLabel", "contentLabel"):
+                default_label = getattr(info_bar, attr, None)
+                if default_label is not None:
+                    default_label.setText("")
+                    default_label.setVisible(False)
+                    default_label.setWordWrap(False)
+
+            text_widget = QWidget(info_bar)
+            text_widget.setObjectName("progressInfoBarText")
+            text_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            text_layout = QHBoxLayout(text_widget)
+            text_layout.setContentsMargins(0, 0, 0, 0)
+            text_layout.setSpacing(24)
+
+            title_label = BodyLabel(text_widget)
+            title_label.setObjectName("progressInfoBarTitle")
+            content_label = BodyLabel(text_widget)
+            content_label.setObjectName("progressInfoBarContent")
+            _set_regular_label(title_label)
+            _set_regular_label(content_label)
+
+            title_label.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+            content_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            text_layout.addWidget(title_label, 0, Qt.AlignmentFlag.AlignVCenter)
+            text_layout.addWidget(content_label, 1, Qt.AlignmentFlag.AlignVCenter)
+
+            info_bar.addWidget(text_widget, 1)
+            setattr(info_bar, "_progress_text_widget", text_widget)
+            setattr(info_bar, "_progress_title_label", title_label)
+            setattr(info_bar, "_progress_content_label", content_label)
+
+        title_label.setText(title)
+        content_label.setText(content)
+        title_label.setVisible(bool(title))
+        content_label.setVisible(bool(content))
+
+        if hasattr(info_bar, "setFixedHeight"):
+            info_bar.setFixedHeight(fixed_height)
+        if hasattr(info_bar, "setSizePolicy"):
+            info_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        if hasattr(info_bar, "updateGeometry"):
+            info_bar.updateGeometry()
+        if hasattr(info_bar, "adjustSize"):
+            info_bar.adjustSize()
+        return True
+    except RuntimeError:
+        return False
 
 
 class ProgressMixin:

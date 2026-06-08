@@ -80,6 +80,11 @@ CONFIG_PATH: Path = (
 TASKS_PATH: Path = (
     Path(os.getenv("ANKISMART_TASKS_PATH", str(CONFIG_DIR / "tasks.json"))).expanduser().resolve()
 )
+HISTORY_DB_PATH: Path = (
+    Path(os.getenv("ANKISMART_HISTORY_DB_PATH", str(CONFIG_DIR / "history.sqlite3")))
+    .expanduser()
+    .resolve()
+)
 CONFIG_BACKUP_DIR: Path = CONFIG_DIR / "backups"
 
 _ENCRYPTED_FIELDS: set[str] = {"anki_connect_key", "ocr_cloud_api_key"}

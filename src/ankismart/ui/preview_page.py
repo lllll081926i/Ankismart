@@ -21,6 +21,7 @@ from qfluentwidgets import (
 
 from ankismart.core.config import append_task_history, record_operation_metric, save_config
 from ankismart.core.errors import ErrorCode
+from ankismart.core.history_store import get_default_history_store
 from ankismart.core.logging import get_logger
 from ankismart.core.models import BatchConvertResult, ConvertedDocument, RegenerateRequest
 from ankismart.core.task_models import build_default_task_run
@@ -36,7 +37,7 @@ from ankismart.ui.styles import (
     scale_px,
 )
 from ankismart.ui.task_runtime import TaskEvent
-from ankismart.ui.utils import ProgressMixin, split_tags_text
+from ankismart.ui.utils import ProgressMixin, split_tags_text, update_progress_infobar_text
 from ankismart.ui.workers import BatchGenerateWorker
 
 if TYPE_CHECKING:
@@ -1089,15 +1090,17 @@ class PreviewPage(ProgressMixin, QWidget):
 
         self._clear_progress_info_bar()
 
-        self.__dict__["_progress_info_bar"] = InfoBar.info(
-            title=title,
-            content=content,
+        info_bar = InfoBar.info(
+            title="",
+            content="",
             orient=Qt.Orientation.Horizontal,
             isClosable=False,
             position=InfoBarPosition.TOP,
             duration=duration,
             parent=self,
         )
+        update_progress_infobar_text(info_bar, title, content, duration=duration)
+        self.__dict__["_progress_info_bar"] = info_bar
 
     def _update_progress_info_bar(self, current, title: str, content: str, duration: int) -> bool:
         if current is None:
@@ -1110,25 +1113,7 @@ class PreviewPage(ProgressMixin, QWidget):
             pass
 
         try:
-            title_label = getattr(current, "titleLabel", None)
-            content_label = getattr(current, "contentLabel", None)
-            if title_label is None or content_label is None:
-                return False
-
-            current.title = title
-            current.content = content
-            current.duration = duration
-            title_label.setVisible(bool(title))
-            content_label.setVisible(bool(content))
-
-            adjust_text = getattr(current, "_adjustText", None)
-            if callable(adjust_text):
-                adjust_text()
-            else:
-                title_label.setText(title)
-                content_label.setText(content)
-
-            return True
+            return update_progress_infobar_text(current, title, content, duration=duration)
         except RuntimeError:
             logger.debug("progress infobar was already deleted", exc_info=True)
             return False
@@ -1372,6 +1357,13 @@ class PreviewPage(ProgressMixin, QWidget):
             },
         )
         save_config(self._main.config)
+        self._save_generation_history(
+            cards,
+            status=status,
+            target_total=target_total,
+            low_quality_count=low_quality_count,
+            elapsed=elapsed,
+        )
         self._publish_task_event(
             TaskEvent(
                 task_id=self._current_task_id,
@@ -1424,6 +1416,46 @@ class PreviewPage(ProgressMixin, QWidget):
             "generation completed",
             extra={"event": "ui.generation.completed", "cards_count": len(cards)},
         )
+
+    def _save_generation_history(
+        self,
+        cards,
+        *,
+        status: str,
+        target_total: int,
+        low_quality_count: int,
+        elapsed: float,
+    ) -> None:
+        try:
+            source_documents = sorted(
+                {
+                    str(getattr(card.metadata, "source_document", "") or "").strip()
+                    for card in cards
+                    if str(getattr(card.metadata, "source_document", "") or "").strip()
+                }
+            )
+            strategy_ids = sorted(
+                {
+                    str(getattr(card.metadata, "strategy_id", "") or "").strip()
+                    for card in cards
+                    if str(getattr(card.metadata, "strategy_id", "") or "").strip()
+                }
+            )
+            get_default_history_store().save_generation_batch(
+                list(cards),
+                title=f"生成 {len(cards)} 张卡片",
+                status=status,
+                target_total=target_total,
+                low_quality_count=low_quality_count,
+                duration_seconds=round(elapsed, 2),
+                metadata={
+                    "task_id": self._current_task_id,
+                    "source_documents": source_documents,
+                    "strategy_ids": strategy_ids,
+                },
+            )
+        except Exception:
+            logger.warning("failed to persist generation history", exc_info=True)
 
     def _on_generation_error(self, error: str):
         """Handle generation error."""

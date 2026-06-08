@@ -251,14 +251,29 @@ def test_import_page_uses_compact_heights_for_preset_combos() -> None:
     page.close()
 
 
-def test_generation_preset_is_above_import_drop_area() -> None:
+def test_generation_preset_is_inside_generation_config_above_target_count() -> None:
     page = ImportPage(DummyMain())
     left_layout = page._left_panel.layout()
+    config_layout = page._generation_config_group.layout()
 
     assert page._generation_preset_card.titleLabel.text() == "生成预设"
     assert "题型配比" in page._generation_preset_card.contentLabel.text()
-    assert left_layout.indexOf(page._generation_preset_card) < left_layout.indexOf(page._drop_area)
+    assert left_layout.indexOf(page._generation_preset_card) == -1
+    assert page._generation_preset_card.parent() is page._count_card.parent()
+    assert config_layout.indexOf(page._generation_preset_card) < config_layout.indexOf(
+        page._count_card
+    )
     assert page._total_count_input.toolTip() == ""
+    page.close()
+
+
+def test_import_page_section_titles_use_regular_weight() -> None:
+    page = ImportPage(DummyMain())
+
+    assert page._file_selection_title.text() == "文件选择"
+    assert page._generation_config_title.text() == "生成配置"
+    assert page._file_selection_title.font().bold() is False
+    assert page._generation_config_title.font().bold() is False
     page.close()
 
 

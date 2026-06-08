@@ -347,13 +347,19 @@ def test_download_missing_ocr_models_forwards_progress_callback(monkeypatch):
 def test_ocr_download_progress_shows_infobar_and_deduplicates(monkeypatch):
     page = make_page()
     page._last_ocr_progress_message = ""
-    infobar_calls = patch_infobar(monkeypatch)
+    calls: list[tuple[tuple, dict]] = []
+    monkeypatch.setattr(
+        ImportPage,
+        "_show_progress_info_bar",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+        raising=False,
+    )
 
     ImportPage._on_ocr_download_progress(page, 1, 2, "正在下载模型")
     ImportPage._on_ocr_download_progress(page, 1, 2, "正在下载模型")
 
-    assert len(infobar_calls["info"]) == 1
-    assert "[1/2] 正在下载模型" in infobar_calls["info"][0]["content"]
+    assert len(calls) == 1
+    assert calls[0][0][2] == "[1/2] 正在下载模型"
 
 
 def test_on_page_progress_shows_file_page_infobar_and_deduplicates(monkeypatch):

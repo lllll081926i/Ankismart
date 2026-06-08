@@ -5,11 +5,13 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from PyQt6.QtGui import QCloseEvent
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QWidget
 from pytest import mark
 
 from ankismart.core.models import (
     BatchConvertResult,
+    CardDraft,
+    CardMetadata,
     ConvertedDocument,
     MarkdownResult,
     RegenerateRequest,
@@ -331,6 +333,10 @@ class TestPreviewPageFlow:
         )
         monkeypatch.setattr("ankismart.ui.preview_page.save_config", lambda cfg: None)
         monkeypatch.setattr(
+            "ankismart.ui.preview_page.get_default_history_store",
+            lambda: type("_HistoryStore", (), {"save_generation_batch": lambda *a, **k: None})(),
+        )
+        monkeypatch.setattr(
             "ankismart.ui.preview_page.build_error_display",
             lambda error, language: {"title": "失败", "content": error},
         )
@@ -352,6 +358,50 @@ class TestPreviewPageFlow:
         getattr(page, callback_name)(*args)
 
         assert metric_calls["count"] == 0
+
+    def test_generation_finished_persists_cards_to_history(self, monkeypatch):
+        main = _make_main_window()
+        main.config.language = "zh"
+        page = PreviewPage(main)
+        page._generation_start_ts = 0.0
+        page._current_task_id = "task-history"
+        cards = [
+            CardDraft(
+                fields={"Front": "Q", "Back": "答案: A\n解析:\nR"},
+                metadata=CardMetadata(source_document="lesson.md", strategy_id="basic"),
+            )
+        ]
+        captured: dict[str, object] = {}
+
+        class _HistoryStore:
+            def save_generation_batch(self, cards_arg, **kwargs):
+                captured["cards"] = cards_arg
+                captured["kwargs"] = kwargs
+
+        monkeypatch.setattr("ankismart.ui.preview_page.append_task_history", lambda *a, **k: None)
+        monkeypatch.setattr("ankismart.ui.preview_page.save_config", lambda cfg: None)
+        monkeypatch.setattr("ankismart.ui.preview_page.get_default_history_store", _HistoryStore)
+        monkeypatch.setattr(
+            "ankismart.ui.preview_page.InfoBar",
+            type(
+                "_InfoBarStub",
+                (),
+                {
+                    "warning": staticmethod(lambda *a, **k: None),
+                    "success": staticmethod(lambda *a, **k: None),
+                    "info": staticmethod(lambda *a, **k: None),
+                    "error": staticmethod(lambda *a, **k: None),
+                },
+            ),
+        )
+        monkeypatch.setattr(PreviewPage, "_count_low_quality_cards", lambda self, cards: 0)
+
+        page._on_generation_finished(cards)
+
+        assert captured["cards"] == cards
+        assert captured["kwargs"]["status"] == "success"
+        assert captured["kwargs"]["metadata"]["task_id"] == "task-history"
+        assert captured["kwargs"]["metadata"]["source_documents"] == ["lesson.md"]
 
 
 class TestPreviewPageWorkerCleanup:
@@ -480,17 +530,29 @@ def test_show_progress_info_bar_ignores_stale_deleted_infobar(monkeypatch):
 
     page._progress_info_bar = _DeletedInfoBar()
 
+    class _ProgressInfoBar(QWidget):
+        def __init__(self) -> None:
+            super().__init__()
+            self.added_widgets: list[QWidget] = []
+
+        def addWidget(self, widget: QWidget, stretch: int = 0) -> None:
+            self.added_widgets.append(widget)
+
     monkeypatch.setattr(
         "ankismart.ui.preview_page.InfoBar.info",
-        lambda **kwargs: info_calls.append(kwargs) or object(),
+        lambda **kwargs: info_calls.append(kwargs) or _ProgressInfoBar(),
     )
 
     page._show_progress_info_bar("正在生成卡片", "正在生成 basic 卡片")
 
     assert len(info_calls) == 1
-    assert info_calls[0]["title"] == "正在生成卡片"
-    assert info_calls[0]["content"] == "正在生成 basic 卡片"
+    assert info_calls[0]["title"] == ""
+    assert info_calls[0]["content"] == ""
     assert page._progress_info_bar is not None
+    assert page._progress_info_bar._progress_title_label.text() == "正在生成卡片"
+    assert page._progress_info_bar._progress_content_label.text() == "正在生成 basic 卡片"
+    assert page._progress_info_bar._progress_title_label.font().bold() is False
+    assert page._progress_info_bar.maximumHeight() == 52
 
 
 def test_show_progress_info_bar_reuses_existing_infobar(monkeypatch):
@@ -499,36 +561,22 @@ def test_show_progress_info_bar_reuses_existing_infobar(monkeypatch):
     page = PreviewPage(main)
     info_calls: list[dict] = []
 
-    class _Label:
-        def __init__(self) -> None:
-            self.text = ""
-            self.visible = True
-
-        def setText(self, text: str) -> None:
-            self.text = text
-
-        def setVisible(self, visible: bool) -> None:
-            self.visible = visible
-
-    class _ProgressInfoBar:
-        def __init__(self, title: str, content: str, duration: int) -> None:
-            self.title = title
-            self.content = content
+    class _ProgressInfoBar(QWidget):
+        def __init__(self, duration: int) -> None:
+            super().__init__()
             self.duration = duration
-            self.titleLabel = _Label()
-            self.contentLabel = _Label()
+            self.added_widgets: list[QWidget] = []
             self.closed = False
 
-        def _adjustText(self) -> None:
-            self.titleLabel.setText(self.title)
-            self.contentLabel.setText(self.content)
+        def addWidget(self, widget: QWidget, stretch: int = 0) -> None:
+            self.added_widgets.append(widget)
 
         def close(self) -> None:
             self.closed = True
 
     def _show_info_bar(**kwargs):
         info_calls.append(kwargs)
-        return _ProgressInfoBar(kwargs["title"], kwargs["content"], kwargs["duration"])
+        return _ProgressInfoBar(kwargs["duration"])
 
     monkeypatch.setattr("ankismart.ui.preview_page.InfoBar.info", _show_info_bar)
 
@@ -538,10 +586,13 @@ def test_show_progress_info_bar_reuses_existing_infobar(monkeypatch):
 
     assert len(info_calls) == 1
     assert info_calls[0]["duration"] == -1
+    assert info_calls[0]["title"] == ""
+    assert info_calls[0]["content"] == ""
     assert page._progress_info_bar is original
     assert original.closed is False
-    assert original.content == "已生成 1/3 张卡片"
-    assert original.contentLabel.text == "已生成 1/3 张卡片"
+    assert original._progress_content_label.text() == "已生成 1/3 张卡片"
+    assert original._progress_title_label.font().bold() is False
+    assert original.maximumHeight() == 52
 
 
 def test_generation_warning_shows_visible_infobar(monkeypatch):

@@ -33,6 +33,15 @@ def test_parse_answer_block_splits_answer_and_explanation_without_number_prefixe
     assert "事务要么全部成功要么全部失败" in explanation
 
 
+def test_parse_answer_block_splits_inline_answer_and_explanation_marker() -> None:
+    answer, explanation = parse_answer_block(
+        "答案: 支路与支路相交通常采用无控制或优先控制；解析: 这体现道路等级匹配原则。"
+    )
+
+    assert answer == "支路与支路相交通常采用无控制或优先控制；"
+    assert explanation == "这体现道路等级匹配原则。"
+
+
 def test_normalize_html_to_text_preserves_angle_brackets_inside_mathjax() -> None:
     text = "答案: \\(a < b > c\\)<br>解析: 保留数学比较符。"
 

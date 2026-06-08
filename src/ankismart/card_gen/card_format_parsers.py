@@ -168,17 +168,6 @@ def parse_answer_block(raw: str) -> tuple[str, str]:
     if not lines:
         return "", ""
 
-    joined = "\n".join(lines)
-    labeled = re.match(
-        r"^(?:答案|正确答案|answer)\s*[:：]\s*(.+?)(?:\n(?:解析|explanation)\s*[:：]?\s*([\s\S]*))?$",
-        joined,
-        re.IGNORECASE,
-    )
-    if labeled:
-        answer = labeled.group(1).strip()
-        explanation = (labeled.group(2) or "").strip()
-        return answer, explanation
-
     first = lines[0]
     inline = re.match(
         r"^(?:答案|正确答案|answer)\s*[:：]?\s*(.+?)(?:\s*(?:解析|explanation)\s*[:：]\s*(.+))$",
@@ -195,6 +184,17 @@ def parse_answer_block(raw: str) -> tuple[str, str]:
         ).strip()
         explanation_parts = [split_inline[1].strip(), *lines[1:]]
         return answer, "\n".join(part for part in explanation_parts if part).strip()
+
+    joined = "\n".join(lines)
+    labeled = re.match(
+        r"^(?:答案|正确答案|answer)\s*[:：]\s*(.+?)(?:\n(?:解析|explanation)\s*[:：]?\s*([\s\S]*))?$",
+        joined,
+        re.IGNORECASE,
+    )
+    if labeled:
+        answer = labeled.group(1).strip()
+        explanation = (labeled.group(2) or "").strip()
+        return answer, explanation
 
     answer = re.sub(
         r"^(?:答案|正确答案|answer)\s*[:：]?\s*", "", first, flags=re.IGNORECASE
