@@ -414,6 +414,76 @@ def test_import_page_close_event_disposes_progress_infobar() -> None:
     assert page._progress_info_bar is None
 
 
+def test_import_page_progress_infobar_ignores_stale_deleted_infobar(monkeypatch) -> None:
+    page = make_page()
+    info_calls: list[dict] = []
+
+    class _DeletedInfoBar:
+        def close(self):
+            raise RuntimeError("wrapped C/C++ object of type InfoBar has been deleted")
+
+    page._progress_info_bar = _DeletedInfoBar()
+    monkeypatch.setattr(
+        "ankismart.ui.import_page.InfoBar.info",
+        lambda **kwargs: info_calls.append(kwargs) or object(),
+    )
+
+    ImportPage._show_progress_info_bar(page, "正在转换", "讲义.pdf")
+
+    assert len(info_calls) == 1
+    assert info_calls[0]["title"] == "正在转换"
+    assert info_calls[0]["content"] == "讲义.pdf"
+    assert page._progress_info_bar is not None
+
+
+def test_import_page_progress_infobar_reuses_existing_infobar(monkeypatch) -> None:
+    page = make_page()
+    info_calls: list[dict] = []
+
+    class _Label:
+        def __init__(self) -> None:
+            self.text = ""
+            self.visible = True
+
+        def setText(self, text: str) -> None:
+            self.text = text
+
+        def setVisible(self, visible: bool) -> None:
+            self.visible = visible
+
+    class _ProgressInfoBar:
+        def __init__(self, title: str, content: str, duration: int) -> None:
+            self.title = title
+            self.content = content
+            self.duration = duration
+            self.titleLabel = _Label()
+            self.contentLabel = _Label()
+            self.closed = False
+
+        def _adjustText(self) -> None:
+            self.titleLabel.setText(self.title)
+            self.contentLabel.setText(self.content)
+
+        def close(self) -> None:
+            self.closed = True
+
+    def _show_info_bar(**kwargs):
+        info_calls.append(kwargs)
+        return _ProgressInfoBar(kwargs["title"], kwargs["content"], kwargs["duration"])
+
+    monkeypatch.setattr("ankismart.ui.import_page.InfoBar.info", _show_info_bar)
+
+    ImportPage._show_progress_info_bar(page, "正在转换", "准备转换")
+    original = page._progress_info_bar
+    ImportPage._show_progress_info_bar(page, "正在转换", "讲义.pdf 3/12")
+
+    assert len(info_calls) == 1
+    assert page._progress_info_bar is original
+    assert original.closed is False
+    assert original.content == "讲义.pdf 3/12"
+    assert original.contentLabel.text == "讲义.pdf 3/12"
+
+
 def test_cloud_ocr_message_progress_updates_status_text():
     page = make_page()
     page._main.config.ocr_mode = "cloud"

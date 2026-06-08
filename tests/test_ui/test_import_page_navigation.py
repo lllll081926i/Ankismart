@@ -251,6 +251,17 @@ def test_import_page_uses_compact_heights_for_preset_combos() -> None:
     page.close()
 
 
+def test_generation_preset_is_above_import_drop_area() -> None:
+    page = ImportPage(DummyMain())
+    left_layout = page._left_panel.layout()
+
+    assert page._generation_preset_card.titleLabel.text() == "生成预设"
+    assert "题型配比" in page._generation_preset_card.contentLabel.text()
+    assert left_layout.indexOf(page._generation_preset_card) < left_layout.indexOf(page._drop_area)
+    assert page._total_count_input.toolTip() == ""
+    page.close()
+
+
 def test_import_page_does_not_render_apply_buttons_for_preset_combos() -> None:
     page = ImportPage(DummyMain())
 

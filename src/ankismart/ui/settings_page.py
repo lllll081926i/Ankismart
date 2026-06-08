@@ -42,16 +42,16 @@ from qfluentwidgets import (
     SwitchSettingCard,
     isDarkTheme,
 )
+from qfluentwidgets import (
+    MessageBox as FluentMessageBox,
+)
 
 from ankismart import __version__
 from ankismart.core.config import (
     CONFIG_BACKUP_DIR,
-    DEFAULT_GENERATION_PRESET,
-    GENERATION_PRESET_LIBRARY,
     LLMProviderConfig,
     create_config_backup,
     list_config_backups,
-    normalize_generation_preset,
     restore_config_from_backup,
     save_config,
 )
@@ -357,7 +357,6 @@ class SettingsPage(ScrollArea):
         self._concurrency_spin.valueChanged.connect(self._schedule_auto_save)
         self._adaptive_concurrency_switch.checkedChanged.connect(self._schedule_auto_save)
         self._concurrency_max_spin.valueChanged.connect(self._schedule_auto_save)
-        self._generation_preset_combo.currentIndexChanged.connect(self._schedule_auto_save)
 
         # Anki settings
         self._anki_url_edit.textChanged.connect(self._schedule_auto_save)
@@ -726,21 +725,6 @@ class SettingsPage(ScrollArea):
         self._concurrency_max_card.hBoxLayout.addWidget(self._concurrency_max_spin)
         self._concurrency_max_card.hBoxLayout.addSpacing(16)
         self._llm_group.addSettingCard(self._concurrency_max_card)
-
-        self._generation_preset_card = SettingCard(
-            FluentIcon.BOOK_SHELF,
-            "生成预设" if is_zh else "Generation Preset",
-            "按场景预填卡量与题型配比"
-            if is_zh
-            else "Pre-fill card count and strategy mix by use case",
-            self.scrollWidget,
-        )
-        self._generation_preset_combo = ComboBox(self._generation_preset_card)
-        self._generation_preset_combo.setMinimumWidth(220)
-        self._generation_preset_card.hBoxLayout.addWidget(self._generation_preset_combo)
-        self._generation_preset_card.hBoxLayout.addSpacing(16)
-        self._llm_group.addSettingCard(self._generation_preset_card)
-        self._refresh_generation_preset_combo()
 
         # ── Anki Configuration Group ──
         self._anki_group = SettingCardGroup("Anki 配置", self.scrollWidget)
@@ -1253,12 +1237,6 @@ class SettingsPage(ScrollArea):
         self._anki_key_edit.setText(config.anki_connect_key)
         self._default_deck_edit.setText(config.default_deck)
         self._default_tags_edit.setText(", ".join(config.default_tags))
-        self._set_combo_current_data(
-            self._generation_preset_combo,
-            normalize_generation_preset(
-                getattr(config, "generation_preset", DEFAULT_GENERATION_PRESET)
-            ),
-        )
 
         # Other settings
         theme_map = {"light": 0, "dark": 1, "auto": 2}
@@ -1481,26 +1459,6 @@ class SettingsPage(ScrollArea):
         if current is None:
             return fallback
         return str(current)
-
-    def _refresh_generation_preset_combo(self) -> None:
-        combo = getattr(self, "_generation_preset_combo", None)
-        if combo is None:
-            return
-
-        current = combo.currentData() if combo.count() > 0 else DEFAULT_GENERATION_PRESET
-        is_zh = self._main.config.language == "zh"
-        combo.blockSignals(True)
-        combo.clear()
-        for preset_id, meta in GENERATION_PRESET_LIBRARY.items():
-            combo.addItem(
-                str(meta["label_zh"] if is_zh else meta["label_en"]),
-                userData=preset_id,
-            )
-        self._set_combo_current_data(
-            combo,
-            normalize_generation_preset(str(current or DEFAULT_GENERATION_PRESET)),
-        )
-        combo.blockSignals(False)
 
     def _refresh_doc_convert_backend_copy(self) -> None:
         card = getattr(self, "_doc_convert_backend_card", None)
@@ -1794,14 +1752,19 @@ class SettingsPage(ScrollArea):
             )
             return
 
-        reply = QMessageBox.question(
-            self,
+        dialog = FluentMessageBox(
             self._provider_text("delete_title"),
             self._format_provider_text("delete_message", name=provider.name),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            self,
         )
+        if self._main.config.language == "zh":
+            dialog.yesButton.setText("是")
+            dialog.cancelButton.setText("否")
+        else:
+            dialog.yesButton.setText("Yes")
+            dialog.cancelButton.setText("No")
 
-        if reply == QMessageBox.StandardButton.Yes:
+        if dialog.exec():
             self._providers.remove(provider)
             if provider.id == self._active_provider_id and self._providers:
                 self._active_provider_id = self._providers[0].id
@@ -2001,14 +1964,18 @@ class SettingsPage(ScrollArea):
     def _clear_cache(self) -> None:
         """Clear all cache files."""
         from ankismart.converter.cache import clear_cache, get_cache_stats
+        from ankismart.core.logging import clear_log_files, get_log_stats
         from ankismart.ui.i18n import t
 
         stats = get_cache_stats()
         size_mb = stats["size_mb"]
         count = stats["count"]
+        log_stats = get_log_stats()
+        log_size_mb = float(log_stats["size_mb"])
+        log_count = int(log_stats["count"])
 
-        # Check if cache is empty
-        if count == 0:
+        # Check if cache and logs are empty
+        if count == 0 and log_count == 0:
             self._show_info_bar(
                 "info",
                 t("settings.cache_empty", self._main.config.language),
@@ -2018,7 +1985,12 @@ class SettingsPage(ScrollArea):
             return
 
         # Confirm deletion
-        message_text, informative_text = self._clear_cache_dialog_texts(count=count, size=size_mb)
+        message_text, informative_text = self._clear_cache_dialog_texts(
+            count=count,
+            size=size_mb,
+            log_count=log_count,
+            log_size=log_size_mb,
+        )
         dialog = self._build_clear_cache_message_box(
             t("settings.confirm_clear_cache", self._main.config.language),
             message_text,
@@ -2027,12 +1999,16 @@ class SettingsPage(ScrollArea):
         reply = self._exec_message_box(dialog)
 
         if reply == QMessageBox.StandardButton.Yes:
-            success = clear_cache()
+            success = clear_cache() and clear_log_files()
             if success:
                 self._show_info_bar(
                     "success",
                     t("settings.cache_cleared", self._main.config.language),
-                    t("settings.cache_cleared_msg", self._main.config.language, size=size_mb),
+                    t(
+                        "settings.cache_cleared_msg",
+                        self._main.config.language,
+                        size=size_mb + log_size_mb,
+                    ),
                     duration=3500,
                 )
                 # Refresh stats display
@@ -2045,12 +2021,31 @@ class SettingsPage(ScrollArea):
                     duration=5000,
                 )
 
-    def _clear_cache_dialog_texts(self, *, count: int, size: float) -> tuple[str, str]:
+    def _clear_cache_dialog_texts(
+        self,
+        *,
+        count: int,
+        size: float,
+        log_count: int = 0,
+        log_size: float = 0.0,
+    ) -> tuple[str, str]:
         is_zh = self._main.config.language == "zh"
         if is_zh:
+            if log_count:
+                return (
+                    "确认要清空缓存和日志文件吗？",
+                    f"这将删除 {count} 个缓存文件（{size:.2f} MB）和 "
+                    f"{log_count} 个日志文件（{log_size:.2f} MB），此操作不可撤销。",
+                )
             return (
                 "确认要清空所有缓存文件吗？",
                 f"这将删除 {count} 个文件（{size:.2f} MB），此操作不可撤销。",
+            )
+        if log_count:
+            return (
+                "Clear all cache and log files?",
+                f"This will delete {count} cache files ({size:.2f} MB) and "
+                f"{log_count} log files ({log_size:.2f} MB). This cannot be undone.",
             )
         return (
             "Clear all cache files?",
@@ -2430,12 +2425,6 @@ class SettingsPage(ScrollArea):
             update={
                 "llm_providers": self._providers,
                 "active_provider_id": self._active_provider_id,
-                "generation_preset": normalize_generation_preset(
-                    self._get_combo_current_data(
-                        self._generation_preset_combo,
-                        DEFAULT_GENERATION_PRESET,
-                    )
-                ),
                 "anki_connect_url": self._anki_url_edit.text() or "http://127.0.0.1:8765",
                 "anki_connect_key": self._anki_key_edit.text(),
                 "default_deck": self._default_deck_edit.text() or "Default",
@@ -2668,7 +2657,6 @@ class SettingsPage(ScrollArea):
         self._refresh_provider_card_chrome()
         self._replace_provider_list_card()
         self._update_provider_list()
-        self._refresh_generation_preset_combo()
         self._refresh_doc_convert_backend_copy()
 
     def update_theme(self):

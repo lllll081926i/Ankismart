@@ -98,7 +98,7 @@ def test_load_config_populates_doc_convert_backend(_qapp) -> None:
     assert page._doc_convert_backend_combo.currentData() == "markitdown"
 
 
-def test_load_config_populates_generation_preset(_qapp) -> None:
+def test_settings_page_does_not_render_generation_preset(_qapp) -> None:
     provider = LLMProviderConfig(
         id="p1",
         name="OpenAI",
@@ -114,7 +114,8 @@ def test_load_config_populates_generation_preset(_qapp) -> None:
     main, _ = make_main(cfg)
     page = SettingsPage(main)
 
-    assert page._generation_preset_combo.currentData() == "exam_dense"
+    assert not hasattr(page, "_generation_preset_combo")
+    assert not hasattr(page, "_generation_preset_card")
 
 
 def test_ocr_cloud_limit_card_visibility_follows_mode(_qapp) -> None:
@@ -393,6 +394,52 @@ def test_delete_provider_uses_infobar_when_last_provider(_qapp, monkeypatch) -> 
     assert calls[0][0][0] == "warning"
 
 
+def test_delete_provider_uses_fluent_confirmation_dialog(_qapp, monkeypatch) -> None:
+    provider_a = LLMProviderConfig(id="p1", name="OpenAI", model="gpt-4o")
+    provider_b = LLMProviderConfig(id="p2", name="DeepSeek", model="deepseek-chat")
+    cfg = AppConfig(llm_providers=[provider_a, provider_b], active_provider_id="p1")
+    main, _ = make_main(cfg)
+    page = SettingsPage(main)
+    dialogs: list[object] = []
+
+    class _Button:
+        def __init__(self) -> None:
+            self.text = ""
+
+        def setText(self, text: str) -> None:
+            self.text = text
+
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("native dialog used")),
+    )
+    monkeypatch.setattr(page, "_save_config_silent", lambda **kwargs: None)
+
+    class _FluentDialog:
+        def __init__(self, title: str, content: str, parent=None) -> None:
+            self.title = title
+            self.content = content
+            self.parent = parent
+            self.yesButton = _Button()
+            self.cancelButton = _Button()
+            dialogs.append(self)
+
+        def exec(self) -> bool:
+            return True
+
+    monkeypatch.setattr("ankismart.ui.settings_page.FluentMessageBox", _FluentDialog)
+
+    page._delete_provider(page._providers[1])
+
+    assert len(dialogs) == 1
+    assert dialogs[0].title == "确认删除"
+    assert "DeepSeek" in dialogs[0].content
+    assert dialogs[0].yesButton.text == "是"
+    assert dialogs[0].cancelButton.text == "否"
+    assert [provider.id for provider in page._providers] == ["p1"]
+
+
 def test_save_config_failure_uses_error_infobar(_qapp, monkeypatch) -> None:
     main, _ = make_main()
     page = SettingsPage(main)
@@ -446,8 +493,9 @@ def test_save_config_persists_adaptive_concurrency_and_update_flags(_qapp, monke
     assert captured["cfg"].auto_check_updates is False
 
 
-def test_save_config_persists_generation_preset(_qapp, monkeypatch) -> None:
-    main, _ = make_main()
+def test_save_config_preserves_generation_preset_from_import_page(_qapp, monkeypatch) -> None:
+    cfg = AppConfig(generation_preset="language_vocab")
+    main, _ = make_main(cfg)
     page = SettingsPage(main)
 
     captured: dict[str, AppConfig] = {}
@@ -461,11 +509,6 @@ def test_save_config_persists_generation_preset(_qapp, monkeypatch) -> None:
     monkeypatch.setattr(
         QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
     )
-
-    for index in range(page._generation_preset_combo.count()):
-        if page._generation_preset_combo.itemData(index) == "language_vocab":
-            page._generation_preset_combo.setCurrentIndex(index)
-            break
 
     page._save_config()
 
@@ -512,6 +555,10 @@ def test_clear_cache_confirmation_dialog_uses_custom_clean_styles(_qapp, monkeyp
         "ankismart.converter.cache.get_cache_stats",
         lambda: {"size_mb": 1.29, "count": 988},
     )
+    monkeypatch.setattr(
+        "ankismart.core.logging.get_log_stats",
+        lambda: {"size_mb": 0.0, "count": 0, "size_gb": 0.0},
+    )
 
     shown_dialog: dict[str, QMessageBox] = {}
 
@@ -547,3 +594,41 @@ def test_clear_cache_confirmation_dialog_uses_custom_clean_styles(_qapp, monkeyp
     assert yes_button.objectName() == "clearCacheConfirmButton"
     assert no_button.text() == "取消"
     assert no_button.objectName() == "clearCacheCancelButton"
+
+
+def test_clear_cache_also_clears_log_files(_qapp, monkeypatch) -> None:
+    main, _ = make_main()
+    page = SettingsPage(main)
+    actions: list[str] = []
+    calls: list[tuple[tuple, dict]] = []
+
+    monkeypatch.setattr(
+        "ankismart.converter.cache.get_cache_stats",
+        lambda: {"size_mb": 1.0, "count": 2, "size_gb": 0.0},
+    )
+    monkeypatch.setattr(
+        "ankismart.core.logging.get_log_stats",
+        lambda: {"size_mb": 0.5, "count": 3, "size_gb": 0.0},
+    )
+    monkeypatch.setattr(
+        "ankismart.converter.cache.clear_cache",
+        lambda: actions.append("cache") or True,
+    )
+    monkeypatch.setattr(
+        "ankismart.core.logging.clear_log_files",
+        lambda: actions.append("logs") or True,
+    )
+    monkeypatch.setattr(
+        "ankismart.ui.settings_page.SettingsPage._exec_message_box",
+        lambda self, dialog: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        page, "_show_info_bar", lambda *args, **kwargs: calls.append((args, kwargs))
+    )
+    monkeypatch.setattr(page, "_refresh_cache_stats", lambda: None)
+
+    page._clear_cache()
+
+    assert actions == ["cache", "logs"]
+    assert len(calls) == 1
+    assert calls[0][0][0] == "success"

@@ -4,6 +4,7 @@ import re
 import time
 from pathlib import Path
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QDragEnterEvent, QDropEvent
 from PyQt6.QtWidgets import (
@@ -509,10 +510,13 @@ class ImportPage(ProgressMixin, QWidget):
     def _create_left_panel(self) -> QWidget:
         """Create left panel with file selection and list."""
         panel = QWidget()
+        self._left_panel = panel
         panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(SPACING_SMALL)
+
+        layout.addWidget(self._create_generation_preset_card(panel))
 
         # Drag and drop area - fills entire left panel
         self._drop_area = DropAreaWidget()
@@ -589,6 +593,32 @@ class ImportPage(ProgressMixin, QWidget):
         layout.addWidget(self._drop_area, 1)
 
         return panel
+
+    def _create_generation_preset_card(self, parent: QWidget) -> SettingCard:
+        is_zh = self._main.config.language == "zh"
+        card = SettingCard(
+            FluentIcon.BOOK_SHELF,
+            "生成预设" if is_zh else "Generation Preset",
+            "按场景预填卡量与题型配比"
+            if is_zh
+            else "Pre-fill card count and strategy mix by use case",
+            parent,
+        )
+        card.setObjectName("generationPresetCard")
+        self._generation_preset_card = card
+        self._generation_preset_combo = ComboBox(card)
+        apply_compact_combo_metrics(
+            self._generation_preset_combo,
+            control_height=22,
+            popup_item_height=24,
+        )
+        self._enforce_compact_combo_height(self._generation_preset_combo, 22)
+        self._populate_generation_preset_combo()
+        card.hBoxLayout.addWidget(self._generation_preset_combo)
+        card.hBoxLayout.addSpacing(16)
+        card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        card.setMaximumHeight(_RIGHT_OPTION_CARD_MAX_HEIGHT)
+        return card
 
     def _create_right_panel(self) -> QWidget:
         """Create right panel with configuration options."""
@@ -740,29 +770,6 @@ class ImportPage(ProgressMixin, QWidget):
         group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         group.setMaximumHeight(_RIGHT_CONFIG_GROUP_MAX_HEIGHT)
 
-        self._generation_preset_card = SettingCard(
-            FluentIcon.BOOK_SHELF,
-            "使用场景" if is_zh else "Usage Preset",
-            "一键套用常见制卡场景配置" if is_zh else "Apply common generation presets in one click",
-            group,
-        )
-        self._generation_preset_combo = ComboBox(self._generation_preset_card)
-        apply_compact_combo_metrics(
-            self._generation_preset_combo,
-            control_height=22,
-            popup_item_height=24,
-        )
-        self._enforce_compact_combo_height(self._generation_preset_combo, 22)
-        self._populate_generation_preset_combo()
-        self._generation_preset_card.hBoxLayout.addWidget(self._generation_preset_combo)
-        self._generation_preset_card.hBoxLayout.addSpacing(16)
-        self._generation_preset_card.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Maximum,
-        )
-        self._generation_preset_card.setMaximumHeight(_RIGHT_OPTION_CARD_MAX_HEIGHT)
-        group_layout.addWidget(self._generation_preset_card)
-
         # Target count card
         self._count_card = SettingCard(
             FluentIcon.LABEL,
@@ -775,9 +782,6 @@ class ImportPage(ProgressMixin, QWidget):
         self._total_count_input.setMinimumWidth(100)
         self._total_count_input.setPlaceholderText(
             get_text("import.card_count_placeholder", self._main.config.language)
-        )
-        self._total_count_input.setToolTip(
-            get_text("import.card_count_tooltip", self._main.config.language)
         )
         self._auto_target_count_switch = SwitchButton(self._count_card)
         self._auto_target_count_switch.setChecked(True)
@@ -1417,8 +1421,14 @@ class ImportPage(ProgressMixin, QWidget):
     def _dispose_progress_info_bar(self) -> None:
         info_bar = self.__dict__.get("_progress_info_bar")
         self.__dict__["_progress_info_bar"] = None
-        if info_bar is not None and hasattr(info_bar, "close"):
-            info_bar.close()
+        if info_bar is None:
+            return
+        try:
+            close = getattr(info_bar, "close", None)
+            if callable(close):
+                close()
+        except RuntimeError:
+            logger.debug("progress infobar was already deleted", exc_info=True)
 
     def _select_files(self):
         """Open file dialog to select files."""
@@ -2009,6 +2019,10 @@ class ImportPage(ProgressMixin, QWidget):
         )
 
     def _show_progress_info_bar(self, title: str, content: str, *, duration: int = 1800) -> None:
+        current = self.__dict__.get("_progress_info_bar")
+        if self._update_progress_info_bar(current, title, content, duration):
+            return
+
         self._dispose_progress_info_bar()
         self.__dict__["_progress_info_bar"] = InfoBar.info(
             title=title,
@@ -2019,6 +2033,40 @@ class ImportPage(ProgressMixin, QWidget):
             duration=duration,
             parent=self,
         )
+
+    def _update_progress_info_bar(self, current, title: str, content: str, duration: int) -> bool:
+        if current is None:
+            return False
+
+        try:
+            if sip.isdeleted(current):
+                return False
+        except TypeError:
+            pass
+
+        try:
+            title_label = getattr(current, "titleLabel", None)
+            content_label = getattr(current, "contentLabel", None)
+            if title_label is None or content_label is None:
+                return False
+
+            current.title = title
+            current.content = content
+            current.duration = duration
+            title_label.setVisible(bool(title))
+            content_label.setVisible(bool(content))
+
+            adjust_text = getattr(current, "_adjustText", None)
+            if callable(adjust_text):
+                adjust_text()
+            else:
+                title_label.setText(title)
+                content_label.setText(content)
+
+            return True
+        except RuntimeError:
+            logger.debug("progress infobar was already deleted", exc_info=True)
+            return False
 
     def _on_file_progress(self, filename: str, current: int, total: int):
         """Handle file conversion progress."""
