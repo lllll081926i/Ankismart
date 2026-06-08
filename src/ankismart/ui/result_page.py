@@ -337,7 +337,7 @@ class ResultPage(QWidget):
         self._update_combo.addItem(t("result.update_only"), userData="update_only")
         self._update_combo.addItem(t("result.create_or_update"), userData="create_or_update")
         self._update_combo.setMinimumWidth(170)
-        self._update_combo.setFixedHeight(20)
+        self._update_combo.setFixedHeight(34)
         apply_compact_combo_metrics(self._update_combo)
 
         default_mode = getattr(self._main.config, "last_update_mode", None) or "create_or_update"
@@ -360,7 +360,7 @@ class ResultPage(QWidget):
             t("result.duplicate_scope_collection"), userData="collection"
         )
         self._duplicate_scope_combo.setMinimumWidth(170)
-        self._duplicate_scope_combo.setFixedHeight(20)
+        self._duplicate_scope_combo.setFixedHeight(34)
         apply_compact_combo_metrics(self._duplicate_scope_combo)
         duplicate_scope = getattr(self._main.config, "duplicate_scope", "deck")
         self._duplicate_scope_combo.setCurrentIndex(0 if duplicate_scope == "deck" else 1)

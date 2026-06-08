@@ -100,7 +100,7 @@ def test_refresh_theme_accent_cache_reloads_system_color(monkeypatch):
     assert get_theme_accent_hex() == "#445566"
 
 
-def test_apply_combo_metrics_uses_20px_default_heights(monkeypatch):
+def test_apply_combo_metrics_matches_result_action_button_height(monkeypatch):
     monkeypatch.setattr(styles, "get_display_scale", lambda: 1.0)
 
     class _Menu:
@@ -149,9 +149,9 @@ def test_apply_combo_metrics_uses_20px_default_heights(monkeypatch):
     apply_compact_combo_metrics(combo)
     menu = combo._createComboMenu()
 
-    assert combo.fixed_height == 20
-    assert combo.minimum_height == 20
-    assert combo.maximum_height == 20
+    assert combo.fixed_height == 34
+    assert combo.minimum_height == 34
+    assert combo.maximum_height == 34
     assert combo.max_visible_items == 8
-    assert menu.item_height == 20
+    assert menu.item_height == 34
     assert menu.max_visible_items == 8

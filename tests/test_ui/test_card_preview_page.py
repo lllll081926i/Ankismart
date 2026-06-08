@@ -102,6 +102,24 @@ def test_card_preview_hides_bulk_regenerate_buttons_and_keeps_actions_right_alig
     assert page._bottom_bar_layout.itemAt(2).widget() is page._btn_prev
 
 
+def test_card_preview_filter_only_lists_current_generation_types() -> None:
+    page = CardPreviewPage(_make_main_window())
+
+    filter_keys = [
+        page._note_type_combo.itemData(index) for index in range(page._note_type_combo.count())
+    ]
+
+    assert filter_keys == [
+        "all",
+        "basic",
+        "cloze",
+        "concept",
+        "key_terms",
+        "single_choice",
+        "multiple_choice",
+    ]
+
+
 def test_regenerate_current_card_reuses_source_document(monkeypatch) -> None:
     page = CardPreviewPage(_make_main_window())
     page.load_cards(

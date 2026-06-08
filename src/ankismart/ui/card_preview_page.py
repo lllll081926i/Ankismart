@@ -66,14 +66,11 @@ class CardPreviewPage(QWidget):
     _NOTE_TYPE_FILTERS: tuple[tuple[str, str, str], ...] = (
         ("all", "全部类型", "All Types"),
         ("basic", "基础问答", "Basic Q&A"),
-        ("basic_reversed", "双向卡片", "Reversed"),
         ("cloze", "填空题", "Cloze"),
         ("concept", "概念解释", "Concept"),
         ("key_terms", "关键术语", "Key Terms"),
         ("single_choice", "单选题", "Single Choice"),
         ("multiple_choice", "多选题", "Multiple Choice"),
-        ("image_qa", "图片问答", "Image Q&A"),
-        ("generic", "其他", "Other"),
     )
 
     def __init__(self, main_window: MainWindow):
