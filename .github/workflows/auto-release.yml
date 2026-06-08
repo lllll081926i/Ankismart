@@ -64,12 +64,19 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
 
-  create-release:
+  build-and-upload:
     needs: check-version
     if: needs.check-version.outputs.should_release == 'true'
+    uses: ./.github/workflows/build-packages.yml
+    with:
+      version: ${{ needs.check-version.outputs.version }}
+      upload_to_release: false
+    secrets: inherit
+
+  create-release:
+    needs: [check-version, build-and-upload]
+    if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
 
     steps:
       - name: Checkout
@@ -99,13 +106,23 @@ jobs:
           echo "$NOTES" > release_notes.txt
           echo "notes_file=release_notes.txt" >> $GITHUB_OUTPUT
 
+      - name: Download Windows Packages
+        uses: actions/download-artifact@v5
+        with:
+          name: ankismart-windows-packages-${{ needs.check-version.outputs.version }}
+          path: release-assets
+
       - name: Create Git Tag
         run: |
           VERSION="${{ needs.check-version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v$VERSION" -m "Release v$VERSION"
-          git push origin "v$VERSION"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION already exists"
+          else
+            git tag -a "v$VERSION" -m "Release v$VERSION"
+            git push origin "v$VERSION"
+          fi
 
       - name: Create GitHub Release
         id: create_release
@@ -116,11 +133,8 @@ jobs:
           body_path: release_notes.txt
           draft: false
           prerelease: ${{ needs.check-version.outputs.is_prerelease == 'true' }}
-
-  build-and-upload:
-    needs: [check-version, create-release]
-    uses: ./.github/workflows/build-packages.yml
-    with:
-      version: ${{ needs.check-version.outputs.version }}
-      upload_to_release: true
-    secrets: inherit
+          files: |
+            release-assets/**/*.zip
+            release-assets/**/*.exe
+          fail_on_unmatched_files: true
+          overwrite_files: true

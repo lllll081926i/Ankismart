@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 def _load_build_module():
@@ -201,3 +202,55 @@ def test_dev_demo_script_builds_demo_payload_without_entering_release_bundle() -
     assert payload.push_result.total == len(payload.cards)
     assert payload.push_result.succeeded > 0
     assert "scripts/dev_demo.py" not in spec_content
+
+
+def test_auto_release_builds_packages_before_creating_release() -> None:
+    workflow_path = (
+        Path(__file__).resolve().parents[1] / ".github" / "workflows" / "auto-release.yml"
+    )
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+
+    assert jobs["build-and-upload"]["needs"] == "check-version"
+    assert "build-and-upload" in jobs["create-release"]["needs"]
+
+    download_steps = [
+        step
+        for step in jobs["create-release"]["steps"]
+        if step.get("uses") == "actions/download-artifact@v5"
+    ]
+    assert download_steps
+    assert (
+        download_steps[0]["with"]["name"]
+        == "ankismart-windows-packages-${{ needs.check-version.outputs.version }}"
+    )
+
+    release_step = next(
+        step
+        for step in jobs["create-release"]["steps"]
+        if step.get("uses") == "softprops/action-gh-release@v2"
+    )
+    assert "release-assets/**/*.zip" in release_step["with"]["files"]
+    assert "release-assets/**/*.exe" in release_step["with"]["files"]
+
+
+def test_auto_release_tag_step_is_idempotent_for_existing_tags() -> None:
+    workflow_path = (
+        Path(__file__).resolve().parents[1] / ".github" / "workflows" / "auto-release.yml"
+    )
+    content = workflow_path.read_text(encoding="utf-8")
+
+    assert 'git rev-parse "v$VERSION"' in content
+    assert "Tag v$VERSION already exists" in content
+
+
+def test_build_packages_runs_on_master_pushes() -> None:
+    workflow_path = (
+        Path(__file__).resolve().parents[1] / ".github" / "workflows" / "build-packages.yml"
+    )
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+
+    branches = workflow[True]["push"]["branches"]
+
+    assert "main" in branches
+    assert "master" in branches
