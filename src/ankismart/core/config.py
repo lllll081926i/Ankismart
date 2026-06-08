@@ -74,12 +74,12 @@ def _resolve_app_dir() -> Path:
 
 
 CONFIG_DIR: Path = _resolve_app_dir()
-CONFIG_PATH: Path = Path(
-    os.getenv("ANKISMART_CONFIG_PATH", str(CONFIG_DIR / "config.yaml"))
-).expanduser().resolve()
-TASKS_PATH: Path = Path(
-    os.getenv("ANKISMART_TASKS_PATH", str(CONFIG_DIR / "tasks.json"))
-).expanduser().resolve()
+CONFIG_PATH: Path = (
+    Path(os.getenv("ANKISMART_CONFIG_PATH", str(CONFIG_DIR / "config.yaml"))).expanduser().resolve()
+)
+TASKS_PATH: Path = (
+    Path(os.getenv("ANKISMART_TASKS_PATH", str(CONFIG_DIR / "tasks.json"))).expanduser().resolve()
+)
 CONFIG_BACKUP_DIR: Path = CONFIG_DIR / "backups"
 
 _ENCRYPTED_FIELDS: set[str] = {"anki_connect_key", "ocr_cloud_api_key"}
@@ -102,42 +102,15 @@ KNOWN_PROVIDERS: dict[str, str] = {
     "Ollama (本地)": "http://localhost:11434/v1",
 }
 
-DEFAULT_GENERATION_PRESET = "balanced"
-
-# 卡片数量等级定义
-CARD_COUNT_LEVELS = {
-    "minimal": {
-        "label_zh": "精简",
-        "label_en": "Minimal",
-        "multiplier": 0.5,
-        "description_zh": "只提取最核心的知识点",
-        "description_en": "Extract only the most essential points",
-    },
-    "balanced": {
-        "label_zh": "适中（推荐）",
-        "label_en": "Balanced (Recommended)",
-        "multiplier": 1.0,
-        "description_zh": "平衡覆盖率与数量",
-        "description_en": "Balance coverage and quantity",
-    },
-    "comprehensive": {
-        "label_zh": "全面",
-        "label_en": "Comprehensive",
-        "multiplier": 1.5,
-        "description_zh": "详尽覆盖所有重要知识点",
-        "description_en": "Thorough coverage of all important points",
-    },
-    "exhaustive": {
-        "label_zh": "详尽",
-        "label_en": "Exhaustive",
-        "multiplier": 2.0,
-        "description_zh": "最大化卡片数量，不遗漏任何细节",
-        "description_en": "Maximize card count, ensure no detail is missed",
-    },
+DEFAULT_GENERATION_PRESET = "reading_general"
+GENERATION_PRESET_ALIASES = {
+    "balanced": "reading_general",
+    "exam_prep": "exam_dense",
+    "vocabulary": "language_vocab",
 }
 
 GENERATION_PRESET_LIBRARY: dict[str, dict[str, object]] = {
-    "balanced": {
+    "reading_general": {
         "label_zh": "平衡学习",
         "label_en": "Balanced Learning",
         "description_zh": "适合日常阅读和学习，问答与填空结合",
@@ -146,13 +119,13 @@ GENERATION_PRESET_LIBRARY: dict[str, dict[str, object]] = {
         "auto_target_count": True,
         "strategy_mix": {"basic": 60, "cloze": 40},
     },
-    "exam_prep": {
+    "exam_dense": {
         "label_zh": "考试备考",
         "label_en": "Exam Preparation",
         "description_zh": "针对考试，以选择题为主，含多选和填空",
         "description_en": "Exam-focused, primarily multiple choice with cloze",
-        "target_total": 30,
-        "auto_target_count": True,
+        "target_total": 24,
+        "auto_target_count": False,
         "strategy_mix": {
             "single_choice": 40,
             "multiple_choice": 30,
@@ -169,7 +142,7 @@ GENERATION_PRESET_LIBRARY: dict[str, dict[str, object]] = {
         "auto_target_count": True,
         "strategy_mix": {"concept": 60, "basic": 40},
     },
-    "vocabulary": {
+    "language_vocab": {
         "label_zh": "词汇积累",
         "label_en": "Vocabulary Building",
         "description_zh": "专注术语和关键词，适合语言学习",
@@ -207,6 +180,7 @@ GENERATION_PRESET_LIBRARY: dict[str, dict[str, object]] = {
 
 def normalize_generation_preset(preset_id: str) -> str:
     normalized = str(preset_id or "").strip()
+    normalized = GENERATION_PRESET_ALIASES.get(normalized, normalized)
     if normalized in GENERATION_PRESET_LIBRARY:
         return normalized
     return DEFAULT_GENERATION_PRESET
@@ -261,8 +235,8 @@ class AppConfig(BaseModel):
     last_update_check_at: str = ""
     last_update_version_seen: str = ""
 
-    # Experimental features
-    enable_auto_split: bool = False  # Experimental: Auto-split long documents
+    # Document processing
+    enable_auto_split: bool = True  # Auto-split long documents
     split_threshold: int = 70000  # Character count threshold for splitting
 
     # Performance statistics
@@ -318,8 +292,11 @@ def _migrate_legacy(data: dict) -> dict:
 
     # Detect legacy format by presence of old fields
     old_keys = {
-        "openai_api_key", "deepseek_api_key",
-        "llm_provider", "openai_model", "deepseek_model",
+        "openai_api_key",
+        "deepseek_api_key",
+        "llm_provider",
+        "openai_model",
+        "deepseek_model",
     }
     if not old_keys & data.keys():
         return data
@@ -333,14 +310,16 @@ def _migrate_legacy(data: dict) -> dict:
     openai_model = data.pop("openai_model", "gpt-4o")
     if openai_key or active_provider == "openai":
         oid = uuid.uuid4().hex[:12]
-        providers.append({
-            "id": oid,
-            "name": "OpenAI",
-            "api_key": openai_key,
-            "base_url": KNOWN_PROVIDERS["OpenAI"],
-            "model": openai_model,
-            "rpm_limit": 0,
-        })
+        providers.append(
+            {
+                "id": oid,
+                "name": "OpenAI",
+                "api_key": openai_key,
+                "base_url": KNOWN_PROVIDERS["OpenAI"],
+                "model": openai_model,
+                "rpm_limit": 0,
+            }
+        )
         if active_provider == "openai":
             active_id = oid
 
@@ -348,14 +327,16 @@ def _migrate_legacy(data: dict) -> dict:
     ds_model = data.pop("deepseek_model", "deepseek-chat")
     if ds_key or active_provider == "deepseek":
         did = uuid.uuid4().hex[:12]
-        providers.append({
-            "id": did,
-            "name": "DeepSeek",
-            "api_key": ds_key,
-            "base_url": KNOWN_PROVIDERS["DeepSeek"],
-            "model": ds_model,
-            "rpm_limit": 0,
-        })
+        providers.append(
+            {
+                "id": did,
+                "name": "DeepSeek",
+                "api_key": ds_key,
+                "base_url": KNOWN_PROVIDERS["DeepSeek"],
+                "model": ds_model,
+                "rpm_limit": 0,
+            }
+        )
         if active_provider == "deepseek":
             active_id = did
 
@@ -367,7 +348,7 @@ def _migrate_legacy(data: dict) -> dict:
 
 def _decrypt_field(value: str, field_name: str) -> str:
     if isinstance(value, str) and value.startswith(_ENCRYPTED_PREFIX):
-        ciphertext = value[len(_ENCRYPTED_PREFIX):]
+        ciphertext = value[len(_ENCRYPTED_PREFIX) :]
         try:
             decrypt, _ = _get_crypto_functions()
             return decrypt(ciphertext)

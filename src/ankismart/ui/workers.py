@@ -90,7 +90,7 @@ def _calculate_retry_delay(attempt: int, base_delay: float = 1.0, max_delay: flo
     """Calculate exponential backoff delay for retry."""
     import random
 
-    delay = min(base_delay * (2 ** attempt), max_delay)
+    delay = min(base_delay * (2**attempt), max_delay)
     jitter = random.uniform(0, delay * 0.1)
     return delay + jitter
 
@@ -365,6 +365,7 @@ class PushWorker(QThread):
 
     def _do_push(self) -> Any:
         """Execute push with progress callback."""
+
         def on_progress(current: int, total: int, _status: Any) -> None:
             if self._cancelled:
                 raise _WorkerCancelledError()
@@ -404,9 +405,7 @@ class PushWorker(QThread):
                     self.progress.emit(f"正在推送 {len(self._cards)} 张卡片到 Anki")
                 else:
                     delay = _calculate_retry_delay(attempt - 1)
-                    self.progress.emit(
-                        f"推送失败，{delay:.1f}秒后进行第{attempt + 1}次重试..."
-                    )
+                    self.progress.emit(f"推送失败，{delay:.1f}秒后进行第{attempt + 1}次重试...")
                     time.sleep(delay)
                     if self._cancelled:
                         self.cancelled.emit()
@@ -917,9 +916,9 @@ class BatchConvertWorker(QThread):
             proxy_url = ""
 
         return converter_class(
-            doc_convert_backend=str(
-                getattr(self._config, "doc_convert_backend", "native")
-            ).strip().lower(),
+            doc_convert_backend=str(getattr(self._config, "doc_convert_backend", "native"))
+            .strip()
+            .lower(),
             ocr_correction_fn=self._resolve_ocr_correction_fn(),
             ocr_mode=ocr_mode,
             ocr_cloud_provider=ocr_cloud_provider,
@@ -1130,7 +1129,7 @@ class BatchGenerateWorker(QThread):
         llm_client: "LLMClient",
         deck_name: str,
         tags: list[str],
-        enable_auto_split: bool = False,
+        enable_auto_split: bool = True,
         split_threshold: int = 70000,
         config: Any = None,
     ) -> None:
@@ -1177,7 +1176,7 @@ class BatchGenerateWorker(QThread):
             self._start_time = time.time()
 
             # Extract configuration
-            target_total = self._generation_config.get("target_total", 20)
+            raw_target_total = self._generation_config.get("target_total", 20)
             auto_target_count = bool(self._generation_config.get("auto_target_count", False))
             strategy_mix = self._generation_config.get("strategy_mix", [])
             configured_workers = getattr(self._config, "llm_concurrency", 2) if self._config else 2
@@ -1186,14 +1185,19 @@ class BatchGenerateWorker(QThread):
             except (TypeError, ValueError):
                 configured_workers = 2
 
-            if auto_target_count and int(target_total or 0) <= 0:
-                target_total = self._estimate_auto_target_total()
+            try:
+                target_total = int(raw_target_total or 0)
+            except (TypeError, ValueError):
+                target_total = 20
 
-            # 0 means auto-size by document count, avoiding ThreadPoolExecutor default cap.
-            if configured_workers <= 0:
-                max_workers = max(1, len(self._documents))
-            else:
-                max_workers = configured_workers
+            if auto_target_count:
+                target_total = 0
+
+            max_workers = self._resolve_max_workers(
+                configured_workers=configured_workers,
+                document_count=len(self._documents),
+                concurrency_cap=self._concurrency_cap,
+            )
 
             logger.info(
                 "batch generation started",
@@ -1222,8 +1226,12 @@ class BatchGenerateWorker(QThread):
                 self.error.emit("No documents to generate cards from")
                 return
 
-            # Step 1: Allocate card counts per strategy
-            strategy_counts = self._allocate_mix_counts(target_total, strategy_mix)
+            # Step 1: Allocate strategy work. Auto mode uses enabled strategies only and
+            # lets the generator decide card counts from content density.
+            if auto_target_count:
+                strategy_counts = self._allocate_auto_strategy_counts(strategy_mix)
+            else:
+                strategy_counts = self._allocate_mix_counts(target_total, strategy_mix)
             if not strategy_counts:
                 logger.warning(
                     "batch generation aborted: allocation failed",
@@ -1232,14 +1240,17 @@ class BatchGenerateWorker(QThread):
                 self.error.emit("Failed to allocate strategy counts")
                 return
 
-            # Step 2: Distribute counts across documents
-            per_doc_allocations = self._distribute_counts_per_document(
-                len(self._documents), strategy_counts
-            )
+            # Step 2: Distribute work across documents
+            if auto_target_count:
+                per_doc_allocations = [dict(strategy_counts) for _ in self._documents]
+            else:
+                per_doc_allocations = self._distribute_counts_per_document(
+                    len(self._documents), strategy_counts
+                )
 
             # Step 3: Generate cards concurrently for each document
             all_cards: list[CardDraft] = []
-            total_cards_to_generate = sum(strategy_counts.values())
+            total_cards_to_generate = 0 if auto_target_count else sum(strategy_counts.values())
             cards_generated = 0
             cards_lock = threading.Lock()
             first_error_message = [None]
@@ -1270,22 +1281,29 @@ class BatchGenerateWorker(QThread):
                     if self._is_cancelled():
                         return doc_cards
 
-                    if count <= 0:
+                    if count <= 0 and not auto_target_count:
                         continue
 
-                    self.progress.emit(
-                        f"正在从 {document.file_name} 生成 {count} 张 {strategy} 卡片"
-                    )
+                    if auto_target_count:
+                        self.progress.emit(f"正在从 {document.file_name} 生成 {strategy} 卡片")
+                    else:
+                        self.progress.emit(
+                            f"正在从 {document.file_name} 生成 {count} 张 {strategy} 卡片"
+                        )
 
                     accepted_for_strategy: list[CardDraft] = []
                     rejected_quality = 0
                     rejected_duplicate = 0
-                    max_rounds = max(1, self._card_quality_retry_rounds + 1)
+                    max_rounds = (
+                        1 if auto_target_count else max(1, self._card_quality_retry_rounds + 1)
+                    )
                     rounds_used = 0
 
-                    while len(accepted_for_strategy) < count and rounds_used < max_rounds:
+                    while rounds_used < max_rounds and (
+                        auto_target_count or len(accepted_for_strategy) < count
+                    ):
                         rounds_used += 1
-                        remaining = count - len(accepted_for_strategy)
+                        remaining = 0 if auto_target_count else count - len(accepted_for_strategy)
                         try:
                             request = GenerateRequest(
                                 markdown=document.result.content,
@@ -1344,7 +1362,7 @@ class BatchGenerateWorker(QThread):
 
                             accepted_for_strategy.append(card)
                             accepted_questions.append(question)
-                            if len(accepted_for_strategy) >= count:
+                            if not auto_target_count and len(accepted_for_strategy) >= count:
                                 break
 
                     if rejected_quality or rejected_duplicate:
@@ -1352,7 +1370,7 @@ class BatchGenerateWorker(QThread):
                             f"{document.file_name}/{strategy}: "
                             f"质量过滤 {rejected_quality} 张，近重复过滤 {rejected_duplicate} 张"
                         )
-                    if len(accepted_for_strategy) < count:
+                    if not auto_target_count and len(accepted_for_strategy) < count:
                         self.progress.emit(
                             f"{document.file_name}/{strategy}: "
                             f"目标 {count} 张，实际 {len(accepted_for_strategy)} 张"
@@ -1479,33 +1497,6 @@ class BatchGenerateWorker(QThread):
         self.__dict__["_llm_client"] = None
         _close_client_safely(client, context="batch generation cleanup")
 
-    def _estimate_auto_target_total(self) -> int:
-        valid_strategies = [
-            item
-            for item in self._generation_config.get("strategy_mix", [])
-            if isinstance(item, dict) and str(item.get("strategy", "")).strip()
-        ]
-        strategy_count = max(1, len(valid_strategies))
-        total_chars = sum(len(doc.result.content or "") for doc in self._documents)
-
-        chunk_count = 0
-        for document in self._documents:
-            content_length = len(document.result.content or "")
-            if self._enable_auto_split and self._split_threshold > 0:
-                chunk_count += max(
-                    1,
-                    (content_length + self._split_threshold - 1) // self._split_threshold,
-                )
-            else:
-                chunk_count += 1
-
-        length_estimate = max(1, round(total_chars / 2800))
-        chunk_bonus = max(0, chunk_count - len(self._documents)) * 2
-        strategy_bonus = max(0, strategy_count - 1) * 2
-        minimum_cards = max(len(self._documents) * 4, strategy_count * 2)
-        estimated = minimum_cards + length_estimate + chunk_bonus + strategy_bonus
-        return min(240, max(6, estimated))
-
     def _emit_non_blocking_warning_if_needed(self, *, force_generic: bool = False) -> None:
         if self._warning_emitted:
             return
@@ -1600,13 +1591,39 @@ class BatchGenerateWorker(QThread):
 
         self._config.llm_concurrency = next_value
         if next_value < current:
-            self.progress.emit(
-                f"检测到限流/超时，已自动将并发从 {current} 调整为 {next_value}"
-            )
+            self.progress.emit(f"检测到限流/超时，已自动将并发从 {current} 调整为 {next_value}")
         else:
-            self.progress.emit(
-                f"运行稳定，已自动将并发从 {current} 调整为 {next_value}"
-            )
+            self.progress.emit(f"运行稳定，已自动将并发从 {current} 调整为 {next_value}")
+
+    @staticmethod
+    def _resolve_max_workers(
+        *,
+        configured_workers: int,
+        document_count: int,
+        concurrency_cap: int,
+    ) -> int:
+        cap = max(1, int(concurrency_cap or 1))
+        docs = max(1, int(document_count or 0))
+        if configured_workers <= 0:
+            return min(docs, cap)
+        return max(1, min(int(configured_workers), cap))
+
+    @staticmethod
+    def _allocate_auto_strategy_counts(ratio_items: list[dict[str, Any]]) -> dict[str, int]:
+        """Return enabled strategies for auto-count mode without fixed card counts."""
+        counts: dict[str, int] = {}
+        for item in ratio_items:
+            if not isinstance(item, dict):
+                continue
+
+            strategy = str(item.get("strategy", "")).strip()
+            ratio = item.get("ratio")
+            if not strategy or not isinstance(ratio, (int, float)) or ratio <= 0:
+                continue
+
+            counts.setdefault(strategy, 0)
+
+        return counts
 
     @staticmethod
     def _allocate_mix_counts(

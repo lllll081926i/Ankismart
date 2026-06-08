@@ -91,9 +91,7 @@ _OCR_SOURCE_CHOICES = (
     ("cn_mirror", "国内镜像（ModelScope）", "China Mirror (ModelScope)"),
 )
 
-_OCR_CLOUD_PROVIDER_CHOICES = (
-    ("mineru", "MinerU 云 OCR", "MinerU Cloud OCR"),
-)
+_OCR_CLOUD_PROVIDER_CHOICES = (("mineru", "MinerU 云 OCR", "MinerU Cloud OCR"),)
 
 _GITHUB_RELEASES_API_URL = "https://api.github.com/repos/lllll081926i/Ankismart/releases/latest"
 _GITHUB_TAGS_API_URL = "https://api.github.com/repos/lllll081926i/Ankismart/tags?per_page=1"
@@ -181,9 +179,7 @@ class LLMProviderDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self._is_zh = language == "zh"
-        self.setWindowTitle(
-            "LLM 提供商配置" if self._is_zh else "LLM Provider Configuration"
-        )
+        self.setWindowTitle("LLM 提供商配置" if self._is_zh else "LLM Provider Configuration")
         self.setMinimumWidth(500)
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
@@ -199,9 +195,7 @@ class LLMProviderDialog(QDialog):
         # Name
         self._name_edit = LineEdit()
         self._name_edit.setPlaceholderText(
-            "提供商名称（例如：OpenAI）"
-            if self._is_zh
-            else "Provider name (for example: OpenAI)"
+            "提供商名称（例如：OpenAI）" if self._is_zh else "Provider name (for example: OpenAI)"
         )
         self._name_edit.setText(self._provider.name)
         layout.addWidget(self._name_edit)
@@ -263,9 +257,7 @@ class LLMProviderDialog(QDialog):
         if not self._provider.name:
             InfoBar.warning(
                 title="错误" if self._is_zh else "Error",
-                content="提供商名称为必填项"
-                if self._is_zh
-                else "Provider name is required.",
+                content="提供商名称为必填项" if self._is_zh else "Provider name is required.",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -390,7 +382,7 @@ class SettingsPage(ScrollArea):
         self._ocr_cloud_endpoint_edit.textChanged.connect(self._schedule_auto_save)
         self._ocr_cloud_api_key_edit.textChanged.connect(self._schedule_auto_save)
 
-        # Experimental features
+        # Document processing
         self._auto_split_switch.checkedChanged.connect(self._schedule_auto_save)
         self._split_threshold_spinbox.valueChanged.connect(self._schedule_auto_save)
 
@@ -434,9 +426,7 @@ class SettingsPage(ScrollArea):
             parent=self,
         )
         open_button = PushButton("打开发布页" if is_zh else "Open Release Page", self)
-        open_button.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(latest_url))
-        )
+        open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(latest_url)))
         info_bar.addWidget(open_button)
 
     def _apply_background_style(self) -> None:
@@ -1126,15 +1116,21 @@ class SettingsPage(ScrollArea):
 
         self.expandLayout.addWidget(self._cache_group)
 
-        # ── Experimental Features Group ──
-        self._experimental_group = SettingCardGroup("实验性功能", self.scrollWidget)
+        # ── Document Processing Group ──
+        is_zh = self._main.config.language == "zh"
+        self._document_processing_group = SettingCardGroup(
+            "文档处理" if is_zh else "Document Processing",
+            self.scrollWidget,
+        )
 
         # Auto-split enable
         self._auto_split_card = SettingCard(
             FluentIcon.CUT,
-            "启用长文档自动分割",
-            "当文档超过阈值时自动分割为多个片段处理",
-            parent=self._experimental_group,
+            "启用长文档自动分割" if is_zh else "Auto-Split Long Documents",
+            "当文档超过阈值时自动分割为多个片段处理"
+            if is_zh
+            else "Split long documents into chunks when they exceed the threshold",
+            parent=self._document_processing_group,
         )
         self._auto_split_switch = SwitchButton(self._auto_split_card)
         self._auto_split_switch.setChecked(self._main.config.enable_auto_split)
@@ -1142,14 +1138,14 @@ class SettingsPage(ScrollArea):
             self._auto_split_switch, 0, Qt.AlignmentFlag.AlignRight
         )
         self._auto_split_card.hBoxLayout.addSpacing(16)
-        self._experimental_group.addSettingCard(self._auto_split_card)
+        self._document_processing_group.addSettingCard(self._auto_split_card)
 
         # Split threshold
         self._split_threshold_card = SettingCard(
             FluentIcon.ALIGNMENT,
-            "分割阈值",
-            "触发自动分割的字符数阈值",
-            parent=self._experimental_group,
+            "分割阈值" if is_zh else "Split Threshold",
+            "触发自动分割的字符数阈值" if is_zh else "Character count threshold for auto-splitting",
+            parent=self._document_processing_group,
         )
         self._split_threshold_spinbox = SpinBox(self._split_threshold_card)
         self._split_threshold_spinbox.setRange(10000, 200000)
@@ -1159,18 +1155,9 @@ class SettingsPage(ScrollArea):
             self._split_threshold_spinbox, 0, Qt.AlignmentFlag.AlignRight
         )
         self._split_threshold_card.hBoxLayout.addSpacing(16)
-        self._experimental_group.addSettingCard(self._split_threshold_card)
+        self._document_processing_group.addSettingCard(self._split_threshold_card)
 
-        # Warning label
-        self._warning_card = SettingCard(
-            FluentIcon.INFO,
-            "注意事项",
-            "⚠️ 警告：这是实验性功能，可能影响卡片质量和生成时间。建议仅在处理超长文档时启用。",
-            self.scrollWidget,
-        )
-        self._experimental_group.addSettingCard(self._warning_card)
-
-        self.expandLayout.addWidget(self._experimental_group)
+        self.expandLayout.addWidget(self._document_processing_group)
 
         # Action cards are grouped into maintenance section and moved to bottom.
         is_zh = self._main.config.language == "zh"
@@ -1315,7 +1302,7 @@ class SettingsPage(ScrollArea):
         self._refresh_ocr_recommendation()
         self._update_ocr_mode_ui()
 
-        # Experimental features
+        # Document processing
         self._auto_split_switch.setChecked(config.enable_auto_split)
         self._split_threshold_spinbox.setValue(config.split_threshold)
 
@@ -1345,9 +1332,7 @@ class SettingsPage(ScrollArea):
             self._provider_summary_meta_label.hide()
             return
 
-        self._provider_summary_name_label.setText(
-            self._provider_summary_line_text(provider)
-        )
+        self._provider_summary_name_label.setText(self._provider_summary_line_text(provider))
         self._provider_summary_status_label.hide()
         self._provider_summary_meta_label.hide()
 
@@ -1473,9 +1458,6 @@ class SettingsPage(ScrollArea):
         base_url = str(provider.base_url or "").strip()
         return base_url if base_url else self._provider_text("no_endpoint")
 
-    def _provider_row_text(self, provider: LLMProviderConfig) -> str:
-        return f"{self._provider_summary_line_text(provider)} / {self._provider_url_text(provider)}"
-
     def _provider_rpm_text(self, provider: LLMProviderConfig) -> str:
         if provider.rpm_limit > 0:
             return (
@@ -1484,14 +1466,6 @@ class SettingsPage(ScrollArea):
                 else f"RPM: {provider.rpm_limit}"
             )
         return self._provider_text("rpm_unlimited")
-
-    def _mask_provider_secret(self, secret: str) -> str:
-        value = str(secret).strip()
-        if not value:
-            return self._provider_text("not_set")
-        if len(value) <= 8:
-            return "*" * len(value)
-        return f"{value[:4]}***{value[-4:]}"
 
     @staticmethod
     def _set_combo_current_data(combo: ComboBox, target_value: str) -> None:
@@ -1660,9 +1634,7 @@ class SettingsPage(ScrollArea):
                 self._show_info_bar(
                     "warning",
                     "配置不完整" if is_zh else "Incomplete Config",
-                    "请先填写云 OCR API Key。"
-                    if is_zh
-                    else "Please fill cloud OCR API key first.",
+                    "请先填写云 OCR API Key。" if is_zh else "Please fill cloud OCR API key first.",
                     duration=3500,
                 )
                 return
@@ -1681,9 +1653,7 @@ class SettingsPage(ScrollArea):
             self._show_info_bar(
                 "info",
                 "测试中" if is_zh else "Testing",
-                "正在测试云 OCR 连通性..."
-                if is_zh
-                else "Testing cloud OCR connectivity...",
+                "正在测试云 OCR 连通性..." if is_zh else "Testing cloud OCR connectivity...",
                 duration=1800,
             )
 
@@ -1693,9 +1663,7 @@ class SettingsPage(ScrollArea):
                         self._show_info_bar(
                             "success",
                             "连接成功" if is_zh else "Connected",
-                            "云 OCR 连通正常。"
-                            if is_zh
-                            else "Cloud OCR connectivity is OK.",
+                            "云 OCR 连通正常。" if is_zh else "Cloud OCR connectivity is OK.",
                             duration=3000,
                         )
                     else:
@@ -1703,11 +1671,7 @@ class SettingsPage(ScrollArea):
                             "error",
                             "连接失败" if is_zh else "Connection Failed",
                             detail
-                            or (
-                                "云 OCR 连通性测试失败"
-                                if is_zh
-                                else "Cloud OCR test failed"
-                            ),
+                            or ("云 OCR 连通性测试失败" if is_zh else "Cloud OCR test failed"),
                             duration=5000,
                         )
                 finally:
@@ -2112,9 +2076,7 @@ class SettingsPage(ScrollArea):
         dialog.setText(text)
         dialog.setInformativeText(informative_text)
         dialog.setIcon(QMessageBox.Icon.Question)
-        dialog.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
+        dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         dialog.setDefaultButton(QMessageBox.StandardButton.No)
         dialog.setTextFormat(Qt.TextFormat.PlainText)
         yes_button = dialog.button(QMessageBox.StandardButton.Yes)

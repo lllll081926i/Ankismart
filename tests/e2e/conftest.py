@@ -287,7 +287,7 @@ def patch_batch_generate_worker(monkeypatch):
                 llm_client,
                 deck_name: str,
                 tags: list[str],
-                enable_auto_split: bool = False,
+                enable_auto_split: bool = True,
                 split_threshold: int = 70000,
                 config=None,
             ) -> None:
@@ -412,7 +412,6 @@ def patch_push_worker(monkeypatch):
                 return None
 
         monkeypatch.setattr("ankismart.ui.workers.PushWorker", _PushWorker)
-        monkeypatch.setattr("ankismart.ui.preview_page.PushWorker", _PushWorker)
         return _PushWorker
 
     return _patch

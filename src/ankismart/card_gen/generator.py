@@ -40,6 +40,13 @@ _STRATEGY_ALIASES = {
 }
 
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"}
+_RAW_CARD_BUILD_SLACK_MULTIPLIER = 3
+_RAW_CARD_BUILD_MIN_SLACK = 20
+_RAW_CARD_BUILD_DEFAULT_CAP = 300
+_RAW_CARD_BUILD_MAX_CAP = 500
+_AUTO_CARD_SAFETY_MIN = 24
+_AUTO_CARD_SAFETY_MAX = 240
+_AUTO_CARD_CHARS_PER_CARD = 450
 
 
 class CardGenerator:
@@ -48,13 +55,22 @@ class CardGenerator:
 
     @staticmethod
     def _build_target_instruction(target_count: int, *, auto_target_count: bool) -> str:
-        if target_count <= 0:
-            return ""
         if auto_target_count:
+            if target_count <= 0:
+                return (
+                    "\n- Decide the card count from the content length and knowledge density\n"
+                    "- Create one card for each atomic, high-value knowledge point\n"
+                    "- Skip low-value, repetitive, or purely transitional details\n"
+                    "- Do not pad the output to reach a fixed number\n"
+                    "- Keep the final set concise but complete for learning\n"
+                )
             return (
                 f"\n- Generate around {target_count} cards\n"
                 "- cover all important knowledge points while keeping the output concise\n"
+                "- treat the number as a soft guide, not a hard quota\n"
             )
+        if target_count <= 0:
+            return ""
         return f"\n- Generate exactly {target_count} cards\n"
 
     @staticmethod
@@ -71,6 +87,92 @@ class CardGenerator:
         chunk_bonus = min(180.0, max(0, chunk_count - 1) * 25.0)
         auto_bonus = 30.0 if auto_target_count else 0.0
         return base_timeout + length_bonus + target_bonus + chunk_bonus + auto_bonus
+
+    @staticmethod
+    def _raw_card_build_limit(target_count: int) -> int:
+        if target_count <= 0:
+            return _RAW_CARD_BUILD_DEFAULT_CAP
+        requested_limit = max(
+            target_count * _RAW_CARD_BUILD_SLACK_MULTIPLIER,
+            target_count + _RAW_CARD_BUILD_MIN_SLACK,
+        )
+        return min(requested_limit, _RAW_CARD_BUILD_MAX_CAP)
+
+    @staticmethod
+    def _auto_card_safety_limit(content_length: int, *, target_hint: int = 0) -> int:
+        length = max(0, int(content_length or 0))
+        content_limit = _AUTO_CARD_SAFETY_MIN + (length // _AUTO_CARD_CHARS_PER_CARD)
+        if target_hint > 0:
+            content_limit = max(
+                content_limit,
+                target_hint * _RAW_CARD_BUILD_SLACK_MULTIPLIER,
+                target_hint + _RAW_CARD_BUILD_MIN_SLACK,
+            )
+        return min(_AUTO_CARD_SAFETY_MAX, max(_AUTO_CARD_SAFETY_MIN, content_limit))
+
+    @classmethod
+    def _limit_raw_cards_for_build(
+        cls,
+        raw_cards: list[dict],
+        *,
+        target_count: int,
+        strategy: str,
+        trace_id: str,
+    ) -> list[dict]:
+        limit = cls._raw_card_build_limit(target_count)
+        if len(raw_cards) <= limit:
+            return raw_cards
+        logger.warning(
+            "LLM returned excessive raw cards; limiting before draft build",
+            extra={
+                "event": "card_gen.raw_cards.limited",
+                "strategy": strategy,
+                "raw_cards": len(raw_cards),
+                "limit": limit,
+                "target_count": target_count,
+                "trace_id": trace_id,
+            },
+        )
+        return raw_cards[:limit]
+
+    @classmethod
+    def _limit_auto_drafts_for_safety(
+        cls,
+        drafts: list[CardDraft],
+        *,
+        content_length: int,
+        target_hint: int,
+        strategy: str,
+        trace_id: str,
+    ) -> list[CardDraft]:
+        limit = cls._auto_card_safety_limit(content_length, target_hint=target_hint)
+        if len(drafts) <= limit:
+            return drafts
+        logger.warning(
+            "Auto card generation exceeded content-derived safety limit; trimming output",
+            extra={
+                "event": "card_gen.auto_cards.limited",
+                "strategy": strategy,
+                "card_count": len(drafts),
+                "limit": limit,
+                "content_length": content_length,
+                "target_hint": target_hint,
+                "trace_id": trace_id,
+            },
+        )
+        return drafts[:limit]
+
+    @classmethod
+    def _raw_limit_target_for_request(
+        cls,
+        *,
+        target_count: int,
+        auto_target_count: bool,
+        content_length: int,
+    ) -> int:
+        if not auto_target_count or target_count > 0:
+            return target_count
+        return cls._auto_card_safety_limit(content_length, target_hint=0)
 
     def _chat_with_timeout(
         self, system_prompt: str, user_prompt: str, *, timeout: float | None
@@ -147,6 +249,17 @@ class CardGenerator:
             for piece in self._hard_split_text(body, max_body_length)
         ]
 
+    @staticmethod
+    def _is_complete_code_block_paragraph(text: str) -> bool:
+        lines = str(text or "").splitlines()
+        if len(lines) < 2 or not lines[0].strip().startswith("```"):
+            return False
+
+        for index, line in enumerate(lines[1:], 1):
+            if line.strip().startswith("```"):
+                return all(not trailing.strip() for trailing in lines[index + 1 :])
+        return False
+
     def _split_markdown(self, markdown: str, threshold: int) -> list[str]:
         """Split markdown content into chunks at paragraph boundaries.
 
@@ -171,6 +284,26 @@ class CardGenerator:
         in_code_block = False
         code_block_buffer = []
 
+        def flush_code_block(complete_block: str, buffer: list[str]) -> None:
+            nonlocal current_chunk, current_length
+
+            if len(complete_block) > threshold:
+                if current_chunk:
+                    chunks.append("\n\n".join(current_chunk))
+                    current_chunk = []
+                    current_length = 0
+                chunks.extend(self._split_code_block(buffer, threshold))
+                return
+
+            if current_length + len(complete_block) > threshold:
+                if current_chunk:
+                    chunks.append("\n\n".join(current_chunk))
+                current_chunk = [complete_block]
+                current_length = len(complete_block)
+            else:
+                current_chunk.append(complete_block)
+                current_length += len(complete_block) + 2
+
         for para in paragraphs:
             para = para.strip()
             if not para:
@@ -179,6 +312,9 @@ class CardGenerator:
             # Detect code block boundaries
             if para.startswith("```"):
                 if not in_code_block:
+                    if self._is_complete_code_block_paragraph(para):
+                        flush_code_block(para, [para])
+                        continue
                     # Start of code block
                     in_code_block = True
                     code_block_buffer = [para]
@@ -189,23 +325,7 @@ class CardGenerator:
                     code_block_buffer.append(para)
                     complete_block = "\n\n".join(code_block_buffer)
 
-                    # If code block is too large, add it as separate chunk
-                    if len(complete_block) > threshold:
-                        if current_chunk:
-                            chunks.append("\n\n".join(current_chunk))
-                            current_chunk = []
-                            current_length = 0
-                        chunks.extend(self._split_code_block(code_block_buffer, threshold))
-                    else:
-                        # Try to add to current chunk
-                        if current_length + len(complete_block) > threshold:
-                            if current_chunk:
-                                chunks.append("\n\n".join(current_chunk))
-                            current_chunk = [complete_block]
-                            current_length = len(complete_block)
-                        else:
-                            current_chunk.append(complete_block)
-                            current_length += len(complete_block) + 2
+                    flush_code_block(complete_block, code_block_buffer)
 
                     code_block_buffer = []
                     continue
@@ -368,10 +488,10 @@ class CardGenerator:
                             base_target = remaining_target // max(1, chunks_left)
                             extra_target = 1 if remaining_target % max(1, chunks_left) else 0
                             chunk_target = max(1, base_target + extra_target)
-                            chunk_system_prompt += self._build_target_instruction(
-                                chunk_target,
-                                auto_target_count=auto_target_count,
-                            )
+                        chunk_system_prompt += self._build_target_instruction(
+                            chunk_target or request.target_count,
+                            auto_target_count=auto_target_count,
+                        )
 
                         request_timeout = self._estimate_request_timeout(
                             content_length=len(chunk),
@@ -389,7 +509,17 @@ class CardGenerator:
                             )
 
                         # Parse and build card drafts for this chunk
-                        raw_cards = parse_llm_output(raw_output)
+                        raw_limit_target = self._raw_limit_target_for_request(
+                            target_count=chunk_target or request.target_count,
+                            auto_target_count=auto_target_count,
+                            content_length=len(chunk),
+                        )
+                        raw_cards = self._limit_raw_cards_for_build(
+                            parse_llm_output(raw_output),
+                            target_count=raw_limit_target,
+                            strategy=normalized_strategy,
+                            trace_id=trace_id,
+                        )
                         chunk_drafts = build_card_drafts(
                             raw_cards=raw_cards,
                             deck_name=request.deck_name,
@@ -434,7 +564,17 @@ class CardGenerator:
                         )
 
                     # Parse and build card drafts
-                    raw_cards = parse_llm_output(raw_output)
+                    raw_limit_target = self._raw_limit_target_for_request(
+                        target_count=request.target_count,
+                        auto_target_count=auto_target_count,
+                        content_length=len(markdown),
+                    )
+                    raw_cards = self._limit_raw_cards_for_build(
+                        parse_llm_output(raw_output),
+                        target_count=raw_limit_target,
+                        strategy=normalized_strategy,
+                        trace_id=trace_id,
+                    )
                     drafts = build_card_drafts(
                         raw_cards=raw_cards,
                         deck_name=request.deck_name,
@@ -452,11 +592,15 @@ class CardGenerator:
                 if normalized_strategy in {"image_qa", "image_occlusion"} and request.source_path:
                     self._attach_image(drafts, request.source_path)
 
-                if (
-                    request.target_count > 0
-                    and not auto_target_count
-                    and len(drafts) > request.target_count
-                ):
+                if auto_target_count:
+                    drafts = self._limit_auto_drafts_for_safety(
+                        drafts,
+                        content_length=len(markdown),
+                        target_hint=max(0, request.target_count),
+                        strategy=normalized_strategy,
+                        trace_id=trace_id,
+                    )
+                elif request.target_count > 0 and len(drafts) > request.target_count:
                     drafts = drafts[: request.target_count]
 
                 logger.info(

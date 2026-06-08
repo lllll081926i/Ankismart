@@ -7,6 +7,7 @@ from pydantic.alias_generators import to_camel
 # CardDraft sub-models (matches 闪卡格式规范 §3.2)
 # ---------------------------------------------------------------------------
 
+
 class MediaItem(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -72,6 +73,7 @@ class CardDraft(BaseModel):
 # MarkdownResult -- output of converter
 # ---------------------------------------------------------------------------
 
+
 class MarkdownResult(BaseModel):
     content: str
     source_path: str
@@ -82,6 +84,7 @@ class MarkdownResult(BaseModel):
 # ---------------------------------------------------------------------------
 # PushResult -- output of anki gateway
 # ---------------------------------------------------------------------------
+
 
 class CardPushStatus(BaseModel):
     index: int
@@ -102,18 +105,19 @@ class PushResult(BaseModel):
 # GenerateRequest -- input for card generator
 # ---------------------------------------------------------------------------
 
+
 class GenerateRequest(BaseModel):
     markdown: str
-    strategy: str = (
-        "basic"
-    )  # basic, cloze, concept, key_terms, single_choice, multiple_choice, image_qa, image_occlusion
+    # basic, cloze, concept, key_terms, single_choice,
+    # multiple_choice, image_qa, image_occlusion
+    strategy: str = "basic"
     deck_name: str = "Default"
     tags: list[str] = Field(default_factory=list)
     trace_id: str = ""
     source_path: str = ""  # Original file path, used for image attachment
     target_count: int = 0  # 0 means keep strategy default card count
     auto_target_count: bool = False  # Let AI adapt count while keeping target_count as soft hint
-    enable_auto_split: bool = False  # Experimental: Enable auto-split for long documents
+    enable_auto_split: bool = True  # Enable auto-split for long documents
     split_threshold: int = 70000  # Character count threshold for splitting
 
 
@@ -127,6 +131,7 @@ class RegenerateRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Batch conversion -- output of batch converter
 # ---------------------------------------------------------------------------
+
 
 class ConvertedDocument(BaseModel):
     result: MarkdownResult

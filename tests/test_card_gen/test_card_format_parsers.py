@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ankismart.card_gen.card_format_parsers import (
+    normalize_html_to_text,
     parse_answer_block,
     parse_choice_back,
     parse_choice_front,
@@ -30,3 +31,12 @@ def test_parse_answer_block_splits_answer_and_explanation_without_number_prefixe
 
     assert answer == "原子性"
     assert "事务要么全部成功要么全部失败" in explanation
+
+
+def test_normalize_html_to_text_preserves_angle_brackets_inside_mathjax() -> None:
+    text = "答案: \\(a < b > c\\)<br>解析: 保留数学比较符。"
+
+    normalized = normalize_html_to_text(text)
+
+    assert "\\(a < b > c\\)" in normalized
+    assert "解析: 保留数学比较符。" in normalized

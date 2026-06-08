@@ -8,6 +8,7 @@ _ANSWER_LINE_PATTERN = re.compile(
     r"^(?:答案|正确答案|answer)?\s*[:：]?\s*([A-Ea-e](?:\s*[,，、/]\s*[A-Ea-e])*)\s*$",
     re.IGNORECASE,
 )
+_MATHJAX_SPAN_PATTERN = re.compile(r"(\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\])")
 
 
 def has_valid_cloze(text: str) -> bool:
@@ -17,9 +18,20 @@ def has_valid_cloze(text: str) -> bool:
 def normalize_html_to_text(text: str) -> str:
     if not text:
         return ""
-    plain = re.sub(r"<br\s*/?>", "\n", str(text), flags=re.IGNORECASE)
+
+    protected_math: dict[str, str] = {}
+
+    def _protect_math(match: re.Match[str]) -> str:
+        token = f"__ANKISMART_MATH_{len(protected_math)}__"
+        protected_math[token] = match.group(0)
+        return token
+
+    plain = _MATHJAX_SPAN_PATTERN.sub(_protect_math, str(text))
+    plain = re.sub(r"<br\s*/?>", "\n", plain, flags=re.IGNORECASE)
     plain = re.sub(r"</p\s*>", "\n", plain, flags=re.IGNORECASE)
     plain = re.sub(r"<[^>]+>", " ", plain)
+    for token, formula in protected_math.items():
+        plain = plain.replace(token, formula)
     plain = plain.replace("&nbsp;", " ").replace("\r", "")
     plain = re.sub(r"\n{3,}", "\n\n", plain)
     return plain.strip()
@@ -192,9 +204,7 @@ def parse_answer_block(raw: str) -> tuple[str, str]:
         return answer, explanation
 
     sentences = [
-        part.strip()
-        for part in re.split(r"(?<=[。！？!?；;])\s*", answer)
-        if part.strip()
+        part.strip() for part in re.split(r"(?<=[。！？!?；;])\s*", answer) if part.strip()
     ]
     if len(sentences) >= 2:
         return sentences[0], "\n".join(sentences[1:]).strip()

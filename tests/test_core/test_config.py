@@ -1,4 +1,5 @@
 """Tests for ankismart.core.config module."""
+
 from __future__ import annotations
 
 import shutil
@@ -32,6 +33,7 @@ class TestAppConfig:
         assert cfg.default_deck == "Default"
         assert cfg.default_tags == ["ankismart"]
         assert cfg.doc_convert_backend == "native"
+        assert cfg.enable_auto_split is True
         assert cfg.log_level == "INFO"
 
     def test_active_provider_returns_matching(self):
@@ -423,8 +425,11 @@ class TestSaveConfig:
         original = AppConfig(
             llm_providers=[
                 LLMProviderConfig(
-                    id="p1", name="OpenAI", api_key="sk-round-trip",
-                    base_url="https://api.openai.com/v1", model="gpt-4o",
+                    id="p1",
+                    name="OpenAI",
+                    api_key="sk-round-trip",
+                    base_url="https://api.openai.com/v1",
+                    model="gpt-4o",
                 ),
             ],
             active_provider_id="p1",

@@ -53,13 +53,6 @@ def test_provider_summary_panel_prefers_compact_width(_qapp) -> None:
     assert page._provider_summary_panel.maximumWidth() == 280
 
 
-def test_settings_page_does_not_keep_legacy_provider_table(_qapp) -> None:
-    main, _ = make_main()
-    page = SettingsPage(main)
-
-    assert not hasattr(page, "_provider_table")
-
-
 def test_provider_summary_displays_active_provider_fields(_qapp) -> None:
     providers = [
         LLMProviderConfig(
@@ -242,18 +235,33 @@ def test_other_group_stays_at_bottom(_qapp) -> None:
         page._ocr_group,
         page._network_group,
         page._cache_group,
-        page._experimental_group,
+        page._document_processing_group,
     ]
     max_other_y = max(group.y() for group in groups)
     assert page._other_group.y() > max_other_y
 
 
-def test_settings_page_does_not_render_overview_or_anchor_bar(_qapp) -> None:
+def test_settings_page_treats_auto_split_as_document_processing(_qapp) -> None:
     main, _ = make_main()
     page = SettingsPage(main)
 
-    assert not hasattr(page, "_overview_card")
-    assert not hasattr(page, "_anchor_bar")
+    assert page._document_processing_group.titleLabel.text() == "文档处理"
+    assert page._auto_split_switch.isChecked() is True
+
+    texts: list[str] = []
+    for widget in page.findChildren(object):
+        text = getattr(widget, "text", None)
+        if callable(text):
+            try:
+                value = text()
+            except TypeError:
+                continue
+            if isinstance(value, str) and value:
+                texts.append(value)
+
+    joined = "\n".join(texts)
+    assert "实验性功能" not in joined
+    assert "这是实验性功能" not in joined
 
 
 def test_scroll_step_is_tuned_for_faster_following(_qapp) -> None:

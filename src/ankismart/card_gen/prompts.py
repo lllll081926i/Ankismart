@@ -1,9 +1,12 @@
 _MATH_FORMAT_RULES = (
-    "- For math formulas: use <anki-mathjax>formula</anki-mathjax> for inline "
-    "(e.g., <anki-mathjax>x^2 + y^2 = z^2</anki-mathjax>) and "
-    '<anki-mathjax block="true">formula</anki-mathjax> for display mode '
-    '(e.g., <anki-mathjax block="true">\\\\int_0^\\\\infty e^{-x^2} dx</anki-mathjax>)\n'
-    "- Use standard LaTeX syntax; Anki will render formulas with MathJax\n"
+    "- For math formulas: use Anki's official MathJax delimiters: "
+    "\\(formula\\) for inline (e.g., \\(x^2 + y^2 = z^2\\)) and "
+    "\\[formula\\] for display mode (e.g., \\[\\\\int_0^\\\\infty e^{-x^2} dx\\])\n"
+    "- Do not use dollar-sign math delimiters, custom XML-like math tags, "
+    "or legacy LaTeX wrapper tags\n"
+    "- Use standard TeX syntax; Anki will render formulas with MathJax\n"
+    "- In cloze cards, avoid TeX fragments inside {{c1::...}} that contain a raw '}}' "
+    "sequence; if unavoidable, insert a space before the second } inside the TeX group\n"
 )
 
 BASIC_SYSTEM_PROMPT = (
@@ -39,9 +42,9 @@ BASIC_SYSTEM_PROMPT = (
     'Produces glucose and oxygen from CO2 and water."},\n'
     '  {"Front": "What is the Pythagorean theorem?",\n'
     '   "Back": "Answer: In a right triangle, '
-    "<anki-mathjax>a^2 + b^2 = c^2</anki-mathjax>.\\n"
-    "Explanation:\\n<anki-mathjax>c</anki-mathjax> is the hypotenuse.\\n"
-    "<anki-mathjax>a</anki-mathjax> and <anki-mathjax>b</anki-mathjax> are "
+    "\\(a^2 + b^2 = c^2\\).\\n"
+    "Explanation:\\n\\(c\\) is the hypotenuse.\\n"
+    "\\(a\\) and \\(b\\) are "
     'the other two sides."}\n'
     "]\n"
 )
@@ -58,7 +61,7 @@ CLOZE_SYSTEM_PROMPT = (
     '- Output ONLY a JSON array of objects with "Text" field and '
     'optional "Extra" field\n'
     "- No explanations or extra text outside the JSON array\n"
-    "- Create 3-10 cards depending on content density\n"
+    "- Decide the number of cards from content density and learning value\n"
     "- Cloze deletions should target key terms, definitions, numbers, "
     "or important facts\n"
     "- Avoid overly simple or overly broad deletions; each cloze should "
@@ -71,9 +74,9 @@ CLOZE_SYSTEM_PROMPT = (
     '  {"Text": "Photosynthesis converts {{c1::light energy}} into '
     '{{c2::chemical energy}} in the form of glucose.",\n'
     '   "Extra": "This process occurs in chloroplasts."},\n'
-    '  {"Text": "The quadratic formula is {{c1::<anki-mathjax>x = \\\\frac{-b \\\\pm '
-    "\\\\sqrt{b^2 - 4ac}}{2a}</anki-mathjax>}}, used to solve equations of the form "
-    '{{c2::<anki-mathjax>ax^2 + bx + c = 0</anki-mathjax>}}.","Extra": ""}\n'
+    '  {"Text": "The quadratic formula is {{c1::\\(x = \\\\frac{-b \\\\pm '
+    "\\\\sqrt{b^2 - 4ac}}{2a}\\)}}, used to solve equations of the form "
+    '{{c2::\\(ax^2 + bx + c = 0\\)}}.","Extra": ""}\n'
     "]\n"
 )
 
@@ -94,7 +97,9 @@ IMAGE_QA_SYSTEM_PROMPT = (
     "- For long explanations, split into 2+ short paragraphs on new lines "
     "(do NOT add numbering prefixes like 1./2.)\n"
     "- No explanations or extra text outside the JSON array\n"
-    "- Create 3-10 cards depending on content density\n" + _MATH_FORMAT_RULES + "\n"
+    "- Decide the number of cards from content density and learning value\n"
+    + _MATH_FORMAT_RULES
+    + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "In the cell diagram, what organelle is responsible '
@@ -103,10 +108,10 @@ IMAGE_QA_SYSTEM_PROMPT = (
     'Explanation:\\nLocated in the cytoplasm.\\nConverts nutrients into ATP."},\n'
     '  {"Front": "What formula is shown in the diagram for calculating '
     'kinetic energy?",\n'
-    '   "Back": "Answer: <anki-mathjax block=\\"true\\">E_k = '
-    "\\\\frac{1}{2}mv^2</anki-mathjax>.\\n"
-    "Explanation:\\n<anki-mathjax>m</anki-mathjax> is mass.\\n"
-    '<anki-mathjax>v</anki-mathjax> is velocity."}\n'
+    '   "Back": "Answer: \\[E_k = '
+    "\\\\frac{1}{2}mv^2\\].\\n"
+    "Explanation:\\n\\(m\\) is mass.\\n"
+    '\\(v\\) is velocity."}\n'
     "]\n"
 )
 
@@ -126,7 +131,7 @@ CONCEPT_SYSTEM_PROMPT = (
     "(do NOT add numbering prefixes like 1./2.)\n"
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- No explanations or extra text outside the JSON array\n"
-    "- Create 3-10 cards depending on content density\n"
+    "- Decide the number of cards from content density and learning value\n"
     "- Focus on concepts that require understanding, not simple facts\n"
     "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
@@ -136,9 +141,9 @@ CONCEPT_SYSTEM_PROMPT = (
     "Explanation:\\nOccurs in chloroplasts via light reactions and Calvin cycle.\\n"
     'It is a primary source of oxygen and organic matter on Earth."},\n'
     '  {"Front": "Euler\'s Identity",\n'
-    '   "Back": "Answer: <anki-mathjax>e^{i\\\\pi} + 1 = 0</anki-mathjax>.\\n'
-    "Explanation:\\nConnects constants <anki-mathjax>e</anki-mathjax>, "
-    "<anki-mathjax>i</anki-mathjax>, <anki-mathjax>\\\\pi</anki-mathjax>, 1, "
+    '   "Back": "Answer: \\(e^{i\\\\pi} + 1 = 0\\).\\n'
+    "Explanation:\\nConnects constants \\(e\\), "
+    "\\(i\\), \\(\\\\pi\\), 1, "
     "and 0.\\n"
     "Shows relation between exponentials and trigonometry via Euler's formula.\"}\n"
     "]\n"
@@ -159,7 +164,7 @@ KEY_TERMS_SYSTEM_PROMPT = (
     "(do NOT add numbering prefixes like 1./2.)\n"
     '- Output ONLY a JSON array of objects with "Front" and "Back" fields\n'
     "- No explanations or extra text outside the JSON array\n"
-    "- Create 3-10 cards depending on content density\n"
+    "- Decide the number of cards from content density and learning value\n"
     "- Prioritize domain-specific or technical terms over common vocabulary\n"
     "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
@@ -170,10 +175,10 @@ KEY_TERMS_SYSTEM_PROMPT = (
     'Example: chloroplasts enable leaves to produce glucose from sunlight."},\n'
     '  {"Front": "Derivative",\n'
     '   "Back": "Answer: The rate of change of a function, denoted by '
-    "<anki-mathjax>\\\\frac{df}{dx}</anki-mathjax> or <anki-mathjax>f'(x)</anki-mathjax>.\\n"
+    "\\(\\\\frac{df}{dx}\\) or \\(f'(x)\\).\\n"
     "Explanation:\\nRepresents tangent slope at a point.\\n"
-    "Example: for <anki-mathjax>f(x)=x^2</anki-mathjax>, derivative is "
-    '<anki-mathjax>2x</anki-mathjax>."}'
+    "Example: for \\(f(x)=x^2\\), derivative is "
+    '\\(2x\\)."}'
     "\n"
     "]\n"
 )
@@ -192,28 +197,30 @@ SINGLE_CHOICE_SYSTEM_PROMPT = (
     "- In the explanation section:\n"
     "  * Analyze each option (A./B./C./D.) explaining why it's correct or wrong\n"
     "  * Use clear reasoning, not just 'correct' or 'incorrect'\n"
-    "  * Each option analysis starts with its letter followed by a period (e.g., 'A. reason')\n"
+    "  * Each explanation line must start with its option letter "
+    "followed by a period (e.g., 'A. reason')\n"
     "  * This is the ONLY place where letters with periods are allowed\n"
     "- Exactly one option should be correct\n"
-    "- Card count guidance (aim to capture ALL important knowledge):\n"
-    "  * For short content (<500 words): create 5-8 cards\n"
-    "  * For medium content (500-1500 words): create 10-15 cards\n"
-    "  * For long content (>1500 words): create 15-25 cards\n"
-    "  * IMPORTANT: Cover ALL key concepts - better to have more cards than miss important points\n"
+    "- Card count guidance: decide the number of cards from content length, "
+    "knowledge density, and learning value\n"
+    "- IMPORTANT: Cover all key concepts without padding the output with low-value questions\n"
     "- Questions should be specific and test understanding, not memorization\n"
-    "- Distractors (wrong options) should be plausible but clearly distinguishable with proper reasoning\n"
+    "- Distractors (wrong options) should be plausible but clearly "
+    "distinguishable with proper reasoning\n"
     "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
-    '  {"Front": "What is the derivative of <anki-mathjax>f(x) = x^3</anki-mathjax>?\\n\\n'
-    "A. <anki-mathjax>2x^2</anki-mathjax>\\n"
-    "B. <anki-mathjax>3x^2</anki-mathjax>\\n"
-    "C. <anki-mathjax>x^2</anki-mathjax>\\n"
-    'D. <anki-mathjax>3x</anki-mathjax>",\n'
+    '  {"Front": "What is the derivative of \\(f(x) = x^3\\)?\\n\\n'
+    "A. \\(2x^2\\)\\n"
+    "B. \\(3x^2\\)\\n"
+    "C. \\(x^2\\)\\n"
+    'D. \\(3x\\)",\n'
     '   "Back": "答案: B\\n'
     "解析:\\n"
     "A. Missing coefficient - should multiply by 3.\\n"
-    "B. Correct! Apply power rule: <anki-mathjax>\\\\frac{d}{dx}(x^n) = nx^{n-1}</anki-mathjax>, giving <anki-mathjax>3x^2</anki-mathjax>.\\n"
+    "B. Correct! Apply power rule: "
+    "\\(\\\\frac{d}{dx}(x^n) = nx^{n-1}\\), "
+    "giving \\(3x^2\\).\\n"
     "C. Missing coefficient 3.\\n"
     'D. Wrong exponent - should be squared, not linear."}\n'
     "]\n"
@@ -233,28 +240,31 @@ MULTIPLE_CHOICE_SYSTEM_PROMPT = (
     "- In the explanation section:\n"
     "  * Analyze each option (A./B./C./D./E.) explaining why it's correct or wrong\n"
     "  * Use clear reasoning for each option\n"
-    "  * Each option analysis starts with its letter followed by a period (e.g., 'A. reason')\n"
+    "  * Each explanation line must start with its option letter "
+    "followed by a period (e.g., 'A. reason')\n"
     "  * This is the ONLY place where letters with periods are allowed\n"
     "- Each question should have 2 or more correct options\n"
-    "- Card count guidance (aim to capture ALL important knowledge):\n"
-    "  * For short content (<500 words): create 5-8 cards\n"
-    "  * For medium content (500-1500 words): create 10-15 cards\n"
-    "  * For long content (>1500 words): create 15-25 cards\n"
-    "  * IMPORTANT: Cover ALL key concepts - better to have more cards than miss important points\n"
+    "- Card count guidance: decide the number of cards from content length, "
+    "knowledge density, and learning value\n"
+    "- IMPORTANT: Cover all key concepts without padding the output with low-value questions\n"
     "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "Which of the following are solutions to '
-    "<anki-mathjax>x^2 - 5x + 6 = 0</anki-mathjax>?\\n\\n"
-    "A. <anki-mathjax>x = 1</anki-mathjax>\\n"
-    "B. <anki-mathjax>x = 2</anki-mathjax>\\n"
-    "C. <anki-mathjax>x = 3</anki-mathjax>\\n"
-    'D. <anki-mathjax>x = 6</anki-mathjax>",\n'
+    "\\(x^2 - 5x + 6 = 0\\)?\\n\\n"
+    "A. \\(x = 1\\)\\n"
+    "B. \\(x = 2\\)\\n"
+    "C. \\(x = 3\\)\\n"
+    'D. \\(x = 6\\)",\n'
     '   "Back": "答案: B, C\\n'
     "解析:\\n"
     "A. Substituting gives 1-5+6=2, not zero.\\n"
-    "B. Correct! Factoring gives <anki-mathjax>(x-2)(x-3) = 0</anki-mathjax>, so <anki-mathjax>x = 2</anki-mathjax> works.\\n"
-    "C. Correct! Factoring gives <anki-mathjax>(x-2)(x-3) = 0</anki-mathjax>, so <anki-mathjax>x = 3</anki-mathjax> works.\\n"
+    "B. Correct! Factoring gives "
+    "\\((x-2)(x-3) = 0\\), "
+    "so \\(x = 2\\) works.\\n"
+    "C. Correct! Factoring gives "
+    "\\((x-2)(x-3) = 0\\), "
+    "so \\(x = 3\\) works.\\n"
     'D. Substituting gives 36-30+6=12, not zero."}\n'
     "]\n"
 )

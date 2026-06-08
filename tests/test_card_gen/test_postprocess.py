@@ -79,6 +79,12 @@ class TestParseLlmOutput:
         with pytest.raises(CardGenError):
             parse_llm_output('[{"Front": "Q"')
 
+    def test_non_string_output_raises_parse_error(self):
+        with pytest.raises(CardGenError) as exc_info:
+            parse_llm_output(None)  # type: ignore[arg-type]
+
+        assert exc_info.value.code == ErrorCode.E_LLM_PARSE_ERROR
+
 
 # ---------------------------------------------------------------------------
 # validate_cloze

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import concurrent.futures
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -72,6 +74,39 @@ class TestLLMClientChat:
         client = LLMClient(api_key="sk-test")
         result = client.chat("sys", "usr")
         assert result == "ok"
+
+    @patch("ankismart.card_gen.llm_client.OpenAI")
+    def test_chat_calls_can_overlap_when_not_rate_limited(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        entered_count = 0
+        entered_lock = threading.Lock()
+        both_entered = threading.Event()
+        release = threading.Event()
+
+        def _create(**_kwargs):
+            nonlocal entered_count
+            with entered_lock:
+                entered_count += 1
+                if entered_count == 2:
+                    both_entered.set()
+            release.wait(timeout=1.0)
+            return _make_response("ok")
+
+        mock_client.chat.completions.create.side_effect = _create
+        client = LLMClient(api_key="sk-test")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(client.chat, "sys", "usr"),
+                executor.submit(client.chat, "sys", "usr"),
+            ]
+            overlapped = both_entered.wait(timeout=0.2)
+            release.set()
+            results = [future.result(timeout=1.0) for future in futures]
+
+        assert overlapped is True
+        assert results == ["ok", "ok"]
 
     @patch("ankismart.card_gen.llm_client.OpenAI")
     def test_empty_response_raises_error(self, mock_openai_cls):

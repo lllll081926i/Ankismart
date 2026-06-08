@@ -17,6 +17,13 @@ logger = get_logger("card_gen.postprocess")
 def parse_llm_output(raw: str) -> list[dict]:
     """Extract JSON array from LLM output, handling markdown code blocks."""
     trace_id = get_trace_id()
+    if not isinstance(raw, str):
+        raise CardGenError(
+            f"Failed to parse LLM output as JSON: expected text, got {type(raw).__name__}",
+            code=ErrorCode.E_LLM_PARSE_ERROR,
+            trace_id=trace_id,
+        )
+
     text = raw.strip()
 
     # Strip markdown code block wrapper if present

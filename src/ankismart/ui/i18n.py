@@ -5,11 +5,6 @@ Provides translation dictionaries and utilities for Chinese and English locales.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
-
 # Global current language
 _current_language = "zh"
 
@@ -22,11 +17,6 @@ def set_language(lang: str) -> None:
     """
     global _current_language
     _current_language = lang
-
-
-def get_current_language() -> str:
-    """Get the current language code."""
-    return _current_language
 
 
 # Translation dictionary: key -> {language_code: translated_text}
@@ -45,9 +35,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "{count} files selected",
     },
     "import.drag_hint": {
-        "zh": (
-            "拖拽文件到此处或点击选择文件"
-        ),
+        "zh": ("拖拽文件到此处或点击选择文件"),
         "en": "Drag files here or click to select",
     },
     "import.clear_all_files": {
@@ -164,9 +152,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Please enter deck name",
     },
     "import.please_select_strategy": {
-        "zh": (
-            "请至少选择一个生成策略（占比 > 0）"
-        ),
+        "zh": ("请至少选择一个生成策略（占比 > 0）"),
         "en": "Please select at least one strategy (ratio > 0)",
     },
     "import.conversion_errors": {"zh": "转换错误", "en": "Conversion Errors"},
@@ -240,9 +226,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Enter deck name",
     },
     "import.deck_name_tooltip": {
-        "zh": (
-            '选择或输入 Anki 牌组名称\n不能包含特殊字符：< > : " / \\ | ? *'
-        ),
+        "zh": ('选择或输入 Anki 牌组名称\n不能包含特殊字符：< > : " / \\ | ? *'),
         "en": 'Select or enter Anki deck name\nCannot contain: < > : " / \\ | ? *',
     },
     "import.tags_placeholder": {
@@ -250,9 +234,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Example: ankismart, important, review",
     },
     "import.tags_tooltip": {
-        "zh": (
-            "添加标签，用逗号分隔\n只能包含字母、数字、中文、下划线和连字符"
-        ),
+        "zh": ("添加标签，用逗号分隔\n只能包含字母、数字、中文、下划线和连字符"),
         "en": (
             "Add tags, separated by commas\nCan only contain letters, numbers, "
             "Chinese, underscores, and hyphens"
@@ -264,9 +246,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Download OCR Models",
     },
     "import.missing_ocr_models": {
-        "zh": (
-            "检测到缺失的 OCR 模型：{models}\n\n是否立即下载？（首次使用需要下载约 20MB 数据）"
-        ),
+        "zh": ("检测到缺失的 OCR 模型：{models}\n\n是否立即下载？（首次使用需要下载约 20MB 数据）"),
         "en": (
             "Missing OCR models detected: {models}\n\nDownload now? (First-time use "
             "requires ~20MB download)"
@@ -278,23 +258,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "import.please_wait": {"zh": "请稍候...", "en": "Please wait..."},
     "import.download_complete": {
-        "zh": (
-            "模型下载完成！已下载 {count} 个模型"
-        ),
+        "zh": ("模型下载完成！已下载 {count} 个模型"),
         "en": "Download complete! {count} model(s) downloaded",
     },
     "import.download_success": {"zh": "下载成功", "en": "Download Successful"},
     "import.ocr_models_ready": {
-        "zh": (
-            "OCR 模型已成功下载，现在可以开始转换文件了。"
-        ),
+        "zh": ("OCR 模型已成功下载，现在可以开始转换文件了。"),
         "en": "OCR models downloaded successfully. You can now start converting files.",
     },
     "import.download_failed": {"zh": "下载失败", "en": "Download Failed"},
     "import.ocr_download_error": {
-        "zh": (
-            "OCR 模型下载失败：\n\n{error}\n\n请检查网络连接后重试，或手动下载模型文件。"
-        ),
+        "zh": ("OCR 模型下载失败：\n\n{error}\n\n请检查网络连接后重试，或手动下载模型文件。"),
         "en": (
             "OCR model download failed:\n\n{error}\n\nPlease check your network "
             "connection and try again, or manually download the model files."
@@ -310,9 +284,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Comprehensive Knowledge",
     },
     "import.example_comprehensive_desc": {
-        "zh": (
-            "包含数学公式、代码块、列表等多种内容"
-        ),
+        "zh": ("包含数学公式、代码块、列表等多种内容"),
         "en": "Contains math formulas, code blocks, lists, etc.",
     },
     "import.example_math": {
@@ -320,16 +292,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Mathematics Formulas",
     },
     "import.example_math_desc": {
-        "zh": (
-            "微积分、线性代数、概率论等数学内容"
-        ),
+        "zh": ("微积分、线性代数、概率论等数学内容"),
         "en": "Calculus, linear algebra, probability, etc.",
     },
     "import.example_biology": {"zh": "生物学知识", "en": "Biology Knowledge"},
     "import.example_biology_desc": {
-        "zh": (
-            "细胞、遗传、生态、进化等生物学内容"
-        ),
+        "zh": ("细胞、遗传、生态、进化等生物学内容"),
         "en": "Cell biology, genetics, ecology, evolution, etc.",
     },
     "import.example_loaded": {"zh": "示例已加载", "en": "Example Loaded"},
@@ -358,9 +326,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Recommendation Applied",
     },
     "import.recommendation_applied_msg": {
-        "zh": (
-            "已根据文档类型应用推荐的生成策略"
-        ),
+        "zh": ("已根据文档类型应用推荐的生成策略"),
         "en": "Applied recommended strategy based on document type",
     },
     # Strategy recommendation types
@@ -369,9 +335,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Math/Science Content",
     },
     "import.rec_math_science_desc": {
-        "zh": (
-            "检测到数学公式、科学概念等内容"
-        ),
+        "zh": ("检测到数学公式、科学概念等内容"),
         "en": "Detected math formulas, scientific concepts, etc.",
     },
     "import.rec_liberal_arts": {
@@ -379,9 +343,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Liberal Arts/History Content",
     },
     "import.rec_liberal_arts_desc": {
-        "zh": (
-            "检测到历史事件、人文知识等内容"
-        ),
+        "zh": ("检测到历史事件、人文知识等内容"),
         "en": "Detected historical events, humanities knowledge, etc.",
     },
     "import.rec_programming": {
@@ -389,9 +351,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Programming/Technical Content",
     },
     "import.rec_programming_desc": {
-        "zh": (
-            "检测到代码块、技术文档等内容"
-        ),
+        "zh": ("检测到代码块、技术文档等内容"),
         "en": "Detected code blocks, technical documentation, etc.",
     },
     "import.rec_general": {"zh": "通用内容", "en": "General Content"},
@@ -563,9 +523,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "result.export_error": {"zh": "导出错误", "en": "Export Error"},
     "result.confirm_back": {"zh": "确认返回", "en": "Confirm Back"},
     "result.confirm_back_msg": {
-        "zh": (
-            "返回预览页面将丢失当前结果，是否继续？"
-        ),
+        "zh": ("返回预览页面将丢失当前结果，是否继续？"),
         "en": "Going back will lose current results. Continue?",
     },
     # Settings page - Groups
@@ -638,24 +596,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Provider '{name}' failed: {error}",
     },
     "settings.provider_test_failed": {
-        "zh": (
-            "提供商「{name}」未通过连通性测试"
-        ),
+        "zh": ("提供商「{name}」未通过连通性测试"),
         "en": "Provider '{name}' connectivity test failed",
     },
     # Settings page - LLM Parameters
     "settings.temperature": {"zh": "温度", "en": "Temperature"},
     "settings.temperature_desc": {
-        "zh": (
-            "控制生成的随机性（0.0 = 确定性，2.0 = 创造性）"
-        ),
+        "zh": ("控制生成的随机性（0.0 = 确定性，2.0 = 创造性）"),
         "en": "Control randomness (0.0 = deterministic, 2.0 = creative)",
     },
     "settings.max_tokens": {"zh": "最大令牌数", "en": "Max Tokens"},
     "settings.max_tokens_desc": {
-        "zh": (
-            "生成的最大令牌数（0 = 使用提供商默认值）"
-        ),
+        "zh": ("生成的最大令牌数（0 = 使用提供商默认值）"),
         "en": "Maximum tokens to generate (0 = use provider default)",
     },
     "settings.max_tokens_default": {"zh": "默认", "en": "Default"},
@@ -683,9 +635,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "settings.default_deck_placeholder": {"zh": "默认", "en": "Default"},
     "settings.default_tags": {"zh": "默认标签", "en": "Default Tags"},
     "settings.default_tags_desc": {
-        "zh": (
-            "新卡片的默认标签（逗号分隔）"
-        ),
+        "zh": ("新卡片的默认标签（逗号分隔）"),
         "en": "Default tags for new cards (comma separated)",
     },
     "settings.default_tags_placeholder": {"zh": "ankismart, imported", "en": "ankismart, imported"},
@@ -703,9 +653,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "AnkiConnect connected successfully",
     },
     "settings.anki_failed": {
-        "zh": (
-            "无法连接到 AnkiConnect，请检查 URL/密钥与代理设置"
-        ),
+        "zh": ("无法连接到 AnkiConnect，请检查 URL/密钥与代理设置"),
         "en": "Cannot connect to AnkiConnect, check URL/key and proxy settings",
     },
     # Settings page - Other
@@ -738,19 +686,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "启用基于 LLM 的 OCR 文本校正",
         "en": "Enable LLM-based OCR text correction",
     },
-    # Settings page - Experimental Features
+    # Settings page - Document Processing
     "settings.experimental_features": {
-        "zh": "实验性功能",
-        "en": "Experimental Features",
+        "zh": "文档处理",
+        "en": "Document Processing",
     },
     "settings.auto_split_enable": {
         "zh": "启用长文档自动分割",
         "en": "Enable Auto-Split for Long Documents",
     },
     "settings.auto_split_enable_desc": {
-        "zh": (
-            "当文档超过阈值时自动分割为多个片段处理"
-        ),
+        "zh": ("当文档超过阈值时自动分割为多个片段处理"),
         "en": "Automatically split documents into chunks when exceeding threshold",
     },
     "settings.auto_split_threshold": {"zh": "分割阈值", "en": "Split Threshold"},
@@ -759,12 +705,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Character count threshold for triggering auto-split",
     },
     "settings.auto_split_warning": {
-        "zh": (
-            "⚠️ 警告：这是实验性功能，可能影响卡片质量和生成时间。建议仅在处理超长文档时启用。"
-        ),
+        "zh": ("长文档会在超过阈值时自动切分为多个片段，降低单次请求过大导致的不稳定风险。"),
         "en": (
-            "⚠️ Warning: This is an experimental feature that may affect card "
-            "quality and generation time. Enable only for very long documents."
+            "Long documents are split into chunks after the threshold to reduce "
+            "instability from oversized single requests."
         ),
     },
     # Settings page - Cache Management
@@ -788,16 +732,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Confirm Clear Cache",
     },
     "settings.confirm_clear_cache_msg": {
-        "zh": (
-            "确定要清空所有缓存文件吗？这将删除 {count} 个文件（{size:.2f} MB）。"
-        ),
+        "zh": ("确定要清空所有缓存文件吗？这将删除 {count} 个文件（{size:.2f} MB）。"),
         "en": "Clear all cache files? This will delete {count} files ({size:.2f} MB).",
     },
     "settings.cache_cleared": {"zh": "缓存已清空", "en": "Cache Cleared"},
     "settings.cache_cleared_msg": {
-        "zh": (
-            "成功清空缓存，释放了 {size:.2f} MB 空间"
-        ),
+        "zh": ("成功清空缓存，释放了 {size:.2f} MB 空间"),
         "en": "Cache cleared successfully, freed {size:.2f} MB",
     },
     "settings.cache_clear_failed": {
@@ -831,9 +771,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Average Conversion Time",
     },
     "settings.avg_conversion_time_desc": {
-        "zh": (
-            "每个文件的平均转换时间（秒）"
-        ),
+        "zh": ("每个文件的平均转换时间（秒）"),
         "en": "Average conversion time per file (seconds)",
     },
     "settings.avg_generation_time": {
@@ -841,9 +779,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Average Generation Time",
     },
     "settings.avg_generation_time_desc": {
-        "zh": (
-            "每张卡片的平均生成时间（秒）"
-        ),
+        "zh": ("每张卡片的平均生成时间（秒）"),
         "en": "Average generation time per card (seconds)",
     },
     "settings.total_cards": {
@@ -868,9 +804,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Confirm Reset Statistics",
     },
     "settings.confirm_reset_stats_msg": {
-        "zh": (
-            "确定要清除所有性能统计数据吗？"
-        ),
+        "zh": ("确定要清除所有性能统计数据吗？"),
         "en": "Clear all performance statistics data?",
     },
     "settings.stats_reset_success": {
@@ -900,9 +834,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "settings.confirm_reset": {"zh": "确认重置", "en": "Confirm Reset"},
     "settings.confirm_reset_msg": {
-        "zh": (
-            "确定要将所有设置恢复为默认值吗？"
-        ),
+        "zh": ("确定要将所有设置恢复为默认值吗？"),
         "en": "Reset all settings to default values?",
     },
     "settings.reset_complete": {"zh": "重置完成", "en": "Reset Complete"},
@@ -949,34 +881,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "All Supported (*.md *.txt *.docx *.pptx *.pdf *.png *.jpg *.jpeg);;All Files (*.*)",
     },
     "file.anki_package": {"zh": "Anki Package (*.apkg)", "en": "Anki Package (*.apkg)"},
-    # Keyboard shortcuts
-    "shortcuts.open_file": {"zh": "打开文件", "en": "Open File"},
-    "shortcuts.start_generation": {"zh": "开始生成", "en": "Start Generation"},
-    "shortcuts.save_edit": {"zh": "保存编辑", "en": "Save Edit"},
-    "shortcuts.export_cards": {"zh": "导出卡片", "en": "Export Cards"},
-    "shortcuts.open_settings": {"zh": "打开设置", "en": "Open Settings"},
-    "shortcuts.help": {"zh": "帮助文档", "en": "Help"},
-    "shortcuts.quit": {"zh": "退出应用", "en": "Quit Application"},
-    "shortcuts.help_title": {"zh": "快捷键帮助", "en": "Keyboard Shortcuts"},
-    "shortcuts.help_desc": {
-        "zh": "查看所有可用的快捷键",
-        "en": "View all available shortcuts",
-    },
     # Error messages - Network
     "error.network.title": {
         "zh": "网络连接失败",
         "en": "Network Connection Failed",
     },
     "error.network.message": {
-        "zh": (
-            "无法连接到服务器，请检查网络连接"
-        ),
+        "zh": ("无法连接到服务器，请检查网络连接"),
         "en": "Cannot connect to server, please check network connection",
     },
     "error.network.suggestion": {
-        "zh": (
-            "• 检查网络连接是否正常\n• 检查代理设置\n• 确认服务器地址正确"
-        ),
+        "zh": ("• 检查网络连接是否正常\n• 检查代理设置\n• 确认服务器地址正确"),
         "en": (
             "• Check network connection\n• Verify proxy settings\n• Confirm server "
             "address is correct"
@@ -988,9 +903,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Server response timeout, please retry later",
     },
     "error.timeout.suggestion": {
-        "zh": (
-            "• 检查网络速度\n• 尝试使用代理\n• 稍后重试"
-        ),
+        "zh": ("• 检查网络速度\n• 尝试使用代理\n• 稍后重试"),
         "en": "• Check network speed\n• Try using a proxy\n• Retry later",
     },
     "error.proxy.title": {
@@ -998,15 +911,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Proxy Connection Failed",
     },
     "error.proxy.message": {
-        "zh": (
-            "无法通过代理连接，请检查代理设置"
-        ),
+        "zh": ("无法通过代理连接，请检查代理设置"),
         "en": "Cannot connect through proxy, please check proxy settings",
     },
     "error.proxy.suggestion": {
-        "zh": (
-            "• 检查代理地址格式\n• 确认代理服务可用\n• 尝试关闭代理"
-        ),
+        "zh": ("• 检查代理地址格式\n• 确认代理服务可用\n• 尝试关闭代理"),
         "en": (
             "• Check proxy address format\n• Confirm proxy service is available\n• "
             "Try disabling proxy"
@@ -1015,18 +924,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     # Error messages - API Key
     "error.api_key.title": {"zh": "API Key 无效", "en": "Invalid API Key"},
     "error.api_key.message": {
-        "zh": (
-            "API Key 无效或已过期，请在设置中检查配置"
-        ),
+        "zh": ("API Key 无效或已过期，请在设置中检查配置"),
         "en": "API Key is invalid or expired, please check configuration in settings",
     },
     "error.api_key.suggestion": {
-        "zh": (
-            "• 检查 API Key 是否正确\n• 确认 API Key 未过期\n• 检查账户余额"
-        ),
+        "zh": ("• 检查 API Key 是否正确\n• 确认 API Key 未过期\n• 检查账户余额"),
         "en": (
-            "• Verify API Key is correct\n• Confirm API Key is not expired\n• Check "
-            "account balance"
+            "• Verify API Key is correct\n• Confirm API Key is not expired\n• Check account balance"
         ),
     },
     "error.unauthorized.title": {"zh": "认证失败", "en": "Authentication Failed"},
@@ -1035,13 +939,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "API authentication failed, please check API Key configuration",
     },
     "error.unauthorized.suggestion": {
-        "zh": (
-            "• 重新输入 API Key\n• 确认使用正确的提供商\n• 检查 API Key 权限"
-        ),
-        "en": (
-            "• Re-enter API Key\n• Confirm using correct provider\n• Check API Key "
-            "permissions"
-        ),
+        "zh": ("• 重新输入 API Key\n• 确认使用正确的提供商\n• 检查 API Key 权限"),
+        "en": ("• Re-enter API Key\n• Confirm using correct provider\n• Check API Key permissions"),
     },
     # Error messages - File Format
     "error.file_format.title": {
@@ -1049,9 +948,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "File Format Error",
     },
     "error.file_format.message": {
-        "zh": (
-            "不支持的文件格式，请选择 PDF、Word、PPT 或图片"
-        ),
+        "zh": ("不支持的文件格式，请选择 PDF、Word、PPT 或图片"),
         "en": "Unsupported file format, please select PDF, Word, PPT or images",
     },
     "error.file_format.suggestion": {
@@ -1069,19 +966,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "File may be corrupted and cannot be read",
     },
     "error.file_corrupted.suggestion": {
-        "zh": (
-            "• 尝试重新下载文件\n• 使用其他工具打开验证\n• 选择其他文件"
-        ),
-        "en": (
-            "• Try re-downloading the file\n• Verify with other tools\n• Select "
-            "another file"
-        ),
+        "zh": ("• 尝试重新下载文件\n• 使用其他工具打开验证\n• 选择其他文件"),
+        "en": ("• Try re-downloading the file\n• Verify with other tools\n• Select another file"),
     },
     "error.file_too_large.title": {"zh": "文件过大", "en": "File Too Large"},
     "error.file_too_large.message": {
-        "zh": (
-            "超出云 OCR 文件限制：单文件不超过 200MB，PDF 不超过 600 页"
-        ),
+        "zh": ("超出云 OCR 文件限制：单文件不超过 200MB，PDF 不超过 600 页"),
         "en": "Cloud OCR file limit exceeded: max 200MB per file and max 600 PDF pages",
     },
     "error.file_too_large.suggestion": {
@@ -1102,9 +992,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "OCR recognition failed, please ensure image is clear",
     },
     "error.ocr.suggestion": {
-        "zh": (
-            "• 使用更清晰的图片\n• 确保文字可读\n• 尝试调整图片亮度/对比度"
-        ),
+        "zh": ("• 使用更清晰的图片\n• 确保文字可读\n• 尝试调整图片亮度/对比度"),
         "en": (
             "• Use clearer images\n• Ensure text is readable\n• Try adjusting image "
             "brightness/contrast"
@@ -1116,9 +1004,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "OCR model files are missing and need to be downloaded",
     },
     "error.ocr_model.suggestion": {
-        "zh": (
-            "• 点击下载按钮获取模型\n• 检查网络连接\n• 确保有足够磁盘空间"
-        ),
+        "zh": ("• 点击下载按钮获取模型\n• 检查网络连接\n• 确保有足够磁盘空间"),
         "en": (
             "• Click download button to get models\n• Check network connection\n• "
             "Ensure sufficient disk space"
@@ -1130,15 +1016,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Cannot Connect to Anki",
     },
     "error.anki_connection.message": {
-        "zh": (
-            "无法连接到 AnkiConnect，请确保 Anki 正在运行"
-        ),
+        "zh": ("无法连接到 AnkiConnect，请确保 Anki 正在运行"),
         "en": "Cannot connect to AnkiConnect, please ensure Anki is running",
     },
     "error.anki_connection.suggestion": {
-        "zh": (
-            "• 启动 Anki 桌面应用\n• 安装 AnkiConnect 插件\n• 检查 AnkiConnect 设置"
-        ),
+        "zh": ("• 启动 Anki 桌面应用\n• 安装 AnkiConnect 插件\n• 检查 AnkiConnect 设置"),
         "en": (
             "• Start Anki desktop application\n• Install AnkiConnect add-on\n• Check "
             "AnkiConnect settings"
@@ -1149,19 +1031,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Anki Permission Error",
     },
     "error.anki_permission.message": {
-        "zh": (
-            "AnkiConnect 拒绝访问，请检查权限设置"
-        ),
+        "zh": ("AnkiConnect 拒绝访问，请检查权限设置"),
         "en": "AnkiConnect denied access, please check permission settings",
     },
     "error.anki_permission.suggestion": {
-        "zh": (
-            "• 检查 AnkiConnect 配置\n• 确认 API Key 正确\n• 重启 Anki"
-        ),
-        "en": (
-            "• Check AnkiConnect configuration\n• Confirm API Key is correct\n• "
-            "Restart Anki"
-        ),
+        "zh": ("• 检查 AnkiConnect 配置\n• 确认 API Key 正确\n• 重启 Anki"),
+        "en": ("• Check AnkiConnect configuration\n• Confirm API Key is correct\n• Restart Anki"),
     },
     # Error messages - LLM Provider
     "error.llm_provider.title": {
@@ -1173,13 +1048,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "LLM service call failed, please check configuration",
     },
     "error.llm_provider.suggestion": {
-        "zh": (
-            "• 检查提供商配置\n• 确认 API Key 有效\n• 检查账户额度"
-        ),
-        "en": (
-            "• Check provider configuration\n• Confirm API Key is valid\n• Check "
-            "account quota"
-        ),
+        "zh": ("• 检查提供商配置\n• 确认 API Key 有效\n• 检查账户额度"),
+        "en": ("• Check provider configuration\n• Confirm API Key is valid\n• Check account quota"),
     },
     "error.rate_limit.title": {
         "zh": "接口限频",
@@ -1203,9 +1073,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "error.quota_exceeded.title": {"zh": "配额已用尽", "en": "Quota Exceeded"},
     "error.quota_exceeded.message": {
-        "zh": (
-            "账户可用配额不足或已用尽"
-        ),
+        "zh": ("账户可用配额不足或已用尽"),
         "en": "Insufficient or exhausted account quota",
     },
     "error.quota_exceeded.suggestion": {
@@ -1227,13 +1095,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Insufficient permissions to perform this operation",
     },
     "error.permission.suggestion": {
-        "zh": (
-            "• 以管理员身份运行\n• 检查文件/文件夹权限\n• 更改保存位置"
-        ),
-        "en": (
-            "• Run as administrator\n• Check file/folder permissions\n• Change save "
-            "location"
-        ),
+        "zh": ("• 以管理员身份运行\n• 检查文件/文件夹权限\n• 更改保存位置"),
+        "en": ("• Run as administrator\n• Check file/folder permissions\n• Change save location"),
     },
     # Error messages - Validation
     "error.validation.title": {
@@ -1245,12 +1108,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Input data format is incorrect",
     },
     "error.validation.suggestion": {
-        "zh": (
-            "• 检查输入格式\n• 确保必填项已填写\n• 参考示例格式"
-        ),
+        "zh": ("• 检查输入格式\n• 确保必填项已填写\n• 参考示例格式"),
         "en": (
-            "• Check input format\n• Ensure required fields are filled\n• Refer to "
-            "example format"
+            "• Check input format\n• Ensure required fields are filled\n• Refer to example format"
         ),
     },
     # Error messages - Unknown
@@ -1260,9 +1120,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "An unknown error occurred",
     },
     "error.unknown.suggestion": {
-        "zh": (
-            "• 查看详细错误信息\n• 尝试重启应用\n• 联系技术支持"
-        ),
+        "zh": ("• 查看详细错误信息\n• 尝试重启应用\n• 联系技术支持"),
         "en": (
             "• Check detailed error message\n• Try restarting application\n• Contact "
             "technical support"
@@ -1276,9 +1134,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     # Log export
     "log.export_title": {"zh": "导出日志", "en": "Export Logs"},
     "log.export_desc": {
-        "zh": (
-            "导出应用日志文件用于问题排查"
-        ),
+        "zh": ("导出应用日志文件用于问题排查"),
         "en": "Export application logs for troubleshooting",
     },
     "log.exporting": {"zh": "正在导出日志...", "en": "Exporting logs..."},
@@ -1366,28 +1222,6 @@ def get_text(key: str, lang: str | None = None, **kwargs) -> str:
             pass
 
     return text
-
-
-def get_all_keys() -> list[str]:
-    """Get all available translation keys.
-
-    Returns:
-        List of all translation keys in the dictionary.
-    """
-    return list(TRANSLATIONS.keys())
-
-
-def has_translation(key: str, lang: str = "zh") -> bool:
-    """Check if a translation exists for a given key and language.
-
-    Args:
-        key: Translation key
-        lang: Language code
-
-    Returns:
-        True if translation exists, False otherwise.
-    """
-    return key in TRANSLATIONS and lang in TRANSLATIONS[key]
 
 
 # Alias for convenience

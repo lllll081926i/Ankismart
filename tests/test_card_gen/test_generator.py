@@ -124,12 +124,66 @@ class TestCardGeneratorGenerate:
         assert "Each option must be on its own line" in MULTIPLE_CHOICE_SYSTEM_PROMPT
         assert explanation_rule in MULTIPLE_CHOICE_SYSTEM_PROMPT
 
+    def test_prompts_use_anki_official_mathjax_delimiters(self):
+        joined = "\n".join(
+            [
+                BASIC_SYSTEM_PROMPT,
+                CLOZE_SYSTEM_PROMPT,
+                IMAGE_QA_SYSTEM_PROMPT,
+                SINGLE_CHOICE_SYSTEM_PROMPT,
+                MULTIPLE_CHOICE_SYSTEM_PROMPT,
+            ]
+        )
+
+        assert "<anki-mathjax" not in joined
+        assert "\\(" in joined
+        assert "\\[" in joined
+
+    def test_strategy_prompts_do_not_hard_code_auto_count_ranges(self):
+        joined = "\n".join(
+            [
+                BASIC_SYSTEM_PROMPT,
+                CLOZE_SYSTEM_PROMPT,
+                IMAGE_QA_SYSTEM_PROMPT,
+                SINGLE_CHOICE_SYSTEM_PROMPT,
+                MULTIPLE_CHOICE_SYSTEM_PROMPT,
+            ]
+        )
+
+        assert "Create 3-10 cards" not in joined
+        assert "create 5-8 cards" not in joined
+        assert "create 10-15 cards" not in joined
+        assert "create 15-25 cards" not in joined
+
     def test_target_count_trims_generated_cards(self):
         gen = _make_generator(chat_side_effect=_fake_llm_basic)
         request = GenerateRequest(markdown="content", strategy="basic", target_count=1)
         drafts = gen.generate(request)
 
         assert len(drafts) == 1
+
+    def test_target_count_caps_excess_llm_cards_before_building_drafts(self, monkeypatch):
+        captured_raw_counts: list[int] = []
+        raw_cards = [
+            {"Front": f"Q{index}", "Back": f"Answer {index}\n解析:\nReason {index}"}
+            for index in range(1000)
+        ]
+
+        def _fake_build_card_drafts(*, raw_cards, **kwargs):
+            captured_raw_counts.append(len(raw_cards))
+            return build_card_drafts(raw_cards=raw_cards, **kwargs)
+
+        monkeypatch.setattr(
+            "ankismart.card_gen.generator.build_card_drafts",
+            _fake_build_card_drafts,
+        )
+        gen = _make_generator(chat_return_value=json.dumps(raw_cards))
+        request = GenerateRequest(markdown="content", strategy="basic", target_count=20)
+
+        drafts = gen.generate(request)
+
+        assert len(drafts) == 20
+        assert captured_raw_counts == [60]
 
     def test_auto_target_count_uses_soft_prompt_and_does_not_trim(self):
         prompts: list[str] = []
@@ -161,6 +215,60 @@ class TestCardGeneratorGenerate:
         assert any("Generate around" in prompt for prompt in prompts)
         assert any("cover all important knowledge points" in prompt for prompt in prompts)
         assert len(drafts) >= 3
+
+    def test_auto_target_count_zero_asks_ai_to_decide_by_density(self):
+        prompts: list[str] = []
+
+        def _fake_llm(system_prompt: str, user_prompt: str, timeout: float | None = None) -> str:
+            prompts.append(system_prompt)
+            return json.dumps(
+                [
+                    {"Front": "Q1", "Back": "A1"},
+                    {"Front": "Q2", "Back": "A2"},
+                ]
+            )
+
+        gen = _make_generator(chat_side_effect=_fake_llm)
+        request = GenerateRequest(
+            markdown="dense concept " * 80,
+            strategy="basic",
+            target_count=0,
+            auto_target_count=True,
+        )
+
+        drafts = gen.generate(request)
+
+        assert prompts
+        assert "Decide the card count from the content length and knowledge density" in prompts[0]
+        assert "Do not pad the output to reach a fixed number" in prompts[0]
+        assert len(drafts) == 2
+
+    def test_auto_target_count_caps_runaway_output_by_content_size(self):
+        markdown = "dense concept " * 40
+        raw_cards = [
+            {
+                "Front": f"Question {index}",
+                "Back": f"答案: Answer {index}\n解析:\nReason {index}",
+            }
+            for index in range(1000)
+        ]
+        gen = _make_generator(chat_return_value=json.dumps(raw_cards))
+
+        drafts = gen.generate(
+            GenerateRequest(
+                markdown=markdown,
+                strategy="basic",
+                target_count=0,
+                auto_target_count=True,
+            )
+        )
+
+        safety_limit = CardGenerator._auto_card_safety_limit(
+            len(markdown),
+            target_hint=0,
+        )
+        assert len(drafts) == safety_limit
+        assert safety_limit < len(raw_cards)
 
     def test_image_qa_attaches_image(self, tmp_path):
         img_path = tmp_path / "diagram.png"
@@ -274,6 +382,12 @@ class TestCorrectOcrText:
 
 
 class TestSplitMarkdown:
+    def test_generate_request_enables_auto_split_by_default(self):
+        request = GenerateRequest(markdown="content")
+
+        assert request.enable_auto_split is True
+        assert request.split_threshold == 70000
+
     def test_split_markdown_returns_original_when_short(self):
         gen = _make_generator()
         content = "short text"
@@ -308,6 +422,22 @@ class TestSplitMarkdown:
         assert len(chunks) >= 2
         assert any("```python" in chunk for chunk in chunks)
         assert any("```sql" in chunk for chunk in chunks)
+
+    def test_split_markdown_splits_complete_fenced_block_in_single_paragraph(self):
+        gen = _make_generator()
+        content = (
+            ("Intro sentence. " * 200)
+            + "\n\n```python\n"
+            + ("print('hello')\n" * 600)
+            + "```\n\n"
+            + ("Trailing sentence. " * 200)
+        )
+
+        chunks = gen._split_markdown(content, threshold=1000)
+
+        assert chunks
+        assert all(len(chunk) <= 1000 for chunk in chunks)
+        assert any(chunk.startswith("```python") for chunk in chunks)
 
     def test_split_markdown_keeps_long_code_block_within_threshold(self):
         gen = _make_generator()

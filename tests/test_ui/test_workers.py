@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import types
 from pathlib import Path
 from types import SimpleNamespace
@@ -688,7 +689,7 @@ def test_batch_convert_worker_cancel_stops_processing(monkeypatch) -> None:
     convert_count = {"n": 0}
 
     class _SlowConverter:
-        def __init__(self, *a, **kw):
+        def __init__(self, *a, **_kw):
             pass
 
         def convert(self, path, *, progress_callback=None):
@@ -715,7 +716,7 @@ def test_batch_convert_worker_retry_on_failure(monkeypatch) -> None:
     call_count = {"n": 0}
 
     class _FailOnceConverter:
-        def __init__(self, *a, **kw):
+        def __init__(self, *a, **_kw):
             pass
 
         def convert(self, path, *, progress_callback=None):
@@ -744,7 +745,7 @@ def test_batch_convert_worker_retry_on_failure(monkeypatch) -> None:
 
 def test_batch_convert_worker_file_error_emitted_on_final_failure(monkeypatch) -> None:
     class _AlwaysFailConverter:
-        def __init__(self, *a, **kw):
+        def __init__(self, *a, **_kw):
             pass
 
         def convert(self, path, *, progress_callback=None):
@@ -759,6 +760,61 @@ def test_batch_convert_worker_file_error_emitted_on_final_failure(monkeypatch) -
 
     assert len(file_errors) == 1
     assert "permanent error" in file_errors[0]
+
+
+def test_batch_generate_worker_malformed_large_llm_output_emits_error(monkeypatch) -> None:
+    class _MalformedLLMClient:
+        def chat(self, *_args, **_kwargs):
+            cards = [
+                {
+                    "Front": f"Question {index}",
+                    "Back": f"Answer {index}",
+                }
+                for index in range(120)
+            ]
+            return json.dumps(cards)[:-12]
+
+        def close(self):
+            pass
+
+    document = ConvertedDocument(
+        result=MarkdownResult(
+            content="source content",
+            source_path="large.md",
+            source_format="markdown",
+            trace_id="trace-large-malformed",
+        ),
+        file_name="large.md",
+    )
+    worker = BatchGenerateWorker(
+        documents=[document],
+        generation_config={
+            "target_total": 120,
+            "strategy_mix": [{"strategy": "basic", "ratio": 100}],
+        },
+        llm_client=_MalformedLLMClient(),
+        deck_name="Default",
+        tags=["ankismart"],
+        config=SimpleNamespace(
+            semantic_duplicate_threshold=0.9,
+            card_quality_min_chars=2,
+            card_quality_retry_rounds=0,
+            llm_adaptive_concurrency=False,
+            llm_concurrency=1,
+            language="zh",
+        ),
+    )
+
+    finished: list[list[CardDraft]] = []
+    errors: list[str] = []
+    worker.finished.connect(finished.append)
+    worker.error.connect(errors.append)
+
+    worker.run()
+
+    assert finished == []
+    assert len(errors) == 1
+    assert "[E_LLM_PARSE_ERROR]" in errors[0]
 
 
 def test_batch_convert_worker_closes_ocr_correction_client(monkeypatch) -> None:
@@ -869,7 +925,7 @@ def test_batch_generate_worker_zero_concurrency_uses_document_count(monkeypatch)
         def __enter__(self):
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        def __exit__(self, _exc_type, _exc, _tb):
             return False
 
         def submit(self, fn, *args, **kwargs):
@@ -931,22 +987,59 @@ def test_batch_generate_worker_closes_llm_client_after_run(monkeypatch) -> None:
     assert closed["value"] is True
 
 
-def test_batch_generate_worker_estimates_auto_target_total_from_document_size() -> None:
-    docs = [
-        ConvertedDocument(
-            result=MarkdownResult(
-                content=("知识点 " * 9000),
-                source_path="long.md",
-                source_format="markdown",
-                trace_id="trace-auto-target",
-            ),
-            file_name="long.md",
-        )
-    ]
+def test_allocate_auto_strategy_counts_uses_enabled_strategies_without_fixed_counts() -> None:
+    counts = BatchGenerateWorker._allocate_auto_strategy_counts(
+        [
+            {"strategy": "basic", "ratio": 100},
+            {"strategy": "cloze", "ratio": 0},
+            {"strategy": "single_choice", "ratio": 40},
+            {"strategy": "", "ratio": 20},
+            {"strategy": "basic", "ratio": 10},
+        ]
+    )
+
+    assert counts == {"basic": 0, "single_choice": 0}
+
+
+def test_batch_generate_worker_auto_target_lets_ai_decide_count_when_hint_is_positive(
+    monkeypatch,
+) -> None:
+    doc = ConvertedDocument(
+        result=MarkdownResult(
+            content=("long knowledge point " * 12000),
+            source_path="long.md",
+            source_format="markdown",
+            trace_id="trace-auto-positive",
+        ),
+        file_name="long.md",
+    )
+    captured_target_counts: list[int] = []
+    captured_auto_flags: list[bool] = []
+    finished: list[list[CardDraft]] = []
+
+    def _generate(_self, request):
+        captured_target_counts.append(request.target_count)
+        captured_auto_flags.append(request.auto_target_count)
+        return [
+            CardDraft(
+                fields={
+                    "Front": [
+                        "What is photosynthesis?",
+                        "How does TCP congestion control work?",
+                        "Why does a database use an index?",
+                    ][index],
+                    "Back": f"Answer {index}",
+                },
+                note_type="Basic",
+            )
+            for index in range(3)
+        ]
+
+    monkeypatch.setattr("ankismart.ui.workers.CardGenerator.generate", _generate)
     worker = BatchGenerateWorker(
-        documents=docs,
+        documents=[doc],
         generation_config={
-            "target_total": 0,
+            "target_total": 20,
             "auto_target_count": True,
             "strategy_mix": [{"strategy": "basic", "ratio": 1}],
         },
@@ -955,11 +1048,58 @@ def test_batch_generate_worker_estimates_auto_target_total_from_document_size() 
         tags=[],
         enable_auto_split=True,
         split_threshold=7000,
+        config=SimpleNamespace(llm_concurrency=1),
     )
+    worker.finished.connect(finished.append)
 
-    estimated = worker._estimate_auto_target_total()
+    worker.run()
 
-    assert estimated >= 12
+    assert captured_target_counts == [0]
+    assert captured_auto_flags == [True]
+    assert len(finished[0]) == 3
+
+
+def test_batch_generate_worker_enables_auto_split_by_default(monkeypatch) -> None:
+    doc = ConvertedDocument(
+        result=MarkdownResult(
+            content="long content " * 8000,
+            source_path="long.md",
+            source_format="markdown",
+            trace_id="trace-auto-split-default",
+        ),
+        file_name="long.md",
+    )
+    captured: list[tuple[bool, int]] = []
+
+    def _generate(_self, request):
+        captured.append((request.enable_auto_split, request.split_threshold))
+        return [
+            CardDraft(
+                fields={
+                    "Front": "What problem does automatic long-document splitting solve?",
+                    "Back": "It keeps each model request within a stable size.",
+                },
+                note_type="Basic",
+            )
+        ]
+
+    monkeypatch.setattr("ankismart.ui.workers.CardGenerator.generate", _generate)
+
+    worker = BatchGenerateWorker(
+        documents=[doc],
+        generation_config={
+            "target_total": 1,
+            "strategy_mix": [{"strategy": "basic", "ratio": 1}],
+        },
+        llm_client=object(),
+        deck_name="Default",
+        tags=[],
+        config=SimpleNamespace(llm_concurrency=1),
+    )
+    worker.run()
+
+    assert captured
+    assert all(item == (True, 70000) for item in captured)
 
 
 def test_batch_generate_worker_emits_warning_when_partial_timeout_has_cards(monkeypatch) -> None:
@@ -1038,6 +1178,33 @@ def test_batch_generate_worker_emits_structured_error_when_all_failed(monkeypatc
 
     assert len(errors) == 1
     assert errors[0].startswith("[E_LLM_AUTH_ERROR]")
+
+
+def test_batch_generate_worker_auto_concurrency_is_capped_by_configured_limit() -> None:
+    assert (
+        BatchGenerateWorker._resolve_max_workers(
+            configured_workers=0,
+            document_count=80,
+            concurrency_cap=6,
+        )
+        == 6
+    )
+    assert (
+        BatchGenerateWorker._resolve_max_workers(
+            configured_workers=0,
+            document_count=3,
+            concurrency_cap=6,
+        )
+        == 3
+    )
+    assert (
+        BatchGenerateWorker._resolve_max_workers(
+            configured_workers=12,
+            document_count=80,
+            concurrency_cap=6,
+        )
+        == 6
+    )
 
 
 def test_batch_generate_worker_adaptive_concurrency_reduces_on_throttle() -> None:
