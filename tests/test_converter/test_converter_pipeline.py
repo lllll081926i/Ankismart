@@ -230,9 +230,7 @@ def test_convert_docx_uses_markitdown_converter_when_backend_is_markitdown(
 
     def fake_markitdown_convert(_: Path, __: str) -> MarkdownResult:
         called["markitdown"] += 1
-        return MarkdownResult(
-            content="markitdown", source_path="sample.docx", source_format="docx"
-        )
+        return MarkdownResult(content="markitdown", source_path="sample.docx", source_format="docx")
 
     monkeypatch.setattr(
         "ankismart.converter.converter._convert_with_markitdown",

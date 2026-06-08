@@ -1,4 +1,5 @@
 """Tests for ankismart.converter.cache."""
+
 from __future__ import annotations
 
 import json
@@ -24,6 +25,7 @@ from ankismart.core.models import MarkdownResult
 # ---------------------------------------------------------------------------
 # save_cache
 # ---------------------------------------------------------------------------
+
 
 class TestSaveCache:
     def test_saves_md_and_json(self, tmp_path: Path) -> None:
@@ -107,6 +109,7 @@ class TestSaveCache:
 # ---------------------------------------------------------------------------
 # get_cached
 # ---------------------------------------------------------------------------
+
 
 class TestGetCached:
     def test_returns_result_when_cached(self, tmp_path: Path) -> None:
@@ -194,6 +197,7 @@ class TestGetCached:
 # ---------------------------------------------------------------------------
 # get_file_hash
 # ---------------------------------------------------------------------------
+
 
 class TestGetFileHash:
     def test_content_change_with_same_size_and_mtime_changes_hash(self, tmp_path: Path) -> None:

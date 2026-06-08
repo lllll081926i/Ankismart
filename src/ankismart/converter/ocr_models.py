@@ -88,12 +88,14 @@ def _resolve_project_root() -> Path:
 
 def _ensure_local_dependency_env() -> None:
     project_root = _resolve_project_root()
-    local_root = Path(
-        os.getenv("ANKISMART_LOCAL_DIR", str(project_root / ".local"))
-    ).expanduser().resolve()
-    model_root = Path(
-        os.getenv("ANKISMART_OCR_MODEL_DIR", str(project_root / "model"))
-    ).expanduser().resolve()
+    local_root = (
+        Path(os.getenv("ANKISMART_LOCAL_DIR", str(project_root / ".local"))).expanduser().resolve()
+    )
+    model_root = (
+        Path(os.getenv("ANKISMART_OCR_MODEL_DIR", str(project_root / "model")))
+        .expanduser()
+        .resolve()
+    )
 
     defaults = {
         "ANKISMART_LOCAL_DIR": str(local_root),

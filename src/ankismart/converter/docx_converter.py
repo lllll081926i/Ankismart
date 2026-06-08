@@ -143,6 +143,7 @@ def convert(file_path: Path, trace_id: str = "") -> MarkdownResult:
                 continue
 
             from docx.text.paragraph import Paragraph
+
             para = Paragraph(child, doc)
             style_name = para.style.name if para.style else ""
 

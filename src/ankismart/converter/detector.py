@@ -7,15 +7,6 @@ from pathlib import Path
 
 from ankismart.core.errors import ConvertError, ErrorCode
 
-SUPPORTED_TYPES: set[str] = {
-    "markdown",
-    "text",
-    "docx",
-    "pptx",
-    "pdf",
-    "image",
-}
-
 _MIME_MAP: dict[str, str] = {
     "text/markdown": "markdown",
     "text/plain": "text",
@@ -45,7 +36,8 @@ def detect_file_type(file_path: Path) -> str:
     Uses ``mimetypes`` as the primary check and falls back to the file
     extension when the MIME type is not conclusive.
 
-    Returns one of the strings in :data:`SUPPORTED_TYPES`.
+    Returns a standardized type string such as ``markdown``, ``text``, ``docx``,
+    ``pptx``, ``pdf`` or ``image``.
 
     Raises:
         ConvertError: If the file does not exist or its type is unsupported.

@@ -1,4 +1,5 @@
 """Tests for ankismart.core.errors module."""
+
 from __future__ import annotations
 
 import pytest

@@ -98,9 +98,7 @@ ERROR_MESSAGES = {
             "title": "笔记类型未找到",
             "message": "指定的 Anki 笔记类型不存在",
             "solution": (
-                "• 确认笔记类型已在 Anki 中创建\n"
-                "• 检查笔记类型名称拼写\n"
-                "• 使用默认笔记类型"
+                "• 确认笔记类型已在 Anki 中创建\n• 检查笔记类型名称拼写\n• 使用默认笔记类型"
             ),
         },
         ErrorCode.E_REQUIRED_FIELD_MISSING: {
@@ -112,9 +110,7 @@ ERROR_MESSAGES = {
             "title": "填空语法错误",
             "message": "填空卡片的语法格式不正确",
             "solution": (
-                "• 检查 {{c1::}} 格式是否正确\n"
-                "• 确保填空编号连续\n"
-                "• 参考 Anki 填空语法文档"
+                "• 检查 {{c1::}} 格式是否正确\n• 确保填空编号连续\n• 参考 Anki 填空语法文档"
             ),
         },
         ErrorCode.E_MEDIA_INVALID: {
@@ -186,10 +182,7 @@ ERROR_MESSAGES = {
             "title": "配置无效",
             "message": "应用配置验证失败",
             "solution": (
-                "• 检查设置中的必填项\n"
-                "• 验证 API Key 格式\n"
-                "• 确认 URL 地址正确\n"
-                "• 重置为默认配置"
+                "• 检查设置中的必填项\n• 验证 API Key 格式\n• 确认 URL 地址正确\n• 重置为默认配置"
             ),
         },
         ErrorCode.E_FILE_NOT_FOUND: {
@@ -201,19 +194,14 @@ ERROR_MESSAGES = {
             "title": "文件类型不支持",
             "message": "不支持该文件类型",
             "solution": (
-                "• 支持的格式：PDF、DOCX、PPTX、PNG、JPG、JPEG\n"
-                "• 转换为支持的格式\n"
-                "• 使用其他文件"
+                "• 支持的格式：PDF、DOCX、PPTX、PNG、JPG、JPEG\n• 转换为支持的格式\n• 使用其他文件"
             ),
         },
         ErrorCode.E_UNKNOWN: {
             "title": "未知错误",
             "message": "发生了未知错误",
             "solution": (
-                "• 查看详细日志了解更多信息\n"
-                "• 尝试重启应用\n"
-                "• 检查系统资源是否充足\n"
-                "• 联系技术支持"
+                "• 查看详细日志了解更多信息\n• 尝试重启应用\n• 检查系统资源是否充足\n• 联系技术支持"
             ),
         },
     },
@@ -258,9 +246,7 @@ ERROR_MESSAGES = {
             "title": "Invalid Media File",
             "message": "Image or audio file in card is invalid",
             "solution": (
-                "• Check if file exists\n"
-                "• Verify file format is supported\n"
-                "• Re-add media file"
+                "• Check if file exists\n• Verify file format is supported\n• Re-add media file"
             ),
         },
         ErrorCode.E_ANKICONNECT_ERROR: {

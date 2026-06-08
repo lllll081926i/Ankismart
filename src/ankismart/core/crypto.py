@@ -109,7 +109,7 @@ def _dpapi_encrypt(plaintext: str) -> str:
 def _dpapi_decrypt(ciphertext: str) -> str:
     if not _IS_WINDOWS:
         raise InvalidToken()
-    token = ciphertext[len(_DPAPI_PREFIX):]
+    token = ciphertext[len(_DPAPI_PREFIX) :]
     if not token:
         return ""
     protected = base64.urlsafe_b64decode(token.encode("ascii"))

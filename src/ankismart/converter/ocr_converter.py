@@ -1327,12 +1327,8 @@ def _build_ocr_kwargs(device: str) -> dict[str, object]:
 
 def _is_onednn_unimplemented_error(exc: Exception) -> bool:
     message = str(exc).lower()
-    return (
-        "onednn" in message
-        and (
-            "unimplemented" in message
-            or "convertpirattribute2runtimeattribute" in message
-        )
+    return "onednn" in message and (
+        "unimplemented" in message or "convertpirattribute2runtimeattribute" in message
     )
 
 
@@ -1464,11 +1460,6 @@ def _get_ocr() -> "PaddleOCR":
                 _gpu_fallback_applied = True
 
     return _ocr_instance
-
-
-def preload_ocr() -> None:
-    thread = threading.Thread(target=_get_ocr, daemon=True)
-    thread.start()
 
 
 def _pdf_to_images(file_path: Path):

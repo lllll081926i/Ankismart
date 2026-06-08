@@ -743,7 +743,7 @@ class TestConvert:
             ):
                 with patch(
                     "ankismart.converter.ocr_converter._ocr_image",
-                    side_effect=lambda o, i: next(texts),
+                    side_effect=lambda _ocr, _image: next(texts),
                 ):
                     result = convert(f, trace_id="ocr4")
 
@@ -767,7 +767,7 @@ class TestConvert:
             ):
                 with patch(
                     "ankismart.converter.ocr_converter._ocr_image",
-                    side_effect=lambda o, i: next(texts),
+                    side_effect=lambda _ocr, _image: next(texts),
                 ):
                     result = convert(f, trace_id="ocr5")
 
@@ -940,7 +940,9 @@ class TestCloudMode:
                                     {
                                         "code": 0,
                                         "data": {
-                                            "file_urls": [{"url": "https://upload.example.com/file"}],
+                                            "file_urls": [
+                                                {"url": "https://upload.example.com/file"}
+                                            ],
                                             "batch_id": "batch-001",
                                         },
                                     },
@@ -1039,7 +1041,9 @@ class TestCloudMode:
                                         {
                                             "code": 0,
                                             "data": {
-                                                "file_urls": [{"url": "https://upload.example.com/file"}],
+                                                "file_urls": [
+                                                    {"url": "https://upload.example.com/file"}
+                                                ],
                                                 "batch_id": "batch-001",
                                             },
                                         },
@@ -1195,7 +1199,9 @@ class TestCloudMode:
                                     {
                                         "code": 0,
                                         "data": {
-                                            "file_urls": [{"url": "https://upload.example.com/file"}],
+                                            "file_urls": [
+                                                {"url": "https://upload.example.com/file"}
+                                            ],
                                             "batch_id": "batch-001",
                                         },
                                     },
@@ -1263,7 +1269,9 @@ class TestCloudMode:
                                         {
                                             "code": 0,
                                             "data": {
-                                                "file_urls": [{"url": "https://upload.example.com/file"}],
+                                                "file_urls": [
+                                                    {"url": "https://upload.example.com/file"}
+                                                ],
                                                 "batch_id": "batch-001",
                                             },
                                         },
@@ -1325,7 +1333,9 @@ class TestCloudMode:
                                     {
                                         "code": 0,
                                         "data": {
-                                            "file_urls": [{"url": "https://upload.example.com/file"}],
+                                            "file_urls": [
+                                                {"url": "https://upload.example.com/file"}
+                                            ],
                                             "batch_id": "batch-001",
                                         },
                                     },
@@ -1336,26 +1346,26 @@ class TestCloudMode:
                                         "code": 0,
                                         "data": {
                                             "extract_result": [
-                                                    {
-                                                        "data_id": data_id,
-                                                        "state": "done",
-                                                    }
-                                                ]
-                                            },
+                                                {
+                                                    "data_id": data_id,
+                                                    "state": "done",
+                                                }
+                                            ]
                                         },
-                                        "https://mineru.net/api/v4/extract-results/batch/batch-001",
-                                    ),
-                                ],
-                            ):
-                                with pytest.raises(ConvertError) as exc_info:
-                                    mod._convert_via_cloud(
-                                        file_path=f,
-                                        source_format="pdf",
-                                        trace_id="trace-cloud-missing-md",
-                                        cloud_provider="mineru",
-                                        cloud_endpoint="https://mineru.net",
-                                        cloud_api_key="token",
-                                    )
+                                    },
+                                    "https://mineru.net/api/v4/extract-results/batch/batch-001",
+                                ),
+                            ],
+                        ):
+                            with pytest.raises(ConvertError) as exc_info:
+                                mod._convert_via_cloud(
+                                    file_path=f,
+                                    source_format="pdf",
+                                    trace_id="trace-cloud-missing-md",
+                                    cloud_provider="mineru",
+                                    cloud_endpoint="https://mineru.net",
+                                    cloud_api_key="token",
+                                )
 
         assert exc_info.value.code == ErrorCode.E_OCR_FAILED
         assert "downloadable markdown result url" in str(exc_info.value).lower()

@@ -167,7 +167,7 @@ class TestConvert:
 
         with patch("ankismart.converter.docx_converter.Document", return_value=mock_doc):
             with patch(
-                "docx.text.paragraph.Paragraph", side_effect=lambda el, doc: next(para_calls)
+                "docx.text.paragraph.Paragraph", side_effect=lambda _el, _doc: next(para_calls)
             ):
                 result = convert(f, trace_id="d3")
 
@@ -239,7 +239,7 @@ class TestConvert:
         paras = iter([mock_para1, mock_para2])
 
         with patch("ankismart.converter.docx_converter.Document", return_value=mock_doc):
-            with patch("docx.text.paragraph.Paragraph", side_effect=lambda el, doc: next(paras)):
+            with patch("docx.text.paragraph.Paragraph", side_effect=lambda _el, _doc: next(paras)):
                 result = convert(f, trace_id="d6")
 
         assert "1. First" in result.content

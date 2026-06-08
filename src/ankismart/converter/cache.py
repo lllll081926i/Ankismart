@@ -50,6 +50,7 @@ CACHE_DIR: Path = _resolve_app_dir() / "cache"
 # File-hash based cache (content fingerprint + metadata)
 # ---------------------------------------------------------------------------
 
+
 def _hash_file_content(path: Path) -> str:
     """Compute SHA-256 for file content with streaming reads."""
     digest = hashlib.sha256()
@@ -137,11 +138,14 @@ def save_cache_by_hash(file_hash: str, result: MarkdownResult) -> None:
         md_path.write_text(result.content, encoding="utf-8")
         meta_path = CACHE_DIR / f"fh_{file_hash}.json"
         meta_path.write_text(
-            json.dumps({
-                "source_path": result.source_path,
-                "source_format": result.source_format,
-                "trace_id": result.trace_id,
-            }, ensure_ascii=False),
+            json.dumps(
+                {
+                    "source_path": result.source_path,
+                    "source_format": result.source_format,
+                    "trace_id": result.trace_id,
+                },
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
     except OSError:
@@ -165,11 +169,14 @@ def save_cache(result: MarkdownResult) -> None:
         # Save metadata
         meta_path = CACHE_DIR / f"{result.trace_id}.json"
         meta_path.write_text(
-            json.dumps({
-                "source_path": result.source_path,
-                "source_format": result.source_format,
-                "trace_id": result.trace_id,
-            }, ensure_ascii=False),
+            json.dumps(
+                {
+                    "source_path": result.source_path,
+                    "source_format": result.source_format,
+                    "trace_id": result.trace_id,
+                },
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
     except OSError:
