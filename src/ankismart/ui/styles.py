@@ -271,9 +271,8 @@ def apply_compact_combo_metrics(
 
     This helper also patches popup menu creation so dropdown items are lower.
     """
-    scale = get_display_scale()
-    target_control_height = control_height or scale_px(30, scale=scale, min_value=28)
-    target_popup_item_height = popup_item_height or scale_px(32, scale=scale, min_value=30)
+    target_control_height = control_height or 20
+    target_popup_item_height = popup_item_height or 20
     target_max_visible_items = max(1, int(max_visible_items or 8))
 
     set_fixed_height = getattr(combo, "setFixedHeight", None)
@@ -421,7 +420,6 @@ def get_stylesheet(*, dark: bool = False) -> str:
     page_background = get_page_background_color(dark=dark)
     accent = get_theme_accent_text_hex(dark=dark)
     scale = get_display_scale()
-    combo_text_px = scale_text_px(FONT_SIZE_MEDIUM, scale=scale, min_value=12)
     input_radius = scale_px(8, scale=scale, min_value=8)
     input_padding_v = scale_px(6, scale=scale, min_value=6)
     input_padding_h = scale_px(8, scale=scale, min_value=8)
@@ -430,10 +428,7 @@ def get_stylesheet(*, dark: bool = False) -> str:
     combo_padding_bottom = scale_px(2, scale=scale, min_value=1)
     combo_padding_left = scale_px(10, scale=scale, min_value=8)
     combo_padding_right = scale_px(28, scale=scale, min_value=22)
-    combo_min_height = max(
-        scale_px(30, scale=scale, min_value=28),
-        combo_text_px + scale_px(8, scale=scale, min_value=6),
-    )
+    combo_min_height = 20
     menu_border_radius = scale_px(9, scale=scale, min_value=7)
     menu_item_radius = scale_px(5, scale=scale, min_value=4)
     menu_item_padding_h = scale_px(10, scale=scale, min_value=8)

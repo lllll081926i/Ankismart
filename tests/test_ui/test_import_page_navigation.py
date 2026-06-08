@@ -244,8 +244,8 @@ def test_import_page_uses_compact_heights_for_preset_combos() -> None:
     _APP.processEvents()
     _APP.processEvents()
 
-    assert 28 <= page._generation_preset_combo.height() <= 32
-    assert 28 <= page._strategy_template_combo.height() <= 32
+    assert page._generation_preset_combo.height() == 20
+    assert page._strategy_template_combo.height() == 20
     assert "padding: 0px 31px 0px 11px;" in page._generation_preset_combo.styleSheet()
     assert "padding: 0px 31px 0px 11px;" in page._strategy_template_combo.styleSheet()
     page.close()
