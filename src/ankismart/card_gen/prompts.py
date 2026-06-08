@@ -9,6 +9,16 @@ _MATH_FORMAT_RULES = (
     "sequence; if unavoidable, insert a space before the second } inside the TeX group\n"
 )
 
+_CODE_FORMAT_RULES = (
+    "- If answer/explanation contains code, use Markdown code wrappers so the content "
+    "keeps its structure\n"
+    "- Inline code must use single backticks: `code`\n"
+    "- Multi-line code must use fenced code blocks: ```language\\n...\\n```\n"
+    "- Never output raw code without backticks or fenced blocks\n"
+)
+
+_COMMON_FORMAT_RULES = _MATH_FORMAT_RULES + _CODE_FORMAT_RULES
+
 BASIC_SYSTEM_PROMPT = (
     "You are an expert flashcard creator. Given Markdown content, "
     "extract the most important concepts and create question-answer "
@@ -32,7 +42,7 @@ BASIC_SYSTEM_PROMPT = (
     "  * If content is in Chinese, generate cards in Chinese\n"
     "  * If content is in English, generate cards in English\n"
     "  * If content is in other languages, generate cards in that language\n"
-    + _MATH_FORMAT_RULES
+    + _COMMON_FORMAT_RULES
     + "\n"
     "Example output:\n"
     "[\n"
@@ -68,7 +78,7 @@ CLOZE_SYSTEM_PROMPT = (
     "test a specific, meaningful piece of knowledge\n"
     "- Extra must be a layered explanation block using multiple lines; "
     "do NOT add numbering prefixes like 1./2.\n"
-    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n" + _COMMON_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Text": "Photosynthesis converts {{c1::light energy}} into '
@@ -98,7 +108,7 @@ IMAGE_QA_SYSTEM_PROMPT = (
     "(do NOT add numbering prefixes like 1./2.)\n"
     "- No explanations or extra text outside the JSON array\n"
     "- Decide the number of cards from content density and learning value\n"
-    + _MATH_FORMAT_RULES
+    + _COMMON_FORMAT_RULES
     + "\n"
     "Example output:\n"
     "[\n"
@@ -133,7 +143,7 @@ CONCEPT_SYSTEM_PROMPT = (
     "- No explanations or extra text outside the JSON array\n"
     "- Decide the number of cards from content density and learning value\n"
     "- Focus on concepts that require understanding, not simple facts\n"
-    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n" + _COMMON_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "Photosynthesis",\n'
@@ -166,7 +176,7 @@ KEY_TERMS_SYSTEM_PROMPT = (
     "- No explanations or extra text outside the JSON array\n"
     "- Decide the number of cards from content density and learning value\n"
     "- Prioritize domain-specific or technical terms over common vocabulary\n"
-    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n" + _COMMON_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "Chloroplast",\n'
@@ -207,7 +217,7 @@ SINGLE_CHOICE_SYSTEM_PROMPT = (
     "- Questions should be specific and test understanding, not memorization\n"
     "- Distractors (wrong options) should be plausible but clearly "
     "distinguishable with proper reasoning\n"
-    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n" + _COMMON_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "What is the derivative of \\(f(x) = x^3\\)?\\n\\n'
@@ -247,7 +257,7 @@ MULTIPLE_CHOICE_SYSTEM_PROMPT = (
     "- Card count guidance: decide the number of cards from content length, "
     "knowledge density, and learning value\n"
     "- IMPORTANT: Cover all key concepts without padding the output with low-value questions\n"
-    "- If the content is in Chinese, generate cards in Chinese\n" + _MATH_FORMAT_RULES + "\n"
+    "- If the content is in Chinese, generate cards in Chinese\n" + _COMMON_FORMAT_RULES + "\n"
     "Example output:\n"
     "[\n"
     '  {"Front": "Which of the following are solutions to '

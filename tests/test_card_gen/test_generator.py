@@ -139,6 +139,14 @@ class TestCardGeneratorGenerate:
         assert "\\(" in joined
         assert "\\[" in joined
 
+    def test_strategy_prompts_require_markdown_code_wrappers(self):
+        prompts = list(dict.fromkeys(prompt for prompt, _note_type in _STRATEGY_MAP.values()))
+
+        for prompt in prompts:
+            assert "Inline code must use single backticks" in prompt
+            assert "Multi-line code must use fenced code blocks" in prompt
+            assert "Never output raw code without backticks" in prompt
+
     def test_strategy_prompts_do_not_hard_code_auto_count_ranges(self):
         joined = "\n".join(
             [
