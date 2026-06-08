@@ -80,8 +80,23 @@ CONFIG_PATH: Path = (
 TASKS_PATH: Path = (
     Path(os.getenv("ANKISMART_TASKS_PATH", str(CONFIG_DIR / "tasks.json"))).expanduser().resolve()
 )
+
+
+def _resolve_install_cache_dir() -> Path:
+    """Resolve cache storage rooted at the application install directory."""
+    env_cache_dir = os.getenv("ANKISMART_CACHE_DIR", "").strip()
+    if env_cache_dir:
+        return Path(env_cache_dir).expanduser().resolve()
+    return (_resolve_project_root() / "cache").resolve()
+
+
 HISTORY_DB_PATH: Path = (
-    Path(os.getenv("ANKISMART_HISTORY_DB_PATH", str(CONFIG_DIR / "history.sqlite3")))
+    Path(
+        os.getenv(
+            "ANKISMART_HISTORY_DB_PATH",
+            str(_resolve_install_cache_dir() / "history.sqlite3"),
+        )
+    )
     .expanduser()
     .resolve()
 )
@@ -256,6 +271,8 @@ class AppConfig(BaseModel):
     auto_check_updates: bool = True
     last_update_check_at: str = ""
     last_update_version_seen: str = ""
+    history_cache_max_mb: int = 500
+    history_cache_max_records: int = 500
 
     # Document processing
     enable_auto_split: bool = True  # Auto-split long documents
@@ -513,6 +530,10 @@ def load_config() -> AppConfig:
             config.card_quality_min_chars = 1
         if config.ocr_quality_min_chars < 10:
             config.ocr_quality_min_chars = 10
+        if config.history_cache_max_mb < 1:
+            config.history_cache_max_mb = 500
+        if config.history_cache_max_records < 1:
+            config.history_cache_max_records = 500
         config.semantic_duplicate_threshold = min(
             1.0, max(0.6, float(config.semantic_duplicate_threshold))
         )
