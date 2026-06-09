@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,7 +12,7 @@ from PyQt6.QtWidgets import QApplication
 from ankismart.core.config import AppConfig
 from ankismart.core.history_store import SQLiteHistoryStore
 from ankismart.core.models import CardDraft, CardMetadata
-from ankismart.ui.history_page import HistoryPage
+from ankismart.ui.history_page import HistoryPage, _format_time
 
 
 @pytest.fixture(scope="session", name="_qapp")
@@ -53,6 +54,15 @@ def test_history_page_lists_generation_batches(_qapp, tmp_path: Path) -> None:
     assert page._total_records_value.text() == "2"
     assert page._total_cards_value.text() == "3"
     assert "chapter.md" in page._table.item(0, 2).text()
+
+
+def test_format_time_converts_aware_timestamp_to_local_time() -> None:
+    utc_value = "2026-06-09T03:00:00+00:00"
+    expected = datetime(2026, 6, 9, 3, 0, tzinfo=timezone.utc).astimezone().strftime(
+        "%Y-%m-%d %H:%M"
+    )
+
+    assert _format_time(utc_value) == expected
 
 
 def test_history_page_renders_generation_batches_in_pages_of_50(_qapp, tmp_path: Path) -> None:

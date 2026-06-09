@@ -5,7 +5,7 @@ import os
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -126,7 +126,7 @@ class SQLiteHistoryStore:
         metadata: dict[str, Any] | None = None,
     ) -> GenerationBatchSummary:
         self.initialize()
-        now = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        now = datetime.now().astimezone().isoformat(timespec="microseconds")
         resolved_batch_id = batch_id or uuid.uuid4().hex
         resolved_title = title.strip() or f"生成 {len(cards)} 张卡片"
         resolved_metadata = self._enrich_metadata(cards, metadata)
@@ -208,7 +208,7 @@ class SQLiteHistoryStore:
                 """
                 SELECT *
                 FROM generation_batches
-                ORDER BY created_at DESC, batch_id DESC
+                ORDER BY created_at DESC, rowid DESC
                 LIMIT ? OFFSET ?
                 """,
                 (safe_limit, safe_offset),
@@ -351,7 +351,7 @@ class SQLiteHistoryStore:
                 """
                 SELECT batch_id, card_count
                 FROM generation_batches
-                ORDER BY created_at ASC, batch_id ASC
+                ORDER BY created_at ASC, rowid ASC
                 LIMIT 1
                 """
             ).fetchone()

@@ -214,7 +214,9 @@ def test_close_event_does_not_force_terminate_running_worker(_qapp, monkeypatch)
     assert worker.wait_calls == [200]
     assert worker.terminate_called is False
     assert page._worker is worker
-    assert len(warning_calls) == 1
+    # Enhanced cleanup now logs additional warnings for safety
+    assert len(warning_calls) >= 1
+    assert any("still running" in w.lower() for w in warning_calls)
 
 
 def test_retry_failed_returns_when_worker_running(_qapp, monkeypatch) -> None:

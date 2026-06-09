@@ -985,6 +985,12 @@ class ImportPage(ProgressMixin, QWidget):
         group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         group.setMaximumHeight(_RIGHT_STRATEGY_GROUP_MAX_HEIGHT)
 
+        # Match the title style with other section titles (BodyLabel style)
+        font = group.titleLabel.font()
+        font.setBold(False)
+        font.setPixelSize(14)  # Match BodyLabel default size
+        group.titleLabel.setFont(font)
+
         template_card = SettingCard(
             FluentIcon.BOOK_SHELF,
             "策略模板库" if is_zh else "Strategy Templates",
@@ -1387,42 +1393,81 @@ class ImportPage(ProgressMixin, QWidget):
         self._cleanup_deck_loader_worker()
 
     def _cleanup_batch_worker(self) -> None:
+        """Safely cleanup batch worker to prevent resource leaks."""
         worker = self.__dict__.get("_worker")
         if worker is None:
             return
-        if hasattr(worker, "isRunning") and worker.isRunning():
-            if hasattr(worker, "cancel"):
-                worker.cancel()
-            worker.wait(200)
-            if worker.isRunning():
-                return
+
+        try:
+            if hasattr(worker, "isRunning") and callable(worker.isRunning):
+                if worker.isRunning():
+                    if hasattr(worker, "cancel") and callable(worker.cancel):
+                        worker.cancel()
+                    worker.wait(200)
+                    if worker.isRunning():
+                        logger.warning("Batch worker still running after cancel")
+                        return
+        except RuntimeError as exc:
+            logger.debug(f"Batch worker cleanup runtime error: {exc}")
+        except Exception as exc:
+            logger.error(f"Batch worker cleanup error: {exc}", exc_info=True)
+
         self.__dict__["_worker"] = None
-        if hasattr(worker, "deleteLater"):
-            worker.deleteLater()
+        try:
+            if hasattr(worker, "deleteLater") and callable(worker.deleteLater):
+                worker.deleteLater()
+        except RuntimeError:
+            pass  # Already deleted
 
     def _cleanup_ocr_download_worker(self) -> None:
+        """Safely cleanup OCR download worker to prevent resource leaks."""
         worker = self.__dict__.get("_ocr_download_worker")
         if worker is None:
             return
-        if hasattr(worker, "isRunning") and worker.isRunning():
-            worker.wait(200)
-            if worker.isRunning():
-                return
+
+        try:
+            if hasattr(worker, "isRunning") and callable(worker.isRunning):
+                if worker.isRunning():
+                    worker.wait(200)
+                    if worker.isRunning():
+                        logger.warning("OCR download worker still running")
+                        return
+        except RuntimeError as exc:
+            logger.debug(f"OCR download worker cleanup runtime error: {exc}")
+        except Exception as exc:
+            logger.error(f"OCR download worker cleanup error: {exc}", exc_info=True)
+
         self.__dict__["_ocr_download_worker"] = None
-        if hasattr(worker, "deleteLater"):
-            worker.deleteLater()
+        try:
+            if hasattr(worker, "deleteLater") and callable(worker.deleteLater):
+                worker.deleteLater()
+        except RuntimeError:
+            pass  # Already deleted
 
     def _cleanup_deck_loader_worker(self) -> None:
+        """Safely cleanup deck loader worker to prevent resource leaks."""
         worker = self.__dict__.get("_deck_loader")
         if worker is None:
             return
-        if hasattr(worker, "isRunning") and worker.isRunning():
-            worker.wait(200)
-            if worker.isRunning():
-                return
+
+        try:
+            if hasattr(worker, "isRunning") and callable(worker.isRunning):
+                if worker.isRunning():
+                    worker.wait(200)
+                    if worker.isRunning():
+                        logger.warning("Deck loader worker still running")
+                        return
+        except RuntimeError as exc:
+            logger.debug(f"Deck loader worker cleanup runtime error: {exc}")
+        except Exception as exc:
+            logger.error(f"Deck loader worker cleanup error: {exc}", exc_info=True)
+
         self.__dict__["_deck_loader"] = None
-        if hasattr(worker, "deleteLater"):
-            worker.deleteLater()
+        try:
+            if hasattr(worker, "deleteLater") and callable(worker.deleteLater):
+                worker.deleteLater()
+        except RuntimeError:
+            pass  # Already deleted
 
     def _dispose_progress_info_bar(self) -> None:
         info_bar = self.__dict__.get("_progress_info_bar")

@@ -1173,52 +1173,99 @@ class PreviewPage(ProgressMixin, QWidget):
             return None, text
 
     def _cleanup_generate_worker(self) -> None:
+        """Safely cleanup generate worker to prevent resource leaks."""
         worker = self.__dict__.get("_generate_worker")
         if worker is None:
             return
-        if hasattr(worker, "isRunning") and worker.isRunning():
-            if hasattr(worker, "cancel"):
-                worker.cancel()
-            worker.wait(200)
-            if worker.isRunning():
-                return
-        llm_client = getattr(worker, "_llm_client", None)
-        self._close_llm_client_safely(llm_client, context="generate worker cleanup")
-        if llm_client is not None and hasattr(worker, "_llm_client"):
-            worker._llm_client = None
+
+        try:
+            if hasattr(worker, "isRunning") and callable(worker.isRunning):
+                if worker.isRunning():
+                    if hasattr(worker, "cancel") and callable(worker.cancel):
+                        worker.cancel()
+                    worker.wait(200)
+                    if worker.isRunning():
+                        logger.warning("Generate worker still running after cancel")
+                        return
+        except RuntimeError as exc:
+            logger.debug(f"Generate worker cleanup runtime error: {exc}")
+        except Exception as exc:
+            logger.error(f"Generate worker cleanup error: {exc}", exc_info=True)
+
+        try:
+            llm_client = getattr(worker, "_llm_client", None)
+            self._close_llm_client_safely(llm_client, context="generate worker cleanup")
+            if llm_client is not None and hasattr(worker, "_llm_client"):
+                worker._llm_client = None
+        except Exception as exc:
+            logger.error(f"Error closing LLM client in generate worker: {exc}")
+
         self.__dict__["_generate_worker"] = None
-        if hasattr(worker, "deleteLater"):
-            worker.deleteLater()
+        try:
+            if hasattr(worker, "deleteLater") and callable(worker.deleteLater):
+                worker.deleteLater()
+        except RuntimeError:
+            pass  # Already deleted
 
     def _cleanup_push_worker(self) -> None:
+        """Safely cleanup push worker to prevent resource leaks."""
         worker = self.__dict__.get("_push_worker")
         if worker is None:
             return
-        if hasattr(worker, "isRunning") and worker.isRunning():
-            if hasattr(worker, "cancel"):
-                worker.cancel()
-            worker.wait(200)
-            if worker.isRunning():
-                return
+
+        try:
+            if hasattr(worker, "isRunning") and callable(worker.isRunning):
+                if worker.isRunning():
+                    if hasattr(worker, "cancel") and callable(worker.cancel):
+                        worker.cancel()
+                    worker.wait(200)
+                    if worker.isRunning():
+                        logger.warning("Push worker still running after cancel")
+                        return
+        except RuntimeError as exc:
+            logger.debug(f"Push worker cleanup runtime error: {exc}")
+        except Exception as exc:
+            logger.error(f"Push worker cleanup error: {exc}", exc_info=True)
+
         self.__dict__["_push_worker"] = None
-        if hasattr(worker, "deleteLater"):
-            worker.deleteLater()
+        try:
+            if hasattr(worker, "deleteLater") and callable(worker.deleteLater):
+                worker.deleteLater()
+        except RuntimeError:
+            pass  # Already deleted
 
     def _cleanup_sample_worker(self) -> None:
+        """Safely cleanup sample worker to prevent resource leaks."""
         worker = self.__dict__.get("_sample_worker")
         if worker is None:
             return
-        if hasattr(worker, "isRunning") and worker.isRunning():
-            worker.wait(200)
-            if worker.isRunning():
-                return
-        llm_client = getattr(worker, "llm_client", None)
-        self._close_llm_client_safely(llm_client, context="sample worker cleanup")
-        if llm_client is not None and hasattr(worker, "llm_client"):
-            worker.llm_client = None
+
+        try:
+            if hasattr(worker, "isRunning") and callable(worker.isRunning):
+                if worker.isRunning():
+                    worker.wait(200)
+                    if worker.isRunning():
+                        logger.warning("Sample worker still running")
+                        return
+        except RuntimeError as exc:
+            logger.debug(f"Sample worker cleanup runtime error: {exc}")
+        except Exception as exc:
+            logger.error(f"Sample worker cleanup error: {exc}", exc_info=True)
+
+        try:
+            llm_client = getattr(worker, "llm_client", None)
+            self._close_llm_client_safely(llm_client, context="sample worker cleanup")
+            if llm_client is not None and hasattr(worker, "llm_client"):
+                worker.llm_client = None
+        except Exception as exc:
+            logger.error(f"Error closing LLM client in sample worker: {exc}")
+
         self.__dict__["_sample_worker"] = None
-        if hasattr(worker, "deleteLater"):
-            worker.deleteLater()
+        try:
+            if hasattr(worker, "deleteLater") and callable(worker.deleteLater):
+                worker.deleteLater()
+        except RuntimeError:
+            pass  # Already deleted
 
     def _on_generation_progress(self, message: str):
         """Handle generation progress message."""

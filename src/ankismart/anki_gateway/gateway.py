@@ -220,30 +220,64 @@ class AnkiGateway:
                 deck_cache = self._fetch_deck_cache()
                 self._sync_model_styling(prepared_cards)
 
+                # Validate all cards and track which ones pass
+                # Dict: index -> error message (None if valid)
+                validation_results: dict[int, str | None] = {}
                 for i, card in enumerate(prepared_cards):
                     try:
                         self._ensure_deck_exists(card.deck_name, deck_cache)
                         validate_card_draft(card, self._client)
-                        status = self._push_single(i, card, update_mode, trace_id)
-                        results.append(status)
-                        if status.success:
-                            succeeded += 1
-                            metrics.increment("anki_push_succeeded_total")
-                        else:
-                            failed += 1
-                            metrics.increment("anki_push_failed_total")
+                        validation_results[i] = None  # Valid
                     except AnkiGatewayError as exc:
                         logger.warning(
-                            "Card push failed",
+                            f"Card {i} validation failed: {exc.message}",
                             extra={"index": i, "error": exc.message, "trace_id": trace_id},
                         )
-                        status = CardPushStatus(index=i, success=False, error=exc.message)
-                        results.append(status)
-                        failed += 1
-                        metrics.increment("anki_push_failed_total")
+                        validation_results[i] = exc.message  # Invalid
 
-                    if progress_callback is not None:
-                        progress_callback(i + 1, len(prepared_cards), status)
+                # Use batch push for create_only mode (significant performance improvement)
+                if update_mode == "create_only":
+                    results = self._push_batch_create_only(
+                        prepared_cards, validation_results, trace_id, progress_callback
+                    )
+                    succeeded = sum(1 for r in results if r.success)
+                    failed = len(results) - succeeded
+                else:
+                    # For update modes, still need to check existing notes individually
+                    for i, card in enumerate(prepared_cards):
+                        # Check validation result first
+                        validation_error = validation_results.get(i)
+                        if validation_error is not None:
+                            # Card failed validation, skip it
+                            status = CardPushStatus(index=i, success=False, error=validation_error)
+                            results.append(status)
+                            failed += 1
+                            metrics.increment("anki_push_failed_total")
+                            if progress_callback is not None:
+                                progress_callback(i + 1, len(prepared_cards), status)
+                            continue
+
+                        try:
+                            status = self._push_single(i, card, update_mode, trace_id)
+                            results.append(status)
+                            if status.success:
+                                succeeded += 1
+                                metrics.increment("anki_push_succeeded_total")
+                            else:
+                                failed += 1
+                                metrics.increment("anki_push_failed_total")
+                        except AnkiGatewayError as exc:
+                            logger.warning(
+                                "Card push failed",
+                                extra={"index": i, "error": exc.message, "trace_id": trace_id},
+                            )
+                            status = CardPushStatus(index=i, success=False, error=exc.message)
+                            results.append(status)
+                            failed += 1
+                            metrics.increment("anki_push_failed_total")
+
+                        if progress_callback is not None:
+                            progress_callback(i + 1, len(prepared_cards), status)
 
                 total_processed = succeeded + failed
                 success_ratio = (succeeded / total_processed) if total_processed else 0.0
@@ -275,6 +309,145 @@ class AnkiGateway:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _push_batch_create_only(
+        self,
+        cards: list[CardDraft],
+        validation_results: dict[int, str | None],
+        trace_id: str,
+        progress_callback: Callable[[int, int, CardPushStatus], None] | None = None,
+    ) -> list[CardPushStatus]:
+        """Batch push for create_only mode using AnkiConnect's addNotes API.
+
+        This is significantly faster than pushing one-by-one since it makes fewer
+        HTTP requests. Cards are pushed in batches of max 50 to avoid overwhelming
+        AnkiConnect and ensure good responsiveness.
+
+        Args:
+            cards: List of cards to push
+            validation_results: Dict mapping card index to error message (None if valid)
+            trace_id: Trace ID for logging
+            progress_callback: Optional progress callback
+
+        Returns:
+            List of push status results
+        """
+        results: list[CardPushStatus] = []
+
+        if not cards:
+            return results
+
+        # Batch size limit to prevent overwhelming AnkiConnect
+        batch_size = 50
+        total_cards = len(cards)
+        processed_count = 0
+
+        # Process cards in batches
+        for batch_start in range(0, total_cards, batch_size):
+            batch_end = min(batch_start + batch_size, total_cards)
+            batch_cards = cards[batch_start:batch_end]
+
+            # Build note params for current batch (skip invalid cards)
+            notes_params = []
+            valid_indices = []
+            for i, card in enumerate(batch_cards):
+                global_index = batch_start + i
+
+                # Check if card passed validation
+                validation_error = validation_results.get(global_index)
+                if validation_error is not None:
+                    # Card failed validation, mark as failed immediately
+                    status = CardPushStatus(
+                        index=global_index,
+                        success=False,
+                        error=validation_error,
+                    )
+                    results.append(status)
+                    metrics.increment("anki_push_failed_total")
+                    processed_count += 1
+                    if progress_callback is not None:
+                        progress_callback(processed_count, total_cards, status)
+                    continue
+
+                try:
+                    note_params = _card_to_note_params(card)
+                    notes_params.append(note_params)
+                    valid_indices.append(global_index)
+                except Exception as exc:
+                    logger.error(
+                        f"Failed to build note params for card {global_index}: {exc}",
+                        extra={"index": global_index, "trace_id": trace_id},
+                    )
+                    # Immediately mark as failed
+                    status = CardPushStatus(
+                        index=global_index,
+                        success=False,
+                        error=f"Failed to build note params: {exc}",
+                    )
+                    results.append(status)
+                    metrics.increment("anki_push_failed_total")
+                    processed_count += 1
+                    if progress_callback is not None:
+                        progress_callback(processed_count, total_cards, status)
+
+            if not notes_params:
+                continue
+
+            # Call batch API for this batch
+            try:
+                note_ids = self._client.add_notes(notes_params)
+
+                # Process results
+                for i, note_id in enumerate(note_ids):
+                    global_index = valid_indices[i]
+                    if note_id is not None:
+                        status = CardPushStatus(index=global_index, note_id=note_id, success=True)
+                        metrics.increment("anki_push_succeeded_total")
+                    else:
+                        # None means duplicate or error
+                        error_msg = "Duplicate or failed to add note (AnkiConnect returned null)"
+                        status = CardPushStatus(index=global_index, success=False, error=error_msg)
+                        metrics.increment("anki_push_failed_total")
+                        logger.warning(
+                            "Card push failed in batch",
+                            extra={"index": global_index, "error": error_msg, "trace_id": trace_id},
+                        )
+
+                    results.append(status)
+                    processed_count += 1
+
+                    # Report progress with monotonically increasing processed count
+                    if progress_callback is not None:
+                        progress_callback(processed_count, total_cards, status)
+
+            except AnkiGatewayError as exc:
+                logger.error(
+                    f"Batch push failed for batch {batch_start}-{batch_end}",
+                    extra={"error": exc.message, "trace_id": trace_id},
+                )
+                # Mark all cards in this batch as failed
+                for i in valid_indices:
+                    status = CardPushStatus(index=i, success=False, error=exc.message)
+                    results.append(status)
+                    metrics.increment("anki_push_failed_total")
+                    processed_count += 1
+                    if progress_callback is not None:
+                        progress_callback(processed_count, total_cards, status)
+
+        # Sort results by index to maintain order
+        results.sort(key=lambda x: x.index)
+
+        logger.info(
+            "Batch push completed",
+            extra={
+                "trace_id": trace_id,
+                "total": total_cards,
+                "succeeded": sum(1 for r in results if r.success),
+                "failed": sum(1 for r in results if not r.success),
+            },
+        )
+
+        return results
 
     def _push_single(
         self,

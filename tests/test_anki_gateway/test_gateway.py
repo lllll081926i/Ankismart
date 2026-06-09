@@ -31,6 +31,12 @@ from ankismart.core.models import (
 def _fake_client(add_note_return: int = 1001) -> MagicMock:
     client = MagicMock()
     client.add_note.return_value = add_note_return
+
+    # add_notes should return a list of note IDs based on how many notes are passed
+    def add_notes_side_effect(notes_params):
+        return [add_note_return + i for i in range(len(notes_params))]
+
+    client.add_notes.side_effect = add_notes_side_effect
     client.create_deck.return_value = 1
     client.check_connection.return_value = True
     client.get_deck_names.return_value = ["Default"]
@@ -222,6 +228,9 @@ class TestPush:
         client.add_note.side_effect = AnkiGatewayError(
             "duplicate", code=ErrorCode.E_ANKICONNECT_ERROR
         )
+        client.add_notes.side_effect = AnkiGatewayError(
+            "duplicate", code=ErrorCode.E_ANKICONNECT_ERROR
+        )
         gw = AnkiGateway(client)
         result = gw.push([_card()])
 
@@ -333,7 +342,8 @@ class TestPush:
         result = gw.push([_card(note_type="Basic")])
 
         assert result.succeeded == 1
-        assert client.add_note.call_count == 1
+        # In batch mode, add_notes is called instead of add_note
+        assert client.add_notes.call_count == 1
         client.update_model_templates.assert_not_called()
         client.update_model_styling.assert_not_called()
 
@@ -536,7 +546,8 @@ class TestPushUpdateMode:
         result = gw.push([_card()], update_mode="create_only")
         assert result.succeeded == 1
         client.find_notes.assert_not_called()
-        client.add_note.assert_called_once()
+        # In batch mode, add_notes is called instead of add_note
+        client.add_notes.assert_called_once()
 
     def test_update_only_updates_existing(self, monkeypatch) -> None:
         monkeypatch.setattr(
@@ -624,4 +635,5 @@ class TestPushUpdateMode:
         result = gw.push([_card()])
         assert result.succeeded == 1
         client.find_notes.assert_not_called()
-        client.add_note.assert_called_once()
+        # In batch mode, add_notes is called instead of add_note
+        client.add_notes.assert_called_once()

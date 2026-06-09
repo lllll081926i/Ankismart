@@ -1449,42 +1449,80 @@ class ResultPage(QWidget):
             self._update_pagination_controls()
 
     def _cleanup_push_worker(self) -> None:
+        """Safely cleanup push worker to prevent resource leaks."""
         worker = self.__dict__.get("_worker")
         if worker is None:
             return
-        if hasattr(worker, "isRunning") and worker.isRunning():
-            if hasattr(worker, "cancel"):
-                worker.cancel()
-            worker.wait(200)
-            if worker.isRunning():
-                return
+
+        try:
+            if hasattr(worker, "isRunning") and callable(worker.isRunning):
+                if worker.isRunning():
+                    if hasattr(worker, "cancel") and callable(worker.cancel):
+                        worker.cancel()
+                    worker.wait(200)
+                    if worker.isRunning():
+                        logger.warning("Result page push worker still running after cancel")
+                        return
+        except RuntimeError as exc:
+            logger.debug(f"Result page push worker cleanup runtime error: {exc}")
+        except Exception as exc:
+            logger.error(f"Result page push worker cleanup error: {exc}", exc_info=True)
+
         self.__dict__["_worker"] = None
-        if hasattr(worker, "deleteLater"):
-            worker.deleteLater()
+        try:
+            if hasattr(worker, "deleteLater") and callable(worker.deleteLater):
+                worker.deleteLater()
+        except RuntimeError:
+            pass  # Already deleted
 
     def _cleanup_export_worker(self) -> None:
+        """Safely cleanup export worker to prevent resource leaks."""
         worker = self.__dict__.get("_export_worker")
         if worker is None:
             return
-        if hasattr(worker, "isRunning") and worker.isRunning():
-            if hasattr(worker, "cancel"):
-                worker.cancel()
-            worker.wait(200)
-            if worker.isRunning():
-                return
+
+        try:
+            if hasattr(worker, "isRunning") and callable(worker.isRunning):
+                if worker.isRunning():
+                    if hasattr(worker, "cancel") and callable(worker.cancel):
+                        worker.cancel()
+                    worker.wait(200)
+                    if worker.isRunning():
+                        logger.warning("Result page export worker still running after cancel")
+                        return
+        except RuntimeError as exc:
+            logger.debug(f"Result page export worker cleanup runtime error: {exc}")
+        except Exception as exc:
+            logger.error(f"Result page export worker cleanup error: {exc}", exc_info=True)
+
         self.__dict__["_export_worker"] = None
-        if hasattr(worker, "deleteLater"):
-            worker.deleteLater()
+        try:
+            if hasattr(worker, "deleteLater") and callable(worker.deleteLater):
+                worker.deleteLater()
+        except RuntimeError:
+            pass  # Already deleted
 
     def closeEvent(self, event):  # noqa: N802
         """Request cooperative worker cancellation during application shutdown."""
-        self._cleanup_push_worker()
-        self._cleanup_export_worker()
-        if self._worker and self._worker.isRunning():
-            logger.warning(
-                "Push worker is still running during close event; "
-                "skip force terminate to avoid inconsistent shutdown state"
-            )
+        try:
+            self._cleanup_push_worker()
+        except Exception as exc:
+            logger.error(f"Error cleaning up push worker on close: {exc}")
+
+        try:
+            self._cleanup_export_worker()
+        except Exception as exc:
+            logger.error(f"Error cleaning up export worker on close: {exc}")
+
+        try:
+            if self._worker and hasattr(self._worker, "isRunning") and self._worker.isRunning():
+                logger.warning(
+                    "Push worker is still running during close event; "
+                    "skip force terminate to avoid inconsistent shutdown state"
+                )
+        except Exception as exc:
+            logger.error(f"Error checking worker state on close: {exc}")
+
         super().closeEvent(event)
 
     def update_theme(self):

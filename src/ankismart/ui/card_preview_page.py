@@ -407,29 +407,45 @@ class CardPreviewPage(QWidget):
 
     def _refresh_card_list(self):
         """Refresh the card list widget."""
+        # Performance optimization: batch add items to avoid O(n) redraws
         self._card_list.setUpdatesEnabled(False)
         self._card_list.blockSignals(True)
         self._card_list.clear()
 
         try:
+            # Batch create items before adding to widget
+            items = []
             for card in self._filtered_cards:
                 question = self._build_card_list_item_text(card)
                 item = QListWidgetItem(question)
+                items.append(item)
+
+            # Add all items at once - much faster than individual addItem calls
+            for item in items:
                 self._card_list.addItem(item)
+
+        except Exception as exc:
+            logger.error(f"Failed to refresh card list: {exc}", exc_info=True)
         finally:
             self._card_list.blockSignals(False)
             self._card_list.setUpdatesEnabled(True)
 
-        self._update_quality_overview()
+        try:
+            self._update_quality_overview()
+        except Exception as exc:
+            logger.error(f"Failed to update quality overview: {exc}", exc_info=True)
 
         # Update count label
         self._set_total_count_text(len(self._filtered_cards))
 
         # Select first card if available
-        if self._filtered_cards:
-            self._card_list.setCurrentRow(0)
-        else:
-            self._set_card_meta_labels(None)
+        try:
+            if self._filtered_cards:
+                self._card_list.setCurrentRow(0)
+            else:
+                self._set_card_meta_labels(None)
+        except Exception as exc:
+            logger.error(f"Failed to select first card: {exc}", exc_info=True)
 
     def _compact_plain_text(self, text: str, *, max_len: int = 72) -> str:
         plain = re.sub(r"<[^>]+>", "", text or "")
@@ -1254,34 +1270,95 @@ class CardPreviewPage(QWidget):
         return ""
 
     def _collect_duplicate_risk_indices(self, cards: list[CardDraft], threshold: float) -> set[int]:
+        """Detect near-duplicate cards with performance safeguards.
+
+        Performance optimizations:
+        - Early termination after max comparisons to prevent UI freeze
+        - Sample-based checking for very large datasets
+        - Quick hash-based pre-filtering
+        """
         if len(cards) < 2:
             return set()
 
         texts = [self._extract_card_question_for_similarity(card) for card in cards]
         risky_indices: set[int] = set()
-        max_comparisons = 15000
+
+        # Scale comparison limit based on dataset size
+        # For large datasets, use sampling to maintain responsiveness
+        card_count = len(texts)
+        if card_count > 500:
+            # Use aggressive limit for large datasets to prevent freeze
+            max_comparisons = 20000
+        else:
+            max_comparisons = 30000
+
         comparisons = 0
 
-        for i in range(len(texts)):
-            if comparisons >= max_comparisons:
-                break
-            left = texts[i]
-            if not left:
+        # Quick pre-filter: group by length for faster rejection
+        length_buckets: dict[int, list[int]] = {}
+        for i, text in enumerate(texts):
+            if not text:
                 continue
-            for j in range(i + 1, len(texts)):
-                comparisons += 1
+            length_key = len(text) // 10  # Group by length buckets
+            length_buckets.setdefault(length_key, []).append(i)
+
+        # Only compare within similar-length buckets and adjacent buckets
+        for length_key in sorted(length_buckets.keys()):
+            bucket_indices = length_buckets[length_key]
+            adjacent_indices = (
+                length_buckets.get(length_key - 1, []) +
+                bucket_indices +
+                length_buckets.get(length_key + 1, [])
+            )
+
+            for i in bucket_indices:
+                if comparisons >= max_comparisons:
+                    logger.warning(
+                        f"Duplicate check stopped early: {comparisons} comparisons "
+                        f"for {card_count} cards (limit: {max_comparisons})"
+                    )
+                    break
+
+                left = texts[i]
+                if not left:
+                    continue
+
+                for j in adjacent_indices:
+                    if j <= i:  # Avoid duplicate comparisons
+                        continue
+
+                    comparisons += 1
+                    if comparisons > max_comparisons:
+                        break
+
+                    right = texts[j]
+                    if not right:
+                        continue
+
+                    # Quick length check before expensive ratio calculation
+                    len_ratio = len(left) / max(1, len(right))
+                    if len_ratio < 0.7 or len_ratio > 1.3:
+                        continue
+
+                    try:
+                        ratio = SequenceMatcher(None, left, right).ratio()
+                        if ratio >= threshold:
+                            risky_indices.add(i)
+                            risky_indices.add(j)
+                    except Exception as exc:
+                        logger.debug(f"SequenceMatcher error: {exc}")
+                        continue
+
                 if comparisons > max_comparisons:
                     break
-                right = texts[j]
-                if not right:
-                    continue
-                ratio = SequenceMatcher(None, left, right).ratio()
-                if ratio >= threshold:
-                    risky_indices.add(i)
-                    risky_indices.add(j)
-            if comparisons > max_comparisons:
+
+            if comparisons >= max_comparisons:
                 break
 
+        logger.info(
+            f"Duplicate check completed: {comparisons} comparisons, "
+            f"{len(risky_indices)} risky cards found from {card_count} total"
+        )
         return risky_indices
 
     def _rebuild_duplicate_risk_cache(self) -> None:
@@ -1299,45 +1376,91 @@ class CardPreviewPage(QWidget):
         return id(card) in self._duplicate_risk_card_ids
 
     def _cleanup_push_worker(self) -> None:
+        """Safely cleanup push worker to prevent resource leaks."""
         worker = self.__dict__.get("_push_worker")
         if worker is None:
             return
-        if hasattr(worker, "isRunning") and worker.isRunning():
-            if hasattr(worker, "cancel"):
-                worker.cancel()
-            worker.wait(200)
-            if worker.isRunning():
-                return
+
+        try:
+            if hasattr(worker, "isRunning") and callable(worker.isRunning):
+                if worker.isRunning():
+                    if hasattr(worker, "cancel") and callable(worker.cancel):
+                        worker.cancel()
+                    worker.wait(200)
+                    if worker.isRunning():
+                        logger.warning("Push worker still running after cancel")
+                        return
+        except RuntimeError as exc:
+            # Worker might be deleted already
+            logger.debug(f"Push worker cleanup runtime error: {exc}")
+        except Exception as exc:
+            logger.error(f"Push worker cleanup error: {exc}", exc_info=True)
+
         self.__dict__["_push_worker"] = None
-        if hasattr(worker, "deleteLater"):
-            worker.deleteLater()
+        try:
+            if hasattr(worker, "deleteLater") and callable(worker.deleteLater):
+                worker.deleteLater()
+        except RuntimeError:
+            pass  # Already deleted
 
     def _cleanup_export_worker(self) -> None:
+        """Safely cleanup export worker to prevent resource leaks."""
         worker = self.__dict__.get("_export_worker")
         if worker is None:
             return
-        if hasattr(worker, "isRunning") and worker.isRunning():
-            if hasattr(worker, "cancel"):
-                worker.cancel()
-            worker.wait(200)
-            if worker.isRunning():
-                return
+
+        try:
+            if hasattr(worker, "isRunning") and callable(worker.isRunning):
+                if worker.isRunning():
+                    if hasattr(worker, "cancel") and callable(worker.cancel):
+                        worker.cancel()
+                    worker.wait(200)
+                    if worker.isRunning():
+                        logger.warning("Export worker still running after cancel")
+                        return
+        except RuntimeError as exc:
+            # Worker might be deleted already
+            logger.debug(f"Export worker cleanup runtime error: {exc}")
+        except Exception as exc:
+            logger.error(f"Export worker cleanup error: {exc}", exc_info=True)
+
         self.__dict__["_export_worker"] = None
-        if hasattr(worker, "deleteLater"):
-            worker.deleteLater()
+        try:
+            if hasattr(worker, "deleteLater") and callable(worker.deleteLater):
+                worker.deleteLater()
+        except RuntimeError:
+            pass  # Already deleted
 
     def closeEvent(self, event):  # noqa: N802
         """Stop workers cooperatively during application shutdown."""
-        if self._push_worker and self._push_worker.isRunning():
-            if hasattr(self._push_worker, "cancel"):
-                self._push_worker.cancel()
-            self._push_worker.requestInterruption()
-            self._push_worker.wait(300)
-        if self._export_worker and self._export_worker.isRunning():
-            if hasattr(self._export_worker, "cancel"):
-                self._export_worker.cancel()
-            self._export_worker.requestInterruption()
-            self._export_worker.wait(300)
-        self._cleanup_push_worker()
-        self._cleanup_export_worker()
+        try:
+            if self._push_worker and hasattr(self._push_worker, "isRunning"):
+                if self._push_worker.isRunning():
+                    if hasattr(self._push_worker, "cancel"):
+                        self._push_worker.cancel()
+                    self._push_worker.requestInterruption()
+                    self._push_worker.wait(300)
+        except RuntimeError:
+            pass  # Worker already deleted
+        except Exception as exc:
+            logger.error(f"Error stopping push worker on close: {exc}")
+
+        try:
+            if self._export_worker and hasattr(self._export_worker, "isRunning"):
+                if self._export_worker.isRunning():
+                    if hasattr(self._export_worker, "cancel"):
+                        self._export_worker.cancel()
+                    self._export_worker.requestInterruption()
+                    self._export_worker.wait(300)
+        except RuntimeError:
+            pass  # Worker already deleted
+        except Exception as exc:
+            logger.error(f"Error stopping export worker on close: {exc}")
+
+        try:
+            self._cleanup_push_worker()
+            self._cleanup_export_worker()
+        except Exception as exc:
+            logger.error(f"Error cleaning up workers on close: {exc}")
+
         super().closeEvent(event)

@@ -279,7 +279,18 @@ def update_progress_infobar_text(
     duration: int | None = None,
     fixed_height: int = 52,
 ) -> bool:
-    """Use stable single-line labels inside a qfluent InfoBar for progress updates."""
+    """Use stable single-line labels inside a qfluent InfoBar for progress updates.
+
+    Args:
+        info_bar: InfoBar widget to update
+        title: Title text to display
+        content: Content text to display
+        duration: Optional duration in milliseconds
+        fixed_height: Fixed height for the InfoBar
+
+    Returns:
+        True if update succeeded, False otherwise
+    """
     if info_bar is None:
         return False
 
@@ -327,10 +338,25 @@ def update_progress_infobar_text(
             setattr(info_bar, "_progress_title_label", title_label)
             setattr(info_bar, "_progress_content_label", content_label)
 
-        title_label.setText(title)
-        content_label.setText(content)
+        # Safely set text with truncation for very long strings
+        safe_title = title[:200] if len(title) > 200 else title
+        safe_content = content[:500] if len(content) > 500 else content
+
+        title_label.setText(safe_title)
+        content_label.setText(safe_content)
         title_label.setVisible(bool(title))
         content_label.setVisible(bool(content))
+
+        # Set tooltip for truncated text (check if method exists)
+        if len(title) > 200 and hasattr(title_label, "setToolTip"):
+            title_label.setToolTip(title)
+        elif hasattr(title_label, "setToolTip"):
+            title_label.setToolTip("")
+
+        if len(content) > 500 and hasattr(content_label, "setToolTip"):
+            content_label.setToolTip(content)
+        elif hasattr(content_label, "setToolTip"):
+            content_label.setToolTip("")
 
         if hasattr(info_bar, "setFixedHeight"):
             info_bar.setFixedHeight(fixed_height)
@@ -342,6 +368,12 @@ def update_progress_infobar_text(
         QTimer.singleShot(0, lambda: _safe_position_progress_infobar(info_bar))
         return True
     except RuntimeError:
+        return False
+    except Exception as exc:
+        # Log unexpected errors but don't crash the UI
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating progress infobar: {exc}", exc_info=True)
         return False
 
 

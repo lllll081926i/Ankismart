@@ -540,6 +540,8 @@ def _format_time(value: str) -> str:
         parsed = datetime.fromisoformat(value)
     except ValueError:
         return value.replace("T", " ")[:19]
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone()
     return parsed.strftime("%Y-%m-%d %H:%M")
 
 

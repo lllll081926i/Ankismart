@@ -257,6 +257,34 @@ class TestSetupLogging:
         root = logging.getLogger("ankismart")
         assert root.level == logging.INFO
 
+    def test_debug_file_logging_includes_all_standard_levels(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        log_dir = tmp_path / "logs"
+        monkeypatch.setattr(logging_module, "_resolve_log_dir", lambda: log_dir)
+        monkeypatch.setattr(logging_module, "_resolve_crash_dir", lambda: tmp_path / "crash")
+
+        setup_logging(logging.DEBUG)
+        logger = get_logger("level_hierarchy")
+        logger.debug("debug-message")
+        logger.info("info-message")
+        logger.warning("warning-message")
+        logger.error("error-message")
+
+        for handler in logging.getLogger("ankismart").handlers:
+            handler.flush()
+
+        messages = [
+            json.loads(line)["message"]
+            for line in (log_dir / "ankismart.log").read_text(encoding="utf-8").splitlines()
+        ]
+        assert messages == [
+            "debug-message",
+            "info-message",
+            "warning-message",
+            "error-message",
+        ]
+
 
 class TestGetLogger:
     def test_returns_child_logger(self):

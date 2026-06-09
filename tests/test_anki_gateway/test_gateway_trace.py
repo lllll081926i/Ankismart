@@ -15,6 +15,9 @@ class _FakeClient:
     def add_note(self, note_params):
         return 1001
 
+    def add_notes(self, notes_params):
+        return [1001 + i for i in range(len(notes_params))]
+
 
 def test_push_reuses_first_card_trace_id(monkeypatch):
     metrics.reset()
